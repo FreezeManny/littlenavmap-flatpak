@@ -4,6 +4,7 @@ LittleNavmapPortable/*
 
 # Flatpak build artifacts
 builddir/
+build/
 repo/
 .flatpak-builder/
 

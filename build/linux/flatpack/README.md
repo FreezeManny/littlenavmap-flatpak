@@ -1,11 +1,11 @@
 # Little Navmap Flatpak
 
 A Flatpak package for Little Navmap, a flight planning and navigation tool for flight simulators.
-
+Uses the portable Flatpack image, based on the portable ubuntu install.
 ## Building the Flatpak
 
 ### Prerequisites
-
+- Copy the Linux Installation of Little Navmap to the designated folder -> Linux (64 bit, based on Ubuntu 22.04) - LittleNavmap-linux-ubuntu-xxx.xxxx.xxx.tar.xz
 - `flatpak-builder`
 - KDE runtime and SDK:
   ```bash
@@ -16,7 +16,7 @@ A Flatpak package for Little Navmap, a flight planning and navigation tool for f
 ### One-liner to generate .flatpak file
 
 ```bash
-flatpak-builder --repo=repo builddir org.flatpak.littlenavmap.yml --force-clean && flatpak build-bundle repo org.flatpak.littlenavmap.flatpak org.flatpak.littlenavmap
+flatpak-builder --repo=repo --install-deps-from=flathub builddir org.flatpak.littlenavmap.yml --force-clean && flatpak build-bundle repo org.flatpak.littlenavmap.flatpak org.flatpak.littlenavmap
 ```
 
 ## Project Structure
