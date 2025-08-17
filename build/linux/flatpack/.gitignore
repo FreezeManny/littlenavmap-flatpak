@@ -1,0 +1,21 @@
+# LittleNavmap Portable folder - ignore everything except README.md
+LittleNavmapPortable/*
+!LittleNavmapPortable/README.md
+
+# Flatpak build artifacts
+builddir/
+repo/
+.flatpak-builder/
+
+# Generated flatpak files
+*.flatpak
+
+# OSTree cache
+.ostree/
+
+# Temporary files
+*~
+*.tmp
+*.bak
+# Build logs
+*.log

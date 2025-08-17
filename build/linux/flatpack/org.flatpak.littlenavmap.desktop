@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Little Navmap
+Comment=Flight planning and navigation tool
+Exec=littlenavmap.sh
+Icon=org.flatpak.littlenavmap
+Type=Application
+Categories=Education;Science;
