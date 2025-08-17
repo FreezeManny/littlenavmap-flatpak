@@ -23,9 +23,10 @@ flatpak-builder --repo=repo builddir org.flatpak.littlenavmap.yml --force-clean 
 
 - [`org.flatpak.littlenavmap.yml`](org.flatpak.littlenavmap.yml) - Main Flatpak manifest
 - [`org.flatpak.littlenavmap.desktop`](org.flatpak.littlenavmap.desktop) - Desktop entry file
-- `LittleNavmapPortable/` - Source application files
-- `builddir/` - Build output directory
-- `repo/` - Local Flatpak repository
+- Gitignored
+   - `LittleNavmapPortable/` - Source application files
+   - `builddir/` - Build output directory
+   - `repo/` - Local Flatpak repository
 
 ## Application Details
 
