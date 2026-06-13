@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,19 +21,21 @@
 #include "search/searchbasetable.h"
 #include "search/randomdepartureairportpickingbycriteria.h"
 
-class Column;
 class AirportIconDelegate;
+class Column;
 class QAction;
-class UnitStringTool;
+class QProgressDialog;
 class QueryWidget;
+class UnitStringTool;
 
 namespace atools {
+namespace gui {
+class ComboBoxHandler;
+}
 namespace sql {
 class SqlDatabase;
 }
 }
-
-class QProgressDialog;
 
 /*
  * Airport search tab including all search widgets and the result table view.
@@ -44,7 +46,7 @@ class AirportSearch :
   Q_OBJECT
 
 public:
-  explicit AirportSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex);
+  explicit AirportSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex);
   virtual ~AirportSearch() override;
 
   AirportSearch(const AirportSearch& other) = delete;
@@ -64,17 +66,21 @@ public:
 public slots:
   void randomFlightSearchProgressing();
   void dataRandomAirportsReceived(bool isSuccess, int indexDeparture, int indexDestination,
-                                  QVector<std::pair<int, atools::geo::Pos> > *data);
+                                  QList<std::pair<int, atools::geo::Pos> > *data);
 
 private:
   virtual void updateButtonMenu() override;
   virtual void saveViewState(bool distanceSearchState) override;
   virtual void restoreViewState(bool distanceSearchState) override;
   virtual void updatePushButtons() override;
-  QAction *followModeAction() override;
+  virtual void resetView() override;
 
   /* Options dialog has changed some options */
-  virtual void optionsChanged() override;
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) override;
+
+  virtual void fontChanged(const QFont& font) override;
+
+  QAction *followModeAction() override;
 
   void setCallbacks();
   QVariant modelDataHandler(int colIndex, int rowIndex, const Column *col, const QVariant&,
@@ -115,10 +121,10 @@ private:
   bool randomFixedDeparture = false, randomFixedDestination = false;
 
   /* Airports have to persist during search. List is cleared in AirportSearch::dataRandomAirportsReceived() */
-  QVector<std::pair<int, atools::geo::Pos> > randomSearchAirports;
+  QList<std::pair<int, atools::geo::Pos> > randomSearchAirports;
 
   /* for "Search again" */
-  QVector<std::pair<int, int> > randomUnwantedAirports;
+  QList<std::pair<int, int> > randomUnwantedAirports;
 
   /* All layouts, lines and drop down menu items */
   QList<QObject *> airportSearchWidgets;
@@ -129,6 +135,7 @@ private:
   /* Draw airport icon into ident table column */
   AirportIconDelegate *iconDelegate = nullptr;
   UnitStringTool *unitStringTool;
+  atools::gui::ComboBoxHandler *comboBoxHandler = nullptr;
 };
 
 #endif // LITTLENAVMAP_AIRPORTSEARCH_H

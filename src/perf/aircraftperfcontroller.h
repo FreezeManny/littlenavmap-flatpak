@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #define LNM_AIRCRAFTPERFCONTROLLER_H
 
 #include "fs/perf/aircraftperfconstants.h"
+#include "options/optionchangeflags.h"
 
 #include <QTimer>
 
@@ -29,6 +30,8 @@ class HtmlBuilder;
 }
 
 namespace gui {
+
+class LinkTooltipHandler;
 class FileHistoryHandler;
 }
 namespace fs {
@@ -64,7 +67,7 @@ public:
   AircraftPerfController& operator=(const AircraftPerfController& other) = delete;
 
   /* Load a new performance file after asking to save currently unchanged */
-  void loadFile(const QString& perfFile);
+  void loadFile(const QString& filepath, bool forceLoading);
 
   /* Load into current from an XML string */
   void loadStr(const QString& string);
@@ -100,7 +103,9 @@ public:
   void restoreState();
 
   /* Update background colors in report */
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
+
+  void styleChanged();
 
   /* Connection was established */
   void connectedToSimulator();
@@ -272,6 +277,9 @@ private:
 
   /* For a smooth endurance calculation - first value is fuel flow in PPH and second is groundspeed in KTS */
   atools::util::MovingAverageTime *fuelFlowGroundspeedAverage;
+
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
 
   QStringList errorTooltips;
 };

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,8 @@ class AbstractSearch;
 class SearchViewEventFilter :
   public QObject
 {
+  Q_OBJECT
+
 public:
   SearchViewEventFilter(AbstractSearch *parent);
 
@@ -41,11 +43,13 @@ private:
 /*
  * Event filter for input lines. Cursor down calls AbstractSearch::activateView() and Return AbstractSearch::showFirstEntry()
  */
-class SearchWidgetEventFilter :
+class SearchWidgetKeyEventFilter :
   public QObject
 {
+  Q_OBJECT
+
 public:
-  SearchWidgetEventFilter(AbstractSearch *parent);
+  SearchWidgetKeyEventFilter(AbstractSearch *parent);
 
 private:
   virtual bool eventFilter(QObject *object, QEvent *event) override;

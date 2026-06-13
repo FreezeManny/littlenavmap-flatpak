@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,10 @@ class AircraftPerfDialog;
 }
 
 namespace atools {
+
+namespace gui {
+class LinkTooltipHandler;
+}
 namespace fs {
 namespace perf {
 class AircraftPerf;
@@ -114,6 +118,9 @@ private:
   FuelUnit fuelUnit = WEIGHT_LBS;
 
   bool saveClicked = false, newPerf = false;
+
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
 };
 
 #endif // LNM_AIRCRAFTPERFDIALOG_H

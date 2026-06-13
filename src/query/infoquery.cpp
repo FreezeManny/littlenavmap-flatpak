@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ const SqlRecord *InfoQuery::getAirportInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, airportQuery))
     return nullptr;
 
-  airportQuery->bindValue(":id", airportId);
+  airportQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecord(airportCache, airportQuery, airportId);
 }
 
@@ -71,7 +71,7 @@ const atools::sql::SqlRecordList *InfoQuery::getAirportSceneryInformation(const 
   if(!query::valid(Q_FUNC_INFO, airportSceneryQuery))
     return nullptr;
 
-  airportSceneryQuery->bindValue(":id", ident);
+  airportSceneryQuery->bindValue(QStringLiteral(":id"), ident);
   return query::cachedRecordList(airportSceneryCache, airportSceneryQuery, ident);
 }
 
@@ -87,11 +87,11 @@ bool InfoQuery::isAirportXplaneCustomOnly(const QString& ident)
   {
     for(const atools::sql::SqlRecord& rec : *airportSceneryInformation)
     {
-      QString filepath = rec.valueStr("filepath").replace('\\', '/');
+      QString filepath = rec.valueStr(QStringLiteral("filepath")).replace('\\', '/');
 
-      if(filepath.endsWith("Resources/default scenery/default apt dat/Earth nav data/apt.dat", Qt::CaseInsensitive) ||
-         filepath.endsWith("Custom Scenery/Global Airports/Earth nav data/apt.dat", Qt::CaseInsensitive) ||
-         filepath.endsWith("Global Scenery/Global Airports/Earth nav data/apt.dat", Qt::CaseInsensitive))
+      if(filepath.endsWith(QStringLiteral("Resources/default scenery/default apt dat/Earth nav data/apt.dat"), Qt::CaseInsensitive) ||
+         filepath.endsWith(QStringLiteral("Custom Scenery/Global Airports/Earth nav data/apt.dat"), Qt::CaseInsensitive) ||
+         filepath.endsWith(QStringLiteral("Global Scenery/Global Airports/Earth nav data/apt.dat"), Qt::CaseInsensitive))
         // Also in stock and maybe only overloaded by an add-on
         return false;
     }
@@ -105,7 +105,7 @@ const SqlRecordList *InfoQuery::getComInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, comQuery))
     return nullptr;
 
-  comQuery->bindValue(":id", airportId);
+  comQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecordList(comCache, comQuery, airportId);
 }
 
@@ -114,7 +114,7 @@ const SqlRecordList *InfoQuery::getProcedureInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, procedureQuery))
     return nullptr;
 
-  procedureQuery->bindValue(":id", airportId);
+  procedureQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecordList(procedureCache, procedureQuery, airportId);
 }
 
@@ -123,7 +123,7 @@ const SqlRecordList *InfoQuery::getTransitionInformation(int procedureId)
   if(!query::valid(Q_FUNC_INFO, transitionQuery))
     return nullptr;
 
-  transitionQuery->bindValue(":id", procedureId);
+  transitionQuery->bindValue(QStringLiteral(":id"), procedureId);
   return query::cachedRecordList(transitionCache, transitionQuery, procedureId);
 }
 
@@ -132,11 +132,11 @@ const SqlRecordList *InfoQuery::getRunwayInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, runwayQuery))
     return nullptr;
 
-  runwayQuery->bindValue(":id", airportId);
+  runwayQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecordList(runwayCache, runwayQuery, airportId);
 }
 
-void InfoQuery::getRunwayEnds(maptools::RwVector& ends, int airportId)
+void InfoQuery::getRunwayEnds(maptools::RunwayList& ends, int airportId)
 {
   const SqlRecordList *recVector = getRunwayInformation(airportId);
   if(recVector != nullptr)
@@ -144,15 +144,25 @@ void InfoQuery::getRunwayEnds(maptools::RwVector& ends, int airportId)
     // Collect runway ends and wind conditions =======================================
     for(const SqlRecord& rec : *recVector)
     {
-      int length = rec.valueInt("length");
-      QString surface = rec.valueStr("surface");
-      const SqlRecord *recPrim = getRunwayEndInformation(rec.valueInt("primary_end_id"));
-      if(!recPrim->valueBool("has_closed_markings"))
-        ends.appendRwEnd(recPrim->valueStr("name"), surface, length, recPrim->valueFloat("heading"));
+      int length = rec.valueInt(QStringLiteral("length"));
+      QString surface = rec.valueStr(QStringLiteral("surface"));
+      const SqlRecord *recPrim = getRunwayEndInformation(rec.valueInt(QStringLiteral("primary_end_id")));
+      if(recPrim != nullptr)
+      {
+        if(!recPrim->valueBool(QStringLiteral("has_closed_markings")))
+          ends.appendRwEnd(recPrim->valueStr(QStringLiteral("name")), surface, length, recPrim->valueFloat(QStringLiteral("heading")));
+      }
+      else
+        qWarning() << Q_FUNC_INFO << "Primary record null for endQStringLiteral(" << rec.valueInt(")primary_end_id");
 
-      const SqlRecord *recSec = getRunwayEndInformation(rec.valueInt("secondary_end_id"));
-      if(!recSec->valueBool("has_closed_markings"))
-        ends.appendRwEnd(recSec->valueStr("name"), surface, length, recSec->valueFloat("heading"));
+      const SqlRecord *recSec = getRunwayEndInformation(rec.valueInt(QStringLiteral("secondary_end_id")));
+      if(recPrim != nullptr)
+      {
+        if(!recSec->valueBool(QStringLiteral("has_closed_markings")))
+          ends.appendRwEnd(recSec->valueStr(QStringLiteral("name")), surface, length, recSec->valueFloat(QStringLiteral("heading")));
+      }
+      else
+        qWarning() << Q_FUNC_INFO << "Secondary record null for endQStringLiteral(" << rec.valueInt(")primary_end_id");
     }
   }
 
@@ -165,7 +175,7 @@ const SqlRecordList *InfoQuery::getHelipadInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, helipadQuery))
     return nullptr;
 
-  helipadQuery->bindValue(":id", airportId);
+  helipadQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecordList(helipadCache, helipadQuery, airportId);
 }
 
@@ -174,7 +184,7 @@ const SqlRecordList *InfoQuery::getStartInformation(int airportId)
   if(!query::valid(Q_FUNC_INFO, startQuery))
     return nullptr;
 
-  startQuery->bindValue(":id", airportId);
+  startQuery->bindValue(QStringLiteral(":id"), airportId);
   return query::cachedRecordList(startCache, startQuery, airportId);
 }
 
@@ -183,7 +193,7 @@ const atools::sql::SqlRecord *InfoQuery::getRunwayEndInformation(int runwayEndId
   if(!query::valid(Q_FUNC_INFO, runwayEndQuery))
     return nullptr;
 
-  runwayEndQuery->bindValue(":id", runwayEndId);
+  runwayEndQuery->bindValue(QStringLiteral(":id"), runwayEndId);
   return query::cachedRecord(runwayEndCache, runwayEndQuery, runwayEndId);
 }
 
@@ -192,7 +202,7 @@ const atools::sql::SqlRecord *InfoQuery::getVorInformation(int vorId)
   if(!query::valid(Q_FUNC_INFO, vorQuery))
     return nullptr;
 
-  vorQuery->bindValue(":id", vorId);
+  vorQuery->bindValue(QStringLiteral(":id"), vorId);
   return query::cachedRecord(vorCache, vorQuery, vorId);
 }
 
@@ -202,8 +212,8 @@ const atools::sql::SqlRecord InfoQuery::getVorByIdentAndRegion(const QString& id
   if(!query::valid(Q_FUNC_INFO, vorIdentRegionQuery))
     return rec;
 
-  vorIdentRegionQuery->bindValue(":ident", ident);
-  vorIdentRegionQuery->bindValue(":region", region);
+  vorIdentRegionQuery->bindValue(QStringLiteral(":ident"), ident);
+  vorIdentRegionQuery->bindValue(QStringLiteral(":region"), region);
   vorIdentRegionQuery->exec();
 
   if(vorIdentRegionQuery->next())
@@ -218,7 +228,7 @@ const atools::sql::SqlRecord *InfoQuery::getNdbInformation(int ndbId)
   if(!query::valid(Q_FUNC_INFO, ndbQuery))
     return nullptr;
 
-  ndbQuery->bindValue(":id", ndbId);
+  ndbQuery->bindValue(QStringLiteral(":id"), ndbId);
   return query::cachedRecord(ndbCache, ndbQuery, ndbId);
 }
 
@@ -226,7 +236,7 @@ const SqlRecord *InfoQuery::getMsaInformation(int msaId)
 {
   if(msaQuery != nullptr)
   {
-    msaQuery->bindValue(":id", msaId);
+    msaQuery->bindValue(QStringLiteral(":id"), msaId);
     return query::cachedRecord(msaCache, msaQuery, msaId);
   }
   else
@@ -237,7 +247,7 @@ const SqlRecord *InfoQuery::getHoldingInformation(int holdingId)
 {
   if(holdingQuery != nullptr)
   {
-    holdingQuery->bindValue(":id", holdingId);
+    holdingQuery->bindValue(QStringLiteral(":id"), holdingId);
     return query::cachedRecord(holdingCache, holdingQuery, holdingId);
   }
   else
@@ -247,8 +257,8 @@ const SqlRecord *InfoQuery::getHoldingInformation(int holdingId)
 atools::sql::SqlRecord InfoQuery::getTrackMetadata(int trackId)
 {
   SqlQuery query(dbTrack);
-  query.prepare("select m.* from track t join trackmeta m on t.trackmeta_id = m.trackmeta_id where track_id = :id");
-  query.bindValue(":id", trackId);
+  query.prepare(QStringLiteral("select m.* from track t join trackmeta m on t.trackmeta_id = m.trackmeta_id where track_id = :id"));
+  query.bindValue(QStringLiteral(":id"), trackId);
   query.exec();
   if(query.next())
     return query.record();
@@ -267,8 +277,8 @@ void InfoQuery::initQueries()
                         "join scenery_area on bgl_file.scenery_area_id = scenery_area.scenery_area_id "
                         "where airport_id = :id");
 
-  // airport_file_id	file_id	ident	bgl_file_id	scenery_area_id	bgl_create_time	file_modification_time
-  // filepath	filename	size	comment	scenery_area_id:1	number	layer	title	remote_path	local_path	active	required	exclude
+  // airport_file_id  file_id ident bgl_file_id scenery_area_id bgl_create_time file_modification_time
+  // filepath filename  size  comment scenery_area_id:1 number  layer title remote_path local_path  active  required  exclude
   airportSceneryQuery = new SqlQuery(dbSim);
   airportSceneryQuery->prepare("select * from airport_file f "
                                "join bgl_file b on f.file_id = b.bgl_file_id  "

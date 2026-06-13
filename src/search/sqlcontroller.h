@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -114,11 +114,8 @@ public:
   /* Current active row. Not necessarily selected */
   QModelIndex getCurrentIndex() const;
 
-  /* Get the SQL query that was used to populate the table */
-  QString getCurrentSqlQuery() const;
-
   /* Get all descriptors for currently displayed columns */
-  QVector<const Column *> getCurrentColumns() const;
+  QList<const Column *> getCurrentColumns() const;
 
   /* Get variant from model for row and column */
   QVariant getRawData(int row, const QString& colname) const;

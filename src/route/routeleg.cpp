@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -131,7 +131,7 @@ void RouteLeg::assignAnyNavaid(atools::fs::pln::FlightplanEntry *flightplanEntry
   QueryManager::instance()->getQueriesGui()->getMapQuery()->getMapObjectByIdent(mapobjectResult,
                                                                                 map::WAYPOINT | map::VOR | map::NDB | map::AIRPORT,
                                                                                 flightplanEntry->getIdent(), flightplanEntry->getRegion(),
-                                                                                QString(), last, maxDistance);
+                                                                                QStringLiteral(), last, maxDistance);
 
   if(mapobjectResult.hasVor())
   {
@@ -211,8 +211,8 @@ void RouteLeg::createFromDatabaseByEntry(int entryIndex, const RouteLeg *prevLeg
     case atools::fs::pln::entry::AIRPORT:
       // Set alternate flight also for probably invalid legs to allow correct sorting
       alternate = flightplanEntry->isAlternate();
-      mapQuery->getMapObjectByIdent(result, map::AIRPORT, flightplanEntry->getIdent(), QString(),
-                                    QString(), flightplanEntry->getPosition(), MAX_AIRPORT_DISTANCE_METER);
+      mapQuery->getMapObjectByIdent(result, map::AIRPORT, flightplanEntry->getIdent(), QStringLiteral(),
+                                    QStringLiteral(), flightplanEntry->getPosition(), MAX_AIRPORT_DISTANCE_METER);
       if(result.hasAirports())
       {
         assignAirport(result, flightplanEntry);
@@ -300,12 +300,12 @@ void RouteLeg::createFromDatabaseByEntry(int entryIndex, const RouteLeg *prevLeg
     case atools::fs::pln::entry::WAYPOINT:
       mapQuery->getMapObjectByIdent(result, map::WAYPOINT | map::AIRPORT,
                                     flightplanEntry->getIdent(), region, /* region is ignored for airports */
-                                    QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+                                    QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(!result.hasWaypoints())
         // Nothing found for waypoints - try again without region - result is appended
-        mapQuery->getMapObjectByIdent(result, map::WAYPOINT, flightplanEntry->getIdent(), QString(),
-                                      QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+        mapQuery->getMapObjectByIdent(result, map::WAYPOINT, flightplanEntry->getIdent(), QStringLiteral(),
+                                      QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(result.hasWaypoints())
       {
@@ -330,12 +330,12 @@ void RouteLeg::createFromDatabaseByEntry(int entryIndex, const RouteLeg *prevLeg
     // =============================== Navaid VOR
     case atools::fs::pln::entry::VOR:
       mapQuery->getMapObjectByIdent(result, map::VOR, flightplanEntry->getIdent(), region,
-                                    QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+                                    QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(!result.hasVor())
         // Nothing found for VOR - try again without region
-        mapQuery->getMapObjectByIdent(result, map::VOR, flightplanEntry->getIdent(), QString(),
-                                      QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+        mapQuery->getMapObjectByIdent(result, map::VOR, flightplanEntry->getIdent(), QStringLiteral(),
+                                      QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(result.hasVor())
       {
@@ -347,12 +347,12 @@ void RouteLeg::createFromDatabaseByEntry(int entryIndex, const RouteLeg *prevLeg
     // =============================== Navaid NDB
     case atools::fs::pln::entry::NDB:
       mapQuery->getMapObjectByIdent(result, map::NDB, flightplanEntry->getIdent(), region,
-                                    QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+                                    QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(!result.hasNdb())
         // Nothing found for NDB - try again without region
-        mapQuery->getMapObjectByIdent(result, map::NDB, flightplanEntry->getIdent(), QString(),
-                                      QString(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
+        mapQuery->getMapObjectByIdent(result, map::NDB, flightplanEntry->getIdent(), QStringLiteral(),
+                                      QStringLiteral(), flightplanEntry->getPosition(), MAX_WAYPOINT_DISTANCE_METER);
 
       if(result.hasNdb())
       {
@@ -569,11 +569,11 @@ QString RouteLeg::getMapTypeName() const
   else if(waypoint.isValid())
     return tr("Waypoint");
   else if(vor.isValid())
-    return vor.type.isEmpty() ? map::vorType(vor) :
-           tr("%1 (%2)").arg(map::vorType(vor)).arg(map::navTypeNameVor(vor.type));
+    return vor.vorType.isEmpty() ? map::vorType(vor) :
+           tr("%1 (%2)").arg(map::vorType(vor)).arg(map::navTypeNameVor(vor.vorType));
   else if(ndb.isValid())
-    return ndb.type.isEmpty() ? tr("NDB") :
-           tr("NDB (%1)").arg(map::navTypeNameNdb(ndb.type));
+    return ndb.ndbType.isEmpty() ? tr("NDB") :
+           tr("NDB (%1)").arg(map::navTypeNameNdb(ndb.ndbType));
   else if(airport.isValid())
     return tr("Airport");
   else if(ils.isValid())
@@ -616,8 +616,8 @@ QString RouteLeg::getDisplayText(int elideName) const
   {
     QStringList texts;
     texts << getMapTypeNameShort() << atools::elideTextShort(getName(), elideName)
-          << (getIdent().isEmpty() ? QString() : tr("(%1)").arg(getIdent()));
-    texts.removeAll(QString());
+          << (getIdent().isEmpty() ? QStringLiteral() : tr("(%1)").arg(getIdent()));
+    texts.removeAll(QStringLiteral());
     return texts.join(tr(" "));
   }
 }
@@ -646,7 +646,8 @@ map::MapUserpointRoute RouteLeg::getUserpointRoute() const
   return user;
 }
 
-QStringList RouteLeg::buildLegText(bool dist, bool magCourseFlag, bool trueCourseFlag, bool narrow) const
+QStringList RouteLeg::buildLegText(bool dist, bool magCourseFlag, bool trueCourseFlag, bool narrow, int distPrecision,
+                                   int degPrecision) const
 {
   float distance = noDistanceDisplay() || !dist ? map::INVALID_DISTANCE_VALUE : getDistanceTo();
   float courseMag = map::INVALID_COURSE_VALUE, courseTrue = map::INVALID_COURSE_VALUE;
@@ -654,21 +655,21 @@ QStringList RouteLeg::buildLegText(bool dist, bool magCourseFlag, bool trueCours
 
   return buildLegText(distance,
                       magCourseFlag ? courseMag : map::INVALID_COURSE_VALUE,
-                      trueCourseFlag ? courseTrue : map::INVALID_COURSE_VALUE, narrow);
+                      trueCourseFlag ? courseTrue : map::INVALID_COURSE_VALUE, narrow, distPrecision, degPrecision);
 }
 
-QStringList RouteLeg::buildLegText(float distance, float courseMag, float courseTrue, bool narrow)
+QStringList RouteLeg::buildLegText(float distance, float courseMag, float courseTrue, bool narrow, int distPrecision, int degPrecision)
 {
   QStringList texts;
 
   if(distance < map::INVALID_DISTANCE_VALUE)
-    texts.append(Unit::distNm(distance, true /*addUnit*/, 20, narrow /*narrow*/));
+    texts.append(Unit::distNm(distance, true /*addUnit*/, 20, narrow /*narrow*/, distPrecision));
 
   bool addMagCourse = courseMag < map::INVALID_COURSE_VALUE;
   bool addTrueCourse = courseTrue < map::INVALID_COURSE_VALUE;
 
-  QString courseMagStr = QString::number(normalizeCourse(courseMag), 'f', 0);
-  QString courseTrueStr = QString::number(normalizeCourse(courseTrue), 'f', 0);
+  QString courseMagStr = QString::number(normalizeCourse(courseMag), 'f', degPrecision);
+  QString courseTrueStr = QString::number(normalizeCourse(courseTrue), 'f', degPrecision);
 
   if(addMagCourse && addTrueCourse && courseMagStr == courseTrueStr)
     // True and mag course are equal - combine
@@ -935,7 +936,7 @@ QString RouteLeg::getName() const
   else if(ndb.isValid())
     return ndb.name;
   else if(waypoint.isValid())
-    return atools::fs::util::capWaypointNameString(waypoint.ident, waypoint.name, true /* emptyIfEqual */);
+    return waypoint.name;
   else if(ils.isValid())
     return ils.name;
   else if(type == map::INVALID)
@@ -1180,10 +1181,10 @@ QDebug operator<<(QDebug out, const RouteLeg& leg)
                           << ", course start " << leg.getCourseStartMag() << "°M " << leg.getCourseStartTrue() << "°T"
                           << ", course end " << leg.getCourseEndMag() << "°M " << leg.getCourseEndTrue() << "°T"
                           << ", magvar start " << leg.magvarStart << ", magvar end " << leg.magvarEnd
-                          << (leg.isValidWaypoint() ? ", valid" : QString())
-                          << (leg.isNavdata() ? ", nav" : QString())
-                          << (leg.isAlternate() ? ", alternate" : QString())
-                          << (leg.isAnyProcedure() ? ", procedure" : QString())
+                          << (leg.isValidWaypoint() ? ", valid" : QStringLiteral())
+                          << (leg.isNavdata() ? ", nav" : QStringLiteral())
+                          << (leg.isAlternate() ? ", alternate" : QStringLiteral())
+                          << (leg.isAnyProcedure() ? ", procedure" : QStringLiteral())
                           << ", " << proc::procedureLegTypeStr(leg.getProcedureLegType())
                           << ", verticalAngle " << leg.getProcedureLeg().verticalAngle
                           << ", forceFinal " << leg.getProcedureLeg().altRestriction.forceFinal

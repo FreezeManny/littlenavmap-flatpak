@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ void openDatabaseFileExt(atools::sql::SqlDatabase *db, const QString& file, bool
   bool foreignKeys = settings.getAndStoreValue(lnm::SETTINGS_DATABASE + "ForeignKeys", false).toBool();
 
   // cache_size * 1024 bytes if value is negative
-  QStringList pragmas({QString("PRAGMA cache_size=-%1").arg(databaseCacheKb), "PRAGMA page_size=8196"});
+  QStringList pragmas({QStringLiteral("PRAGMA cache_size=-%1").arg(databaseCacheKb), "PRAGMA page_size=8196"});
 
   if(exclusive)
   {
@@ -152,10 +152,10 @@ void createEmptySchema(atools::sql::SqlDatabase *db, bool boundary)
     atools::fs::NavDatabaseOptions opts;
     if(boundary)
       // Does not use a transaction
-      atools::fs::NavDatabase(&opts, db, nullptr, GIT_REVISION_LITTLENAVMAP).createAirspaceSchema();
+      atools::fs::NavDatabase(opts, *db, nullptr, GIT_REVISION_LITTLENAVMAP).createAirspaceSchema();
     else
     {
-      atools::fs::NavDatabase(&opts, db, nullptr, GIT_REVISION_LITTLENAVMAP).createSchema();
+      atools::fs::NavDatabase(opts, *db, nullptr, GIT_REVISION_LITTLENAVMAP).createSchema();
       atools::fs::db::DatabaseMeta(db).updateVersion();
     }
   }

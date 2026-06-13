@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -26,8 +26,10 @@
 #include "common/maptypes.h"
 #include "common/unit.h"
 #include "fs/util/fsutil.h"
+#include "gui/comboboxhandler.h"
+#include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
+#include "options/optiondata.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
 #include "search/column.h"
@@ -39,9 +41,11 @@
 
 #include <QStringBuilder>
 
-NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+NavSearch::NavSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("nav_search", "nav_search_id"), tabWidgetIndex)
 {
+  setObjectName("NavSearch");
+
   /* *INDENT-OFF* */
   ui->pushButtonNavHelpSearch->setToolTip(
     tr("<p>All set search conditions have to match.</p>"
@@ -86,7 +90,7 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
   // Show/hide all search options menu action
   connect(ui->actionNavSearchShowAllOptions, &QAction::toggled, this, [this](bool state)
   {
-    for(QAction *a: qAsConst(navSearchMenuActions))
+    for(QAction *a: std::as_const(navSearchMenuActions))
       a->setChecked(state);
   });
 
@@ -122,7 +126,7 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
   // WU      W
   // Build SQL query conditions
   QStringList typeCondMap;
-  typeCondMap << QString()
+  typeCondMap << QStringLiteral()
               << "type = 'VH'"  // VOR/VORTAC - High
               << "type = 'VL'"  // VOR/VORTAC - Low
               << "type = 'VT'"  // VOR/VORTAC - Terminal
@@ -135,7 +139,7 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
               << "type in ('WN', 'WU', 'FAF', 'IAF', 'VFR', 'RNAV', 'OA')"; // Waypoint - Other
 
   QStringList navTypeCondMap;
-  navTypeCondMap << QString()
+  navTypeCondMap << QStringLiteral()
                  << "(nav_type like ('V%') or nav_type in ('D', 'TC'))"      // All VOR/VORTAC/TACAN
                  << "(nav_type like ('V%') or nav_type in ('D', 'TC', 'N'))" // All VOR/VORTAC/TACAN/NDB
                  << "nav_type = 'VD'"                                        // Only VOR-DME
@@ -153,8 +157,8 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
   // Columns that are hidden are also needed to fill MapAirport object and for the icon delegate
   columns->
   append(Column("nav_search_id").hidden()).
-  append(Column("distance", tr("Distance\n%dist%")).distanceCol()).
-  append(Column("heading", tr("Heading\n°T")).distanceCol()).
+  append(Column("distance", tr("Distance\n%dist%")).distanceHeadingCol()).
+  append(Column("heading", tr("Heading\n°T")).distanceHeadingCol()).
   append(Column("ident", tr("Ident")).filter().defaultSort().filterByBuilder()).
 
   append(Column("nav_type", ui->comboBoxNavNavAidSearch, tr("Navaid\nType")).
@@ -167,9 +171,9 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
   append(Column("frequency", tr("Frequency\nkHz/MHz"))).
   append(Column("channel", tr("Channel"))).
   append(Column("range", ui->spinBoxNavMaxRangeSearch, tr("Range\n%dist%")).
-         filter().condition(">").convertFunc(Unit::distNmF)).
+         filter().condition(">").convertFunction(Unit::distNmF)).
   append(Column("mag_var", tr("Mag.\nDecl.°"))).
-  append(Column("altitude", tr("Elev.\n%alt%")).convertFunc(Unit::altFeetF)).
+  append(Column("altitude", tr("Elev.\n%alt%")).convertFunction(Unit::altFeetF)).
   append(Column("scenery_local_path", ui->lineEditNavScenerySearch,
                 tr("Scenery Path")).filter(true, ui->actionNavSearchShowSceneryOptions)).
   append(Column("bgl_filename", ui->lineEditNavFileSearch,
@@ -190,9 +194,12 @@ NavSearch::NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId
   iconDelegate = new NavIconDelegate(columns);
   view->setItemDelegateForColumn(columns->getColumn("ident")->getIndex(), iconDelegate);
 
+  comboBoxHandler = new atools::gui::ComboBoxHandler(ui->comboBoxNavIcaoSearch, nullptr, lnm::SEARCHTAB_NAV_ICAO_COMBOBOX_HISTORY);
+  comboBoxHandler->setMenuTooltipsVisible(NavApp::isMenuToolTipsVisible());
+
   // Assign the callback which builds a part of the where clause for the airport search ======================
   columns->setQueryBuilder(QueryBuilder(std::bind(&SearchBaseTable::queryBuilderFunc, this, std::placeholders::_1),
-                                        {QueryWidget(ui->lineEditNavIcaoSearch, {"ident"},
+                                        {QueryWidget(ui->comboBoxNavIcaoSearch, {"ident"},
                                                      false /* allowOverride */, false /* allowExclude */)}));
 
   SearchBaseTable::initViewAndController(NavApp::getDatabaseNav());
@@ -214,7 +221,7 @@ void NavSearch::connectSearchSlots()
   connect(ui->pushButtonNavSearchClearSelection, &QPushButton::clicked, this, &SearchBaseTable::nothingSelectedTriggered);
   connect(ui->pushButtonNavSearchReset, &QPushButton::clicked, this, &SearchBaseTable::resetSearch);
 
-  installEventFilterForWidget(ui->lineEditNavIcaoSearch);
+  installEventFilterForWidget(ui->comboBoxNavTypeSearch);
   installEventFilterForWidget(ui->lineEditNavNameSearch);
   installEventFilterForWidget(ui->lineEditNavRegionSearch);
   installEventFilterForWidget(ui->lineEditNavAirportIcaoSearch);
@@ -230,6 +237,7 @@ void NavSearch::connectSearchSlots()
   ui->toolButtonNavSearch->addActions(navSearchMenuActions);
 
   QMenu *menu = new QMenu(ui->toolButtonNavSearch);
+  menu->setToolTipsVisible(true);
   ui->toolButtonNavSearch->setMenu(menu);
   menu->addAction(navSearchMenuActions.first());
   menu->addSeparator();
@@ -254,6 +262,7 @@ void NavSearch::saveState()
   atools::gui::WidgetState widgetState(lnm::SEARCHTAB_NAV_WIDGET);
   widgetState.save(navSearchWidgets);
   saveViewState(viewStateDistSearch);
+  comboBoxHandler->saveState();
 }
 
 void NavSearch::restoreState()
@@ -285,6 +294,8 @@ void NavSearch::restoreState()
     ui->actionNavSearchShowSceneryOptions->setChecked(false);
   }
 
+  comboBoxHandler->restoreState();
+
   finishRestore();
 }
 
@@ -295,8 +306,8 @@ void NavSearch::saveViewState(bool distanceSearchState)
 #endif
 
   // Save layout for normal and distance search separately
-  atools::gui::WidgetState(distanceSearchState ? lnm::SEARCHTAB_NAV_VIEW_DIST_WIDGET : lnm::SEARCHTAB_NAV_VIEW_WIDGET).save(
-    ui->tableViewNavSearch);
+  atools::gui::WidgetState(distanceSearchState ? lnm::SEARCHTAB_NAV_VIEW_DIST_WIDGET : lnm::SEARCHTAB_NAV_VIEW_WIDGET).
+  save(ui->tableViewNavSearch);
 }
 
 void NavSearch::restoreViewState(bool distanceSearchState)
@@ -305,8 +316,8 @@ void NavSearch::restoreViewState(bool distanceSearchState)
   qDebug() << Q_FUNC_INFO << "distSearchActive" << distanceSearchState;
 #endif
 
-  atools::gui::WidgetState(distanceSearchState ? lnm::SEARCHTAB_NAV_VIEW_DIST_WIDGET : lnm::SEARCHTAB_NAV_VIEW_WIDGET).restore(
-    ui->tableViewNavSearch);
+  atools::gui::WidgetState(distanceSearchState ? lnm::SEARCHTAB_NAV_VIEW_DIST_WIDGET : lnm::SEARCHTAB_NAV_VIEW_WIDGET).
+  restore(ui->tableViewNavSearch);
 }
 
 /* Callback for the controller. Will be called for each table cell and should return a formatted value */
@@ -319,10 +330,12 @@ QVariant NavSearch::modelDataHandler(int colIndex, int rowIndex, const Column *c
       return formatModelData(col, rowIndex, displayRoleValue);
 
     case Qt::TextAlignmentRole:
-      if(col->getColumnName() == "ident" || col->getColumnName() == "airport_ident" ||
-         displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt ||
-         displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() == QVariant::ULongLong ||
-         displayRoleValue.type() == QVariant::Double)
+      if(col->getColumnName() == QStringLiteral("ident") || col->getColumnName() == QStringLiteral("airport_ident") ||
+         displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<unsigned int>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<double>())
         // Align all numeric columns right
         return Qt::AlignRight;
 
@@ -343,25 +356,26 @@ QVariant NavSearch::modelDataHandler(int colIndex, int rowIndex, const Column *c
 QString NavSearch::formatModelData(const Column *col, int row, const QVariant& displayRoleValue) const
 {
   // Called directly by the model for export functions
-  if(col->getColumnName() == "nav_type")
+  if(col->getColumnName() == QStringLiteral("nav_type"))
     return map::navName(displayRoleValue.toString());
-  else if(col->getColumnName() == "type")
+  else if(col->getColumnName() == QStringLiteral("type"))
     return map::navTypeName(displayRoleValue.toString());
-  else if(col->getColumnName() == "name")
+  else if(col->getColumnName() == QStringLiteral("name"))
   {
-    if(controller->getRawData(row, "nav_type").toString() == 'W')
+    if(controller->getRawData(row, QStringLiteral("nav_type")).toString() == QChar('W'))
       // Is waypoint
-      return atools::fs::util::capWaypointNameString(controller->getRawData(row, "ident").toString(), displayRoleValue.toString(),
+      return atools::fs::util::capWaypointNameString(controller->getRawData(row, QStringLiteral("ident")).toString(),
+                                                     displayRoleValue.toString(),
                                                      false /* emptyIfEqual */);
     else
       return atools::capString(displayRoleValue.toString());
   }
-  else if(col->getColumnName() == "range" && displayRoleValue.toFloat() > 0.f)
+  else if(col->getColumnName() == QStringLiteral("range") && displayRoleValue.toFloat() > 0.f)
     return Unit::distNm(displayRoleValue.toFloat(), false);
-  else if(col->getColumnName() == "altitude")
+  else if(col->getColumnName() == QStringLiteral("altitude"))
     return !displayRoleValue.isNull() && displayRoleValue.toFloat() < map::INVALID_ALTITUDE_VALUE ?
-           Unit::altFeet(displayRoleValue.toFloat(), false) : QString();
-  else if(col->getColumnName() == "frequency" && !displayRoleValue.isNull())
+           Unit::altFeet(displayRoleValue.toFloat(), false) : QStringLiteral();
+  else if(col->getColumnName() == QStringLiteral("frequency") && !displayRoleValue.isNull())
   {
     // VOR and/or DME
     int freq = displayRoleValue.toInt();
@@ -371,15 +385,17 @@ QString NavSearch::formatModelData(const Column *col, int row, const QVariant& d
     else if(freq >= 10000 && freq <= 120000)
       return QLocale().toString(static_cast<float>(freq) / 100.f, 'f', 1);
     else
-      return "Invalid";
+      return QStringLiteral("Invalid");
   }
-  else if(col->getColumnName() == "mag_var")
+  else if(col->getColumnName() == QStringLiteral("mag_var"))
     return map::magvarText(displayRoleValue.toFloat(), true /* shortText */, false /* degSign */);
-  else if(displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned int>())
     return QLocale().toString(displayRoleValue.toInt());
-  else if(displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() == QVariant::ULongLong)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>())
     return QLocale().toString(displayRoleValue.toLongLong());
-  else if(displayRoleValue.type() == QVariant::Double)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<double>())
     return QLocale().toString(displayRoleValue.toDouble());
 
   return displayRoleValue.toString();
@@ -397,15 +413,15 @@ void NavSearch::getSelectedMapObjects(map::MapResult& result) const
     for(int row = rng.top(); row <= rng.bottom(); ++row)
     {
       // All objects are fully populated
-      map::MapTypes type = map::navTypeToMapType(controller->getRawData(row, "nav_type").toString());
+      map::MapTypes type = map::navTypeToMapType(controller->getRawData(row, QStringLiteral("nav_type")).toString());
       QVariant idVar;
 
       if(type == map::WAYPOINT)
-        idVar = controller->getRawData(row, "waypoint_id");
+        idVar = controller->getRawData(row, QStringLiteral("waypoint_id"));
       else if(type == map::NDB)
-        idVar = controller->getRawData(row, "ndb_id");
+        idVar = controller->getRawData(row, QStringLiteral("ndb_id"));
       else if(type == map::VOR)
-        idVar = controller->getRawData(row, "vor_id");
+        idVar = controller->getRawData(row, QStringLiteral("vor_id"));
 
       if(idVar.isValid())
         mapQuery->getMapObjectById(result, type, map::AIRSPACE_SRC_NONE, idVar.toInt(), false /* airportFromNavDatabase */);
@@ -443,9 +459,9 @@ void NavSearch::updateButtonMenu()
 
   // Change state of show all action
   ui->actionNavSearchShowAllOptions->blockSignals(true);
-  if(atools::gui::util::allChecked(menus))
+  if(atools::gui::allChecked(menus))
     ui->actionNavSearchShowAllOptions->setChecked(true);
-  else if(atools::gui::util::noneChecked(menus))
+  else if(atools::gui::noneChecked(menus))
     ui->actionNavSearchShowAllOptions->setChecked(false);
   else
     ui->actionNavSearchShowAllOptions->setChecked(false);
@@ -454,15 +470,15 @@ void NavSearch::updateButtonMenu()
   // Show star in action for all widgets that are not in default state
   bool distanceSearchChanged = false;
   if(columns->isDistanceCheckBoxChecked())
-    distanceSearchChanged = atools::gui::util::anyWidgetChanged({ui->horizontalLayoutNavDistanceSearch});
+    distanceSearchChanged = atools::gui::anyWidgetChanged({ui->horizontalLayoutNavDistanceSearch});
 
-  atools::gui::util::changeIndication(ui->actionNavSearchShowDistOptions, distanceSearchChanged);
+  atools::gui::changeIndication(ui->actionNavSearchShowDistOptions, distanceSearchChanged);
 
-  atools::gui::util::changeIndication(ui->actionNavSearchShowTypeOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->gridLayoutNavSearchType}));
+  atools::gui::changeIndication(ui->actionNavSearchShowTypeOptions,
+                                atools::gui::anyWidgetChanged({ui->gridLayoutNavSearchType}));
 
-  atools::gui::util::changeIndication(ui->actionNavSearchShowSceneryOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->horizontalLayoutNavScenerySearch}));
+  atools::gui::changeIndication(ui->actionNavSearchShowSceneryOptions,
+                                atools::gui::anyWidgetChanged({ui->horizontalLayoutNavScenerySearch}));
 
   if(controller->isRestoreFinished())
     controller->rebuildQuery();
@@ -474,7 +490,20 @@ void NavSearch::updatePushButtons()
   ui->pushButtonNavSearchClearSelection->setEnabled(sm != nullptr && sm->hasSelection());
 }
 
+void NavSearch::optionsChanged(const optc::OptionChangeFlags& changeFlags)
+{
+  SearchBaseTable::optionsChanged(changeFlags);
+  comboBoxHandler->setMenuTooltipsVisible(NavApp::isMenuToolTipsVisible());
+}
+
 QAction *NavSearch::followModeAction()
 {
   return ui->actionSearchNavaidFollowSelection;
+}
+
+void NavSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_NAV_VIEW_WIDGET).clear(ui->tableViewNavSearch);
+  SearchBaseTable::resetView();
 }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,10 @@
 #include <QDateTime>
 #include <QObject>
 #include <QTimer>
+
+#ifdef QT_CORE5COMPAT_LIB
+class QTextCodec;
+#endif
 
 class MapLayer;
 
@@ -60,9 +64,6 @@ struct MapResult;
 
 }
 
-class MainWindow;
-class QTextCodec;
-
 /*
  * Manages recurring download of online network data from the status.txt and whazzup.txt files.
  * Uses options to determine how to download data.
@@ -73,7 +74,7 @@ class OnlinedataController :
   Q_OBJECT
 
 public:
-  explicit OnlinedataController(atools::fs::online::OnlinedataManager *onlineManager, MainWindow *parent);
+  explicit OnlinedataController(atools::fs::online::OnlinedataManager *onlineManager, QWidget *parent);
   virtual ~OnlinedataController() override;
 
   OnlinedataController(const OnlinedataController& other) = delete;
@@ -190,7 +191,7 @@ private:
   /* Downloader for all files */
   atools::util::HttpDownloader *downloader;
 
-  MainWindow *mainWindow;
+  QWidget *parentWidget;
 
   /* State is set before triggering the download and clear on the last download in the chain.
    *  Set to NONE while timeout for whazzup download is running. */
@@ -223,7 +224,9 @@ private:
 
   QString whazzupUrlFromStatus;
 
-  QTextCodec *codec = nullptr;
+#ifdef QT_CORE5COMPAT_LIB
+  QTextCodec *codecWin1252 = nullptr;
+#endif
 
   bool verbose = false;
 

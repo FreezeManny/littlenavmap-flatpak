@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,14 @@
 
 #include "atools.h"
 #include "common/constants.h"
+#include "common/mapmarkers.h"
 #include "gui/actionbuttonhandler.h"
 #include "gui/choicedialog.h"
 #include "gui/dialog.h"
 #include "gui/mainwindow.h"
 #include "logbook/logdatacontroller.h"
-#include "mapgui/mapwidget.h"
 #include "app/navapp.h"
+#include "mapgui/mapwidget.h"
 #include "options/optiondata.h"
 #include "perf/aircraftperfcontroller.h"
 #include "route/routecontroller.h"
@@ -93,27 +94,32 @@ void MapMarkHandler::resetSettingsToDefault()
 
 void MapMarkHandler::clearRangeRings() const
 {
-  clearRangeRingsAndDistanceMarkers(false /* quiet */, map::MARK_RANGE);
+  clearMarkers(false /* quiet */, map::MARK_RANGE);
 }
 
 void MapMarkHandler::clearDistanceMarkers() const
 {
-  clearRangeRingsAndDistanceMarkers(false /* quiet */, map::MARK_DISTANCE);
+  clearMarkers(false /* quiet */, map::MARK_DISTANCE);
 }
 
 void MapMarkHandler::clearHoldings() const
 {
-  clearRangeRingsAndDistanceMarkers(false /* quiet */, map::MARK_HOLDING);
+  clearMarkers(false /* quiet */, map::MARK_HOLDING);
 }
 
 void MapMarkHandler::clearPatterns() const
 {
-  clearRangeRingsAndDistanceMarkers(false /* quiet */, map::MARK_PATTERNS);
+  clearMarkers(false /* quiet */, map::MARK_PATTERNS);
 }
 
 void MapMarkHandler::clearMsa() const
 {
-  clearRangeRingsAndDistanceMarkers(false /* quiet */, map::MARK_MSA);
+  clearMarkers(false /* quiet */, map::MARK_MSA);
+}
+
+void MapMarkHandler::clearAllMarkers() const
+{
+  clearMarkers(false /* quiet */, map::MARK_ALL);
 }
 
 void MapMarkHandler::addToolbarButton()
@@ -125,7 +131,7 @@ void MapMarkHandler::addToolbarButton()
   // Create and add toolbar button =====================================
   toolButton->setIcon(QIcon(":/littlenavmap/resources/icons/userfeatures.svg"));
   toolButton->setPopupMode(QToolButton::InstantPopup);
-  toolButton->setToolTip(tr("Select user features like range rings or holdings for display"));
+  toolButton->setToolTip(tr("Select map markers like range rings or holdings for display"));
   toolButton->setStatusTip(toolButton->toolTip());
   toolButton->setCheckable(true);
 
@@ -138,21 +144,21 @@ void MapMarkHandler::addToolbarButton()
   ui->toolBarMapOptions->addWidget(toolButton);
 
   // Create and add actions to toolbar and menu =================================
-  actionAll = new QAction(tr("&All User Features"), buttonMenu);
-  actionAll->setToolTip(tr("Toggle all / current selection of user features"));
+  actionAll = new QAction(tr("&All Map Markers"), buttonMenu);
+  actionAll->setToolTip(tr("Toggle all / current selection of map markers"));
   actionAll->setStatusTip(actionAll->toolTip());
   buttonMenu->addAction(actionAll);
   buttonHandler->setAllAction(actionAll);
-  ui->menuViewUserFeatures->addAction(actionAll);
+  ui->menuViewMarkers->addAction(actionAll);
 
-  actionNone = new QAction(tr("&No User Features"), buttonMenu);
-  actionNone->setToolTip(tr("Toggle none / current selection of user features"));
+  actionNone = new QAction(tr("&No Map Markers"), buttonMenu);
+  actionNone->setToolTip(tr("Toggle none / current selection of map markers"));
   actionNone->setStatusTip(actionNone->toolTip());
   buttonMenu->addAction(actionNone);
   buttonHandler->setNoneAction(actionNone);
-  ui->menuViewUserFeatures->addAction(actionNone);
+  ui->menuViewMarkers->addAction(actionNone);
 
-  ui->menuViewUserFeatures->addSeparator();
+  ui->menuViewMarkers->addSeparator();
   buttonMenu->addSeparator();
 
   actionRangeRings = addAction(":/littlenavmap/resources/icons/rangerings.svg", tr("&Range Rings"), tr("Show or hide range rings"));
@@ -164,8 +170,8 @@ void MapMarkHandler::addToolbarButton()
   actionAirportMsa = addAction(":/littlenavmap/resources/icons/msa.svg", tr("&MSA Diagrams"), tr("Show or hide MSA sector diagrams"));
 
   // Connect all action signals to same handler method
-  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionAllTriggered, this, &MapMarkHandler::toolbarActionTriggered);
-  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionNoneTriggered, this, &MapMarkHandler::toolbarActionTriggered);
+  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionAllTriggered, this, &MapMarkHandler::toolbarActionAllTriggered);
+  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionNoneTriggered, this, &MapMarkHandler::toolbarActionNoneTriggered);
   connect(buttonHandler, &atools::gui::ActionButtonHandler::actionOtherTriggered, this, &MapMarkHandler::toolbarActionTriggered);
 }
 
@@ -178,7 +184,7 @@ QAction *MapMarkHandler::addAction(const QString& icon, const QString& text, con
 
   buttonHandler->addOtherAction(action);
   toolButton->menu()->addAction(action);
-  NavApp::getMainUi()->menuViewUserFeatures->addAction(action);
+  NavApp::getMainUi()->menuViewMarkers->addAction(action);
 
   return action;
 }
@@ -187,6 +193,22 @@ void MapMarkHandler::toolbarActionTriggered(QAction *)
 {
   actionsToFlags();
   toolButton->setChecked(markTypes & map::MARK_ALL);
+  emit updateMarkTypes(markTypes);
+}
+
+void MapMarkHandler::toolbarActionAllTriggered(QAction *)
+{
+  markTypes = map::MARK_ALL;
+  flagsToActions();
+  toolButton->setChecked(true);
+  emit updateMarkTypes(markTypes);
+}
+
+void MapMarkHandler::toolbarActionNoneTriggered(QAction *)
+{
+  markTypes = map::NONE;
+  flagsToActions();
+  toolButton->setChecked(false);
   emit updateMarkTypes(markTypes);
 }
 
@@ -236,24 +258,41 @@ QStringList MapMarkHandler::mapFlagTexts(map::MapTypes types) const
   return featureStr;
 }
 
-void MapMarkHandler::clearRangeRingsAndDistanceMarkers(bool quiet, map::MapTypes types) const
+void MapMarkHandler::clearMarkers(bool quiet, map::MapType types) const
 {
   if(!quiet)
   {
-    // Only one type ========================
+    QString settingsKey;
+
+    if(types == map::MARK_ALL)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_MARKS;
+    else if(types == map::MARK_RANGE)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_RANGEMARKS;
+    else if(types == map::MARK_DISTANCE)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_DISTANCEMARKS;
+    else if(types == map::MARK_HOLDING)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_HOLDINGMARKS;
+    else if(types == map::MARK_PATTERNS)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_PATTERNMARKS;
+    else if(types == map::MARK_MSA)
+      settingsKey = lnm::ACTIONS_SHOW_DELETE_MSAMARKS;
+
     QString text = atools::strJoin(mapFlagTexts(types), tr(", "), tr(" and "));
-    int result = atools::gui::Dialog(mainWindow).showQuestionMsgBox(lnm::ACTIONS_SHOW_DELETE_MARKS + QString::number(types),
-                                                                    tr("Delete all %1 from map?").arg(text),
+    int result = atools::gui::Dialog(mainWindow).showQuestionMsgBox(settingsKey,
+                                                                    tr("Delete all %1 from map?\n\n"
+                                                                       "Note that this cannot be undone.").arg(text),
                                                                     tr("Do not &show this dialog again."),
                                                                     QMessageBox::Yes | QMessageBox::No,
                                                                     QMessageBox::No, QMessageBox::Yes);
 
     if(result == QMessageBox::Yes)
-      NavApp::getMapWidgetGui()->clearAllMarkers(types);
+      NavApp::getMapMarkers()->clear(types);
   }
   else
     // More than one type from choice dialog
-    NavApp::getMapWidgetGui()->clearAllMarkers(types);
+    NavApp::getMapMarkers()->clear(types);
+
+  mainWindow->updateMarkActionStates();
 }
 
 void MapMarkHandler::routeResetAll()
@@ -272,7 +311,7 @@ void MapMarkHandler::routeResetAll()
   choiceDialog.setHelpOnlineUrl(lnm::helpOnlineUrl);
   choiceDialog.setHelpLanguageOnline(lnm::helpLanguageOnline());
 
-  choiceDialog.addCheckBox(EMPTY_FLIGHT_PLAN, tr("&Create an empty flight plan"), QString(), true /* checked */);
+  choiceDialog.addCheckBox(EMPTY_FLIGHT_PLAN, tr("&Create an empty flight plan"), QStringLiteral(), true /* checked */);
 
   choiceDialog.addLine();
   choiceDialog.addCheckBox(DELETE_TRAIL, tr("&Delete user aircraft trail"),
@@ -285,12 +324,12 @@ void MapMarkHandler::routeResetAll()
                            tr("Reset the logbook to detect takeoff and landing for new logbook entries"), true /* checked */);
 
   choiceDialog.addLine();
-  choiceDialog.addLabel(tr("Remove user features placed on map:"));
-  choiceDialog.addCheckBox(REMOVE_MARK_RANGE, tr("&Range rings"), QString(), false /* checked */);
-  choiceDialog.addCheckBox(REMOVE_MARK_DISTANCE, tr("&Measurement lines"), QString(), false /* checked */);
-  choiceDialog.addCheckBox(REMOVE_MARK_HOLDING, tr("&Holdings"), QString(), false /* checked */);
-  choiceDialog.addCheckBox(REMOVE_MARK_PATTERNS, tr("&Traffic patterns"), QString(), false /* checked */);
-  choiceDialog.addCheckBox(REMOVE_MARK_MSA, tr("&MSA diagrams"), QString(), false /* checked */);
+  choiceDialog.addLabel(tr("Remove map markers placed on map:"));
+  choiceDialog.addCheckBox(REMOVE_MARK_RANGE, tr("&Range rings"), QStringLiteral(), false /* checked */);
+  choiceDialog.addCheckBox(REMOVE_MARK_DISTANCE, tr("&Measurement lines"), QStringLiteral(), false /* checked */);
+  choiceDialog.addCheckBox(REMOVE_MARK_HOLDING, tr("&Holdings"), QStringLiteral(), false /* checked */);
+  choiceDialog.addCheckBox(REMOVE_MARK_PATTERNS, tr("&Traffic patterns"), QStringLiteral(), false /* checked */);
+  choiceDialog.addCheckBox(REMOVE_MARK_MSA, tr("&MSA diagrams"), QStringLiteral(), false /* checked */);
   choiceDialog.addSpacer();
   choiceDialog.setRequiredAnyChecked({EMPTY_FLIGHT_PLAN, DELETE_TRAIL, DELETE_ACTIVE_LEG, RESTART_PERF, RESTART_LOGBOOK, REMOVE_MARK_RANGE,
                                       REMOVE_MARK_DISTANCE, REMOVE_MARK_HOLDING, REMOVE_MARK_PATTERNS, REMOVE_MARK_MSA});
@@ -325,6 +364,6 @@ void MapMarkHandler::routeResetAll()
     types.setFlag(map::MARK_MSA, choiceDialog.isButtonChecked(REMOVE_MARK_MSA));
 
     if(types != map::NONE)
-      clearRangeRingsAndDistanceMarkers(true /* quiet */, types);
+      clearMarkers(true /* quiet */, types);
   }
 }

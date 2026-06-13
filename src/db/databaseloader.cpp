@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 #include "fs/navdatabaseprogress.h"
 #include "gui/errorhandler.h"
 #include "gui/textdialog.h"
+#include "options/optiondata.h"
 #include "options/optionsdialog.h"
 #include "settings/settings.h"
 #include "sql/sqldatabase.h"
@@ -172,7 +173,7 @@ void DatabaseLoader::loadScenery()
   }
 
   // Get configuration file path from resources or overloaded path
-  QString config = Settings::getOverloadedPath(lnm::DATABASE_NAVDATAREADER_CONFIG);
+  QString config = Settings::getOverloadedPath(lnm::NAVDATAREADER_CONFIG);
   qInfo() << Q_FUNC_INFO << "Config file" << config << "Database" << compileDb->databaseName();
 
   dbtools::openDatabaseFile(compileDb, dbFilename, false /* readonly */, true /* createSchema */);
@@ -194,15 +195,15 @@ void DatabaseLoader::loadScenery()
 
   // Add include directories ================================================
   for(const QString& path : optionData.getDatabaseInclude())
-    navDatabaseOpts->addIncludeGui(path);
+    navDatabaseOpts->addIncludeGui(QFileInfo(path));
 
   // Add excludes for files and directories ================================================
   for(const QString& path : optionData.getDatabaseExclude())
-    navDatabaseOpts->addExcludeGui(path);
+    navDatabaseOpts->addExcludeGui(QFileInfo(path));
 
   // Add add-on excludes for files and directories ================================================
   for(const QString& path : optionData.getDatabaseAddonExclude())
-    navDatabaseOpts->addAddonExcludeGui(path);
+    navDatabaseOpts->addAddonExcludeGui(QFileInfo(path));
 
   // Select simulator db to load
   navDatabaseOpts->setSimulatorType(selectedFsType);
@@ -213,15 +214,15 @@ void DatabaseLoader::loadScenery()
   progressDialog = new DatabaseProgressDialog(nullptr, atools::fs::FsPaths::typeToShortDisplayName(selectedFsType));
 
   // Add to dock handler to enable auto raise and closing on exit as well as applying stay-on-top status from main
-  NavApp::addDialogToDockHandler(progressDialog);
+  NavApp::registerDialogInDockHandler(progressDialog);
 
   QString basePath = simulators.value(selectedFsType).basePath;
   navDatabaseOpts->setSceneryFile(simulators.value(selectedFsType).sceneryCfg);
   navDatabaseOpts->setBasepath(basePath);
 
   // Clear defaults
-  navDatabaseOpts->setMsfsCommunityPath(QString());
-  navDatabaseOpts->setMsfsOfficialPath(QString());
+  navDatabaseOpts->setMsfsCommunityPath(QStringLiteral());
+  navDatabaseOpts->setMsfsOfficialPath(QStringLiteral());
 
   // Set MSFS pecularities
   if(selectedFsType == atools::fs::FsPaths::MSFS)
@@ -236,17 +237,19 @@ void DatabaseLoader::loadScenery()
 
   // Initial text
   progressDialog->setLabelText(databaseTimeText.arg(tr("Counting files ...")).
-                               arg(QString()).arg(QString()).arg(QString()).arg(0).arg(0).arg(0).arg(0).arg(0).arg(0).arg(0).arg(0).arg(0));
+                               arg(QStringLiteral()).arg(QStringLiteral()).arg(QStringLiteral()).arg(0).arg(0).arg(0).arg(0).arg(0).arg(
+                                 0).arg(0).arg(0).arg(0));
 
   // Dialog does not close when clicking cancel
   progressDialog->show();
 
   navDatabaseOpts->setProgressCallback(std::bind(&DatabaseLoader::progressCallbackThread, this, std::placeholders::_1));
   navDatabaseOpts->setCallDefaultCallback(true);
+  navDatabaseOpts->setTimeZoneDatabase(lnm::TIMEZONE_DATABASE);
 
   // ==================================================================================
   // Compile navdata in background ==================================================================
-  atools::fs::NavDatabase navDatabase(navDatabaseOpts, compileDb, navDatabaseErrors, GIT_REVISION_LITTLENAVMAP);
+  atools::fs::NavDatabase navDatabase(*navDatabaseOpts, *compileDb, navDatabaseErrors, GIT_REVISION_LITTLENAVMAP);
 
   // Load MSFS 2024 SimConnect DLL since only this can be used to fetch facilities
   // The library will be freed after loading in compileDatabasePost()
@@ -255,7 +258,7 @@ void DatabaseLoader::loadScenery()
   navDatabase.setActivationContext(activationContext, lnm::SIMCONNECT_LOADER_DLL_NAME);
 
   // resultFlags = navDatabase.compileDatabase();
-  future = QtConcurrent::run(navDatabase, &atools::fs::NavDatabase::compileDatabase);
+  future = QtConcurrent::run(&atools::fs::NavDatabase::compileDatabase, navDatabase);
 
   // Calls DatabaseLoader::compileDatabasePost()
   watcher.setFuture(future);
@@ -282,7 +285,7 @@ void DatabaseLoader::compileDatabasePost()
   {
     // Show dialog if something went wrong but do not exit program
     ErrorHandler(progressDialog).handleException(e, currentBglFilePath.isEmpty() ?
-                                                 QString() : tr("Processed files:\n%1\n").arg(currentBglFilePath));
+                                                 QStringLiteral() : tr("Processed files:\n%1\n").arg(currentBglFilePath));
     resultFlagsShared |= atools::fs::COMPILE_FAILED;
   }
 
@@ -307,9 +310,11 @@ void DatabaseLoader::compileDatabasePost()
       resultFlagsShared.setFlag(atools::fs::COMPILE_CANCELED);
     else if(result == QDialog::Accepted)
     {
+      QWidget *mainwindow = NavApp::getQMainWidget();
       // Use database clicked - raise main window
-      NavApp::getQMainWidget()->activateWindow();
-      NavApp::getQMainWidget()->raise();
+      mainwindow->setWindowState((mainwindow->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+      mainwindow->activateWindow();
+      mainwindow->raise();
     }
 
   }
@@ -353,8 +358,8 @@ void DatabaseLoader::progressCallback()
       progressDialog->setLabelText(
         databaseTimeText.arg(atools::elideTextShortMiddle(navDatabaseProgressShared->getOtherAction(), MAX_TEXT_LENGTH)).
         arg(formatter::formatElapsed(timer)).
-        arg(QString()).
-        arg(QString()).
+        arg(QStringLiteral()).
+        arg(QStringLiteral()).
         arg(navDatabaseProgressShared->getNumErrors()).
         arg(navDatabaseProgressShared->getNumFiles()).
         arg(navDatabaseProgressShared->getNumAirports()).
@@ -405,8 +410,8 @@ void DatabaseLoader::progressCallback()
       progressDialog->setLabelText(
         databaseTimeText.arg(tr("<big>Done.</big>")).
         arg(formatter::formatElapsed(timer)).
-        arg(QString()).
-        arg(QString()).
+        arg(QStringLiteral()).
+        arg(QStringLiteral()).
         arg(navDatabaseProgressShared->getNumErrors()).
         arg(navDatabaseProgressShared->getNumFiles()).
         arg(navDatabaseProgressShared->getNumAirports()).
@@ -586,7 +591,7 @@ void DatabaseLoader::loadSceneryStop()
 
 void DatabaseLoader::deleteProgressDialog()
 {
-  NavApp::removeDialogFromDockHandler(progressDialog);
+  NavApp::unregisterDialogInDockHandler(progressDialog);
   delete progressDialog;
   progressDialog = nullptr;
 }

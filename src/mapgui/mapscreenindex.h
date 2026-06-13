@@ -77,6 +77,7 @@ class GeoDataLatLonBox;
 class MapPaintWidget;
 class MapPaintLayer;
 class CoordinateConverter;
+class MapMarkers;
 
 /*
  * Keeps an indes of certain map objects like flight plan lines, airway lines in screen coordinates
@@ -136,6 +137,9 @@ public:
   void saveState() const;
   void restoreState();
 
+  /* true if range rings, measurments or other markers are loaded */
+  bool hasAnyMapMarkers() const;
+
   /* Get objects that are highlighted because of selected flight plan legs in the table */
   const QList<int>& getRouteHighlights() const
   {
@@ -156,12 +160,12 @@ public:
   }
 
   /* Multiple procedures and legs preview from search */
-  const QVector<proc::MapProcedureLegs>& getProcedureHighlights() const
+  const QList<proc::MapProcedureLegs>& getProcedureHighlights() const
   {
     return procedureHighlights;
   }
 
-  void setProcedureHighlights(const QVector<proc::MapProcedureLegs>& value);
+  void setProcedureHighlights(const QList<proc::MapProcedureLegs>& value);
 
   /* Single procedure from search selection */
   const proc::MapProcedureLegs& getProcedureHighlight() const
@@ -179,65 +183,6 @@ public:
 
   void setProcedureLegHighlight(const proc::MapProcedureLeg& newLegHighlight);
 
-  /* Get range rings */
-  const QHash<int, map::RangeMarker>& getRangeMarks() const
-  {
-    return rangeMarks;
-  }
-
-  /* Get distance measurement lines */
-  const QHash<int, map::DistanceMarker>& getDistanceMarks() const
-  {
-    return distanceMarks;
-  }
-
-  /* Get for editing */
-  map::DistanceMarker& getDistanceMark(int id)
-  {
-    return distanceMarks[id];
-  }
-
-  /* Airfield traffic patterns. */
-  const QHash<int, map::PatternMarker>& getPatternMarks() const
-  {
-    return patternMarks;
-  }
-
-  /* Holdings. */
-  const QHash<int, map::HoldingMarker>& getHoldingMarks() const
-  {
-    return holdingMarks;
-  }
-
-  /* Airport MSA. */
-  const QHash<int, map::MsaMarker>& getMsaMarks() const
-  {
-    return msaMarks;
-  }
-
-  /* Add user features. Id has to be set before. */
-  void addRangeMark(const map::RangeMarker& obj);
-  void addPatternMark(const map::PatternMarker& obj);
-  void addDistanceMark(const map::DistanceMarker& obj);
-  void addHoldingMark(const map::HoldingMarker& obj);
-  void addMsaMark(const map::MsaMarker& obj);
-
-  /* Remove user features by generated id */
-  void removeRangeMark(int id);
-  void removePatternMark(int id);
-  void removeDistanceMark(int id);
-  void removeHoldingMark(int id);
-  void removeMsaMark(int id);
-
-  void clearAllMarkers(map::MapTypes types);
-
-  /* Update measurement lines positions */
-  void updateDistanceMarkerFromPos(int id, const atools::geo::Pos& pos);
-  void updateDistanceMarkerToPos(int id, const atools::geo::Pos& pos);
-
-  /* Update measurement lines all fields except id where the parameter is used. */
-  void updateDistanceMarker(int id, const map::DistanceMarker& marker);
-
   // ====================
   const atools::fs::sc::SimConnectUserAircraft& getUserAircraft() const;
 
@@ -248,7 +193,7 @@ public:
 
   const atools::fs::sc::SimConnectUserAircraft& getLastUserAircraft() const;
 
-  const QVector<atools::fs::sc::SimConnectAircraft>& getAiAircraft() const;
+  const QList<atools::fs::sc::SimConnectAircraft>& getAiAircraft() const;
 
   void clearSimData();
 
@@ -261,6 +206,11 @@ public:
   const atools::geo::Pos& getProfileHighlight() const;
 
   const QList<map::MapAirspace>& getAirspaceHighlights() const
+  {
+    return airspaceHighlights;
+  }
+
+  QList<map::MapAirspace>& getAirspaceHighlights()
   {
     return airspaceHighlights;
   }
@@ -286,12 +236,12 @@ public:
     return airwayLines;
   }
 
-  const QVector<map::MapRef>& getRouteDrawnNavaidsConst() const
+  const QList<map::MapRef>& getRouteDrawnNavaidsConst() const
   {
     return routeDrawnNavaids;
   }
 
-  QVector<map::MapRef> *getRouteDrawnNavaids()
+  QList<map::MapRef> *getRouteDrawnNavaids()
   {
     return &routeDrawnNavaids;
   }
@@ -299,16 +249,26 @@ public:
   /* Get average ground speed and turn speed in degrees per second for user aircraft. Average is calculated for 2 seconds. */
   void getAverageGroundAndTurnSpeed(float& groundSpeedKts, float& turnSpeedDegPerSec) const;
 
+  MapMarkers *getMapMarkers()
+  {
+    return markers;
+  }
+
+  const MapMarkers *getMapMarkers() const
+  {
+    return markers;
+  }
+
 private:
   void getNearestAirways(int xs, int ys, int maxDistance, map::MapResult& result) const;
   void getNearestLogEntries(int xs, int ys, int maxDistance, map::MapResult& result) const;
 
   void getNearestIls(int xs, int ys, int maxDistance, map::MapResult& result) const;
   void getNearestAirspaces(int xs, int ys, map::MapResult& result) const;
-  void getNearestHighlights(int xs, int ys, int maxDistance, map::MapResult& result, map::MapObjectQueryTypes types) const;
+  void getNearestHighlightsAndMarkers(int xs, int ys, int maxDistance, map::MapResult& result, map::MapObjectQueryTypes types) const;
   void getNearestProcedureHighlights(int xs, int ys, int maxDistance, map::MapResult& result, map::MapObjectQueryTypes types) const;
   void nearestProcedureHighlightsInternal(int xs, int ys, int maxDistance, map::MapResult& result, map::MapObjectQueryTypes types,
-                                          const QVector<proc::MapProcedureLegs>& procedureLegs, bool previewAll) const;
+                                          const QList<proc::MapProcedureLegs>& procedureLegs, bool previewAll) const;
   void updateAirspaceScreenGeometryInternal(QSet<map::MapAirspaceId>& ids, map::MapAirspaceSources source,
                                             const Marble::GeoDataLatLonBox& curBox, bool highlights);
   void updateAirwayScreenGeometryInternal(QSet<int>& ids, const Marble::GeoDataLatLonBox& curBox, bool highlight);
@@ -323,6 +283,9 @@ private:
 
   template<typename TYPE>
   int getNearestId(int xs, int ys, int maxDistance, const QHash<int, TYPE>& typeList) const;
+
+  template<typename TYPE>
+  int getNearestId(int xs, int ys, int maxDistance, const QMap<int, TYPE>& typeList) const;
 
   atools::fs::sc::SimConnectData *simData, *lastSimData;
 
@@ -342,7 +305,7 @@ private:
 
   /* Cleared before and filled while painting with all navaids that were actually painted from route and procedures including recommended.
    * This includes route userpoints */
-  QVector<map::MapRef> routeDrawnNavaids;
+  QList<map::MapRef> routeDrawnNavaids;
 
   /* One procedure highlight from selection */
   proc::MapProcedureLeg *procedureLegHighlight = nullptr;
@@ -350,7 +313,7 @@ private:
   proc::MapProcedureLegs *procedureHighlight = nullptr;
 
   /* Highlights or leg fix and related fix */
-  QVector<proc::MapProcedureLegs> procedureHighlights;
+  QList<proc::MapProcedureLegs> procedureHighlights;
 
   /* All airspace highlights from information window */
   QList<map::MapAirspace> airspaceHighlights;
@@ -365,11 +328,7 @@ private:
   QList<int> routeHighlights;
 
   /* Objects that will be saved */
-  QHash<int, map::RangeMarker> rangeMarks;
-  QHash<int, map::DistanceMarker> distanceMarks;
-  QHash<int, map::PatternMarker> patternMarks;
-  QHash<int, map::HoldingMarker> holdingMarks;
-  QHash<int, map::MsaMarker> msaMarks;
+  MapMarkers *markers;
 
   /* Cached screen coordinates for flight plan to ease mouse cursor change. */
   QList<std::pair<int, QLine> > routeLines;

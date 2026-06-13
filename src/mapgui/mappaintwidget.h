@@ -20,6 +20,7 @@
 
 #include "common/mapflags.h"
 #include "geo/pos.h"
+#include "options/optionchangeflags.h"
 #include "query/querymanager.h"
 
 #include <marble/GeoDataLatLonAltBox.h>
@@ -61,9 +62,10 @@ class SimConnectData;
 class MainWindow;
 class MapPaintLayer;
 class MapScreenIndex;
-class ApronGeometryCache;
+class MapCache;
 class MapLayer;
 class AircraftTrail;
+class MapMarkers;
 
 namespace proc {
 struct MapProcedureLeg;
@@ -129,7 +131,7 @@ public:
 
   /* Update procedure highlights, update screen index and redraw map */
   void changeProcedureHighlight(const proc::MapProcedureLegs& procedure);
-  void changeProcedureHighlights(const QVector<proc::MapProcedureLegs>& procedures);
+  void changeProcedureHighlights(const QList<proc::MapProcedureLegs>& procedures);
   void changeProcedureLegHighlight(const proc::MapProcedureLeg& procedureLeg);
 
   /* Update route screen coordinate index */
@@ -163,20 +165,10 @@ public:
 
   /* Procedure preview. Delegates to map screen index. */
   const proc::MapProcedureLegs& getProcedureHighlight() const;
-  const QVector<proc::MapProcedureLegs>& getProcedureHighlights() const;
+  const QList<proc::MapProcedureLegs>& getProcedureHighlights() const;
   const proc::MapProcedureLeg& getProcedureLegHighlight() const;
 
   const QList<int>& getRouteHighlights() const;
-
-  const QHash<int, map::RangeMarker>& getRangeMarks() const;
-  const QHash<int, map::DistanceMarker>& getDistanceMarks() const;
-  const QHash<int, map::PatternMarker>& getPatternsMarks() const;
-  const QHash<int, map::HoldingMarker>& getHoldingMarks() const;
-  const QHash<int, map::MsaMarker>& getMsaMarks() const;
-
-  /* Get pointers to the wrapped map objects from holdings and MSA. */
-  QList<map::MapHolding> getHoldingMarksFiltered() const;
-  QList<map::MapAirportMsa> getMsaMarksFiltered() const;
 
   const atools::geo::Pos& getProfileHighlight() const;
 
@@ -185,6 +177,9 @@ public:
 
   /* true if any highlighting circles are to be drawn on the map */
   bool hasHighlights() const;
+
+  /* true if range rings, measurments or other markers are loaded */
+  bool hasAnyMapMarkers() const;
 
   const AircraftTrail& getAircraftTrail() const
   {
@@ -196,13 +191,17 @@ public:
     return *aircraftTrailLogbook;
   }
 
+  /* Current size */
   int getAircraftTrailSize() const;
+
+  /* Maximum entries stored in trail */
+  int getMaxStoredTrailEntries() const;
 
   /* Disconnect painter to avoid updates while no data is available */
   void preDatabaseLoad();
 
   /* Changes in options dialog */
-  virtual void optionsChanged();
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
   /* GUI style has changed */
   void styleChanged();
@@ -232,14 +231,13 @@ public:
   const map::MapDisplayTypes getShownMapDisplayTypes() const;
   const map::MapAirspaceFilter& getShownAirspaces() const;
   const map::MapAirspaceFilter getShownAirspaceTypesForLayer() const;
-  int getShownMinimumRunwayFt() const;
 
   /* User aircraft as shown on the map */
   const atools::fs::sc::SimConnectUserAircraft& getUserAircraft() const;
   const atools::fs::sc::SimConnectData& getSimConnectData() const;
 
   /* AI aircraft as shown on the map */
-  const QVector<atools::fs::sc::SimConnectAircraft>& getAiAircraft() const;
+  const QList<atools::fs::sc::SimConnectAircraft>& getAiAircraft() const;
 
   /* Get currently loaded KML file paths */
   const QStringList& getKmlFiles() const
@@ -267,8 +265,12 @@ public:
   const QList<map::MapAirspace>& getAirspaceHighlights() const;
   const QList<QList<map::MapAirway> >& getAirwayHighlights() const;
 
-  /* Highlights from info window */
+  /* Airspace highlights from info window */
   void clearAirspaceHighlights();
+  void clearAirspaceHighlightsNormal();
+  void clearAirspaceHighlightsOnline();
+
+  /* Airway highlights from info window */
   void clearAirwayHighlights();
 
   /* Avoids dark background when printing in night mode */
@@ -332,6 +334,7 @@ public:
     return noNavPaint;
   }
 
+  /* Dummy paint cycle without any navigation stuff. Just used to initialize Marble */
   void setNoNavPaint(bool value)
   {
     noNavPaint = value;
@@ -342,9 +345,21 @@ public:
     return paintCopyright;
   }
 
+  /* Paint copyright note into image */
   void setPaintCopyright(bool value)
   {
     paintCopyright = value;
+  }
+
+  bool isPaintNavigation() const
+  {
+    return paintNavigation;
+  }
+
+  /* Draw navigations aids like touch regions or not */
+  void setPaintNavigation(bool newPaintNavigation)
+  {
+    paintNavigation = newPaintNavigation;
   }
 
   bool isPaintWindHeader() const
@@ -352,12 +367,13 @@ public:
     return paintWindHeader;
   }
 
+  /* Paint wind header arrow and label */
   void setPaintWindHeader(bool value)
   {
     paintWindHeader = value;
   }
 
-  ApronGeometryCache *getApronGeometryCache();
+  MapCache *getMapCache();
 
   /* true if real map display widget - false if hidden for online services or other applications */
   bool isVisibleWidget() const
@@ -374,6 +390,9 @@ public:
     return screenIndex;
   }
 
+  MapMarkers *getMapMarkers();
+  const MapMarkers *getMapMarkers() const;
+
   MapPaintLayer *getMapPaintLayer()
   {
     return paintLayer;
@@ -389,9 +408,9 @@ public:
   /* Print all layers to debug channel */
   void dumpMapLayers() const;
 
-  const QVector<map::MapRef>& getRouteDrawnNavaidsConst() const;
+  const QList<map::MapRef>& getRouteDrawnNavaidsConst() const;
 
-  QVector<map::MapRef> *getRouteDrawnNavaids();
+  QList<map::MapRef> *getRouteDrawnNavaids();
 
   const QString& getCurrentThemeId() const
   {
@@ -401,7 +420,7 @@ public:
   /* Too many objects on map */
   bool isPaintOverflow() const;
 
-  /* Do not show anything above this zoom distance except user features */
+  /* Do not show anything above this zoom distance except map markers */
   bool isDistanceCutOff() const;
 
   /* Instances having web = true do not render additional stuff like navigation areas */
@@ -417,6 +436,7 @@ public:
   }
 
   atools::geo::Pos getGeoPos(const QPoint& screenPoint) const;
+  atools::geo::Pos getGeoPos(const QPointF& screenPoint) const;
 
   atools::geo::Pos getCenterPos() const
   {
@@ -453,7 +473,7 @@ protected:
   void centerRectOnMap(const atools::geo::Rect& rect, bool allowAdjust = true);
   void centerRectOnMap(const Marble::GeoDataLatLonBox& rect, bool allowAdjust);
 
-  const MapScreenIndex *getScreenIndexConst() const
+  const MapScreenIndex *getScreenIndex() const
   {
     return screenIndex;
   }
@@ -509,7 +529,7 @@ protected:
 
   virtual void resizeEvent(QResizeEvent *event) override;
 
-  void updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplayTypes oldDisplayTypes, int oldMinRunwayLength);
+  void updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplayTypes oldDisplayTypes, int oldMinRunwayLength, int oldMaxRunwayLength);
 
   /* If width and height of a bounding rect are smaller than this: Use show point */
   static constexpr float POS_IS_POINT_EPSILON_DEG = 0.0001f;
@@ -517,7 +537,7 @@ protected:
   static constexpr float MAX_ZOOM_RECT_DIAMETER_KM = 1000.f;
 
   /* Caches complex X-Plane apron geometry as objects in screen coordinates for faster painting. */
-  ApronGeometryCache *apronGeometryCache;
+  MapCache *mapCache;
 
   /* Keep the the overlays for the GUI widget from updating */
   bool ignoreOverlayUpdates = false;
@@ -554,6 +574,9 @@ protected:
 
   /* Paint copyright note into image */
   bool paintCopyright = true;
+
+  /* Paint navigation marks */
+  bool paintNavigation = true;
 
   /* Paint wind header arrow and label */
   bool paintWindHeader = true;

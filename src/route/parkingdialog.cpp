@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@
 #include "common/unit.h"
 #include "geo/calculations.h"
 #include "gui/helphandler.h"
-#include "gui/itemviewzoomhandler.h"
+#include "gui/widgetzoomhandler.h"
 #include "gui/tools.h"
 #include "gui/widgetstate.h"
 #include "query/airportquery.h"
@@ -82,12 +82,13 @@ public:
 ParkingDialog::ParkingDialog(QWidget *parent, const map::MapAirport& departureAirportParam)
   : QDialog(parent), ui(new Ui::ParkingDialog), departureAirport(departureAirportParam)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
 
-  zoomHandler = new atools::gui::ItemViewZoomHandler(ui->tableWidgetSelectParking);
+  zoomHandler = new atools::gui::WidgetZoomHandler(ui->tableWidgetSelectParking);
   atools::gui::adjustSelectionColors(ui->tableWidgetSelectParking);
 
   restoreState();
@@ -160,10 +161,10 @@ void ParkingDialog::updateTable()
       else if(p1.start.isValid())
       {
         // Compare start - first runways by name and then helipads by name
-        if(p1.start.type == p2.start.type)
+        if(p1.start.startType == p2.start.startType)
           return p1.start.runwayName < p2.start.runwayName;
         else
-          return p1.start.type > p2.start.type;
+          return p1.start.startType > p2.start.startType;
       }
     }
     // Sort runway before parking
@@ -189,7 +190,7 @@ void ParkingDialog::updateTable()
   for(int i = 0; i < startPositions.size(); i++)
   {
     const internal::StartPosition& startPos = startPositions.at(i);
-    QVector<QTableWidgetItem *> items(5, nullptr);
+    QList<QTableWidgetItem *> items(5, nullptr);
     if(startPos.airport.isValid())
     {
       // First airport entry =======================================================================
@@ -200,17 +201,19 @@ void ParkingDialog::updateTable()
     {
       // Parking position =======================================================================
       items[internal::NAME] =
-        new QTableWidgetItem(mapcolors::iconForParkingType(startPos.parking.type), map::parkingNameOrNumber(startPos.parking));
-      items[internal::TYPE] = new QTableWidgetItem(map::parkingTypeName(startPos.parking.type));
+        new QTableWidgetItem(mapcolors::iconForParkingType(startPos.parking.parkingType), map::parkingNameOrNumber(startPos.parking));
+      items[internal::TYPE] = new QTableWidgetItem(map::parkingTypeName(startPos.parking.parkingType));
       items[internal::SIZE] = new QTableWidgetItem(Unit::distShortFeet(startPos.parking.getRadius() * 2));
       items[internal::CODES] = new QTableWidgetItem(startPos.parking.airlineCodes.split(",").join(tr(", ")));
-      items[internal::FACILITIES] = new QTableWidgetItem(startPos.parking.jetway ? tr("Has Jetway") : QString());
+      items[internal::FACILITIES] = new QTableWidgetItem(startPos.parking.jetway ? tr("Has Jetway") : QStringLiteral());
     }
     else if(startPos.start.isValid())
     {
       // Other start position - runway or helipad ===============================================
+      QString name = startPos.start.isHelipad() ? QString::number(startPos.start.helipadNumber) : startPos.start.runwayName;
+
       items[internal::NAME] = new QTableWidgetItem(mapcolors::iconForStart(startPos.start),
-                                                   tr("%1 %2").arg(map::startType(startPos.start)).arg(startPos.start.runwayName));
+                                                   tr("%1 %2").arg(map::startType(startPos.start)).arg(name));
 
       if(!startPos.start.runwayName.isEmpty())
       {
@@ -234,7 +237,7 @@ void ParkingDialog::updateTable()
 
             // Fill runway attribute list
             QStringList atts;
-            if(runway.isLighted())
+            if(runway.hasEdgeLight())
               atts.append(tr("Lighted"));
             if(!end.secondary && runway.primaryClosed)
               atts.append(tr("Closed"));
@@ -248,7 +251,7 @@ void ParkingDialog::updateTable()
               for(const map::MapIls& ils : queries->getMapQuery()->getIlsByAirportAndRunway(departureAirport.ident, end.name))
                 atts.append(map::ilsTypeShort(ils));
             }
-            atts.removeAll(QString());
+            atts.removeAll(QStringLiteral());
             atts.removeDuplicates();
             items[internal::FACILITIES] = new QTableWidgetItem(atts.join(tr(",")));
           }
@@ -335,7 +338,7 @@ void ParkingDialog::updateTableSelection()
         (pos.parking.isValid() && parking.name == pos.parking.name && parking.number == pos.parking.number &&
          parking.suffix == pos.parking.suffix) ||
         // Start matches
-        (pos.start.isValid() && start.type == pos.start.type && start.runwayName == pos.start.runwayName) ||
+        (pos.start.isValid() && start.startType == pos.start.startType && start.runwayName == pos.start.runwayName) ||
         // Neither from route is valid and airport entry
         (!parking.isValid() && !start.isValid() && pos.airport.isValid()))
         ui->tableWidgetSelectParking->selectRow(row);

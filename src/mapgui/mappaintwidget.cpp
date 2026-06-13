@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -24,11 +24,12 @@
 #include "geo/aircrafttrail.h"
 #include "geo/calculations.h"
 #include "geo/marbleconverter.h"
-#include "mapgui/aprongeometrycache.h"
+#include "mapgui/mapcache.h"
 #include "mapgui/mapscreenindex.h"
 #include "mapgui/mapthemehandler.h"
 #include "mappainter/mappaintlayer.h"
 #include "marble/ViewportParams.h"
+#include "options/optiondata.h"
 #include "query/airwayquery.h"
 #include "query/airwaytrackquery.h"
 #include "query/mapquery.h"
@@ -51,14 +52,13 @@ const static double MINIMUM_DISTANCE_KM = 0.05;
 const static double MAXIMUM_DISTANCE_KM = 6000.;
 const static int MAXIMUM_ZOOM = 1120;
 
-/* Do not show anything above this zoom distance except user features */
+/* Do not show anything above this zoom distance except map markers */
 constexpr float DISTANCE_CUT_OFF_LIMIT_MERCATOR_KM = 10000.f;
 constexpr float DISTANCE_CUT_OFF_LIMIT_SPHERICAL_KM = 8000.f;
 
 // Placemark files to remove or add
 const static QStringList PLACEMARK_FILES_CACHE({
-  "baseplacemarks.cache", "boundaryplacemarks.cache", "cityplacemarks.cache", "elevplacemarks.cache",
-  "otherplacemarks.cache"});
+  "baseplacemarks.cache", "boundaryplacemarks.cache", "cityplacemarks.cache", "elevplacemarks.cache", "otherplacemarks.cache"});
 
 // Additional maps refer to KML files get rid of these too
 const static QStringList PLACEMARK_FILES_KML({
@@ -91,13 +91,13 @@ MapPaintWidget::MapPaintWidget(QWidget *parent, Queries *queriesParam, bool visi
   const OptionData& options = OptionData::instance();
 
   setSunShadingDimFactor(static_cast<double>(options.getDisplaySunShadingDimFactor()) / 100.);
-  avoidBlurredMap = options.getFlags2() & opts2::MAP_AVOID_BLURRED_MAP;
+  avoidBlurredMap = options.getFlags2().testFlag(opts2::MAP_AVOID_BLURRED_MAP);
 
   setFont(options.getMapFont());
 
   // Initialize the X-Plane apron geometry cache
-  apronGeometryCache = new ApronGeometryCache();
-  apronGeometryCache->setViewportParams(viewport());
+  mapCache = new MapCache();
+  mapCache->setViewportParams(viewport());
 
   paintLayer->initQueries();
 
@@ -112,7 +112,7 @@ MapPaintWidget::~MapPaintWidget()
   ATOOLS_DELETE_LOG(screenIndex);
   ATOOLS_DELETE_LOG(aircraftTrail);
   ATOOLS_DELETE_LOG(aircraftTrailLogbook);
-  ATOOLS_DELETE_LOG(apronGeometryCache);
+  ATOOLS_DELETE_LOG(mapCache);
 }
 
 // Unused options
@@ -139,9 +139,26 @@ void MapPaintWidget::copySettings(const MapPaintWidget& other, bool deep)
   paintLayer->copySettings(*other.paintLayer);
   screenIndex->copy(*other.screenIndex);
 
-  // Copy all MarbleWidget settings - some on demand to avoid overhead
+  // Copy all MarbleWidget settings - some on demand to avoid overhead =========================
   if(projection() != Marble::Mercator)
     setProjection(Marble::Mercator);
+
+  // Copy coordinate grid plugin settings ===========================
+  for(const Marble::RenderPlugin *otherPlugin : other.renderPlugins())
+  {
+    if(otherPlugin->nameId() == "coordinate-grid")
+    {
+      for(Marble::RenderPlugin *plugin : renderPlugins())
+      {
+        if(plugin->nameId() == "coordinate-grid")
+        {
+          plugin->setSettings(otherPlugin->settings());
+          break;
+        }
+      }
+      break;
+    }
+  }
 
   setShowSunShading(other.showSunShading());
   setShowGrid(other.showGrid());
@@ -178,7 +195,7 @@ void MapPaintWidget::copySettings(const MapPaintWidget& other, bool deep)
   if(kmlFilePaths != other.kmlFilePaths)
   {
     clearKmlFiles();
-    for(const QString& kml : qAsConst(other.kmlFilePaths))
+    for(const QString& kml : std::as_const(other.kmlFilePaths))
       loadKml(kml, false /* center */);
     kmlFilePaths = other.kmlFilePaths;
   }
@@ -277,21 +294,23 @@ void MapPaintWidget::unitsUpdated()
   }
 }
 
-void MapPaintWidget::optionsChanged()
+void MapPaintWidget::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
   const OptionData& options = OptionData::instance();
 
-  // Pass API keys or tokens to map
-  setKeys(NavApp::getMapThemeHandler()->getMapThemeKeysHash());
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_MAPTHEMES))
+    // Pass API keys or tokens to map
+    setKeys(NavApp::getMapThemeHandler()->getMapThemeKeysHash());
 
   setFont(options.getMapFont());
 
-  unitsUpdated();
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_UNITS))
+    unitsUpdated();
 
   // Updated sun shadow and force a tile refresh by changing the show status again
   setSunShadingDimFactor(static_cast<double>(options.getDisplaySunShadingDimFactor()) / 100.);
   setShowSunShading(showSunShading());
-  avoidBlurredMap = options.getFlags2() & opts2::MAP_AVOID_BLURRED_MAP;
+  avoidBlurredMap = options.getFlags2().testFlag(opts2::MAP_AVOID_BLURRED_MAP);
 
   // reloadMap();
   updateCacheSizes();
@@ -305,7 +324,7 @@ void MapPaintWidget::styleChanged()
 
 void MapPaintWidget::updateCacheSizes()
 {
-  quint64 volCacheKb = OptionData::instance().getCacheSizeMemoryMb() * 1000L;
+  quint64 volCacheKb = OptionData::instance().getCacheSizeMemoryMapMb() * 1000L;
   if(volCacheKb != volatileTileCacheLimit())
   {
     qDebug() << "Volatile cache to" << volCacheKb << "kb";
@@ -370,12 +389,14 @@ void MapPaintWidget::setShowMapPois(bool show)
   setShowTerrain(show);
 }
 
-void MapPaintWidget::updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplayTypes oldDisplayTypes, int oldMinRunwayLength)
+void MapPaintWidget::updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplayTypes oldDisplayTypes, int oldMinRunwayLength,
+                                         int oldMaxRunwayLength)
 {
   // Update screen coordinate caches if display options have changed
   map::MapTypes types = getShownMapTypes();
   map::MapDisplayTypes displayTypes = getShownMapDisplayTypes();
-  int minRunwayLength = getShownMinimumRunwayFt();
+  int minRunwayLength = paintLayer->getShownMinimumRunwayFt();
+  int maxRunwayLength = paintLayer->getShownMaximumRunwayFt();
 
   if(((types& map::AIRWAY_ALL) != (oldTypes & map::AIRWAY_ALL)) || types.testFlag(map::TRACK) || oldTypes.testFlag(map::TRACK))
     screenIndex->updateAirwayScreenGeometry(getCurrentViewBoundingBox());
@@ -383,7 +404,7 @@ void MapPaintWidget::updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplay
   if(types.testFlag(map::AIRSPACE) != oldTypes.testFlag(map::AIRSPACE))
     screenIndex->updateAirspaceScreenGeometry(getCurrentViewBoundingBox());
 
-  if(minRunwayLength != oldMinRunwayLength || // Airport visibility also changes ILS
+  if(minRunwayLength != oldMinRunwayLength || maxRunwayLength != oldMaxRunwayLength || // Airport visibility also changes ILS
      (types& map::AIRPORT_ALL_MASK) != (oldTypes & map::AIRPORT_ALL_MASK) || // ILS are disabled with airports
      (types.testFlag(map::ILS) != oldTypes.testFlag(map::ILS)) ||
      (displayTypes.testFlag(map::GLS) != oldDisplayTypes.testFlag(map::GLS)) ||
@@ -405,12 +426,12 @@ void MapPaintWidget::dumpMapLayers() const
   paintLayer->dumpMapLayers();
 }
 
-const QVector<map::MapRef>& MapPaintWidget::getRouteDrawnNavaidsConst() const
+const QList<map::MapRef>& MapPaintWidget::getRouteDrawnNavaidsConst() const
 {
   return screenIndex->getRouteDrawnNavaidsConst();
 }
 
-QVector<map::MapRef> *MapPaintWidget::getRouteDrawnNavaids()
+QList<map::MapRef> *MapPaintWidget::getRouteDrawnNavaids()
 {
   return screenIndex->getRouteDrawnNavaids();
 }
@@ -428,13 +449,18 @@ bool MapPaintWidget::isDistanceCutOff() const
     return distance() > DISTANCE_CUT_OFF_LIMIT_MERCATOR_KM;
 }
 
-Pos MapPaintWidget::getGeoPos(const QPoint& screenPoint) const
+Pos MapPaintWidget::getGeoPos(const QPointF& screenPoint) const
 {
   qreal lon, lat;
   if(geoCoordinates(screenPoint.x(), screenPoint.y(), lon, lat))
     return Pos(lon, lat);
   else
     return atools::geo::EMPTY_POS;
+}
+
+Pos MapPaintWidget::getGeoPos(const QPoint& screenPoint) const
+{
+  return getGeoPos(QPointF(screenPoint));
 }
 
 QPoint MapPaintWidget::getScreenPoint(const atools::geo::Pos& pos)
@@ -494,11 +520,6 @@ const map::MapTypes MapPaintWidget::getShownMapTypes() const
   return paintLayer->getShownMapTypes();
 }
 
-int MapPaintWidget::getShownMinimumRunwayFt() const
-{
-  return paintLayer->getShownMinimumRunwayFt();
-}
-
 const map::MapDisplayTypes MapPaintWidget::getShownMapDisplayTypes() const
 {
   return paintLayer->getShownMapDisplayTypes();
@@ -514,9 +535,9 @@ const map::MapAirspaceFilter MapPaintWidget::getShownAirspaceTypesForLayer() con
   return paintLayer->getShownAirspacesTypesForLayer();
 }
 
-ApronGeometryCache *MapPaintWidget::getApronGeometryCache()
+MapCache *MapPaintWidget::getMapCache()
 {
-  return apronGeometryCache;
+  return mapCache;
 }
 
 void MapPaintWidget::preDatabaseLoad()
@@ -525,7 +546,7 @@ void MapPaintWidget::preDatabaseLoad()
   cancelDragAll();
 
   databaseLoadStatus = true;
-  apronGeometryCache->clear();
+  mapCache->clear();
   paintLayer->preDatabaseLoad();
 }
 
@@ -579,7 +600,7 @@ QString MapPaintWidget::createAvitabJson()
     doc.setObject(calibrationObj);
     return doc.toJson();
   }
-  return QString();
+  return QStringLiteral();
 }
 
 void MapPaintWidget::centerRectOnMapPrecise(const atools::geo::Rect& rect)
@@ -797,7 +818,7 @@ void MapPaintWidget::showPos(const atools::geo::Pos& pos, float distanceKm, bool
 
 void MapPaintWidget::showPosInternal(const atools::geo::Pos& pos, float distanceKm, bool doubleClick, bool allowAdjust)
 {
-#if DEBUG_INFORMATION
+#if DEBUG_INFORMATION_POS
   qDebug() << Q_FUNC_INFO << pos << distanceKm << doubleClick;
 #endif
 
@@ -911,7 +932,7 @@ void MapPaintWidget::showAircraft(bool centerAircraftChecked)
   if(verbose)
     qDebug() << Q_FUNC_INFO;
 
-  if(!(OptionData::instance().getFlags2() & opts2::ROUTE_NO_FOLLOW_ON_MOVE) || centerAircraftChecked)
+  if(!(OptionData::instance().getFlags2().testFlag(opts2::ROUTE_NO_FOLLOW_ON_MOVE)) || centerAircraftChecked)
   {
     // Keep old behavior if jump back to aircraft is disabled
 
@@ -988,7 +1009,7 @@ bool MapPaintWidget::addKmlFile(const QString& kmlFile)
 
 void MapPaintWidget::clearKmlFiles()
 {
-  for(const QString& file : qAsConst(kmlFilePaths))
+  for(const QString& file : std::as_const(kmlFilePaths))
     model()->removeGeoData(file);
   kmlFilePaths.clear();
 }
@@ -1020,6 +1041,30 @@ void MapPaintWidget::clearAirspaceHighlights()
   update();
 }
 
+void MapPaintWidget::clearAirspaceHighlightsNormal()
+{
+  QList<map::MapAirspace>& airspaces = screenIndex->getAirspaceHighlights();
+  airspaces.erase(std::remove_if(airspaces.begin(), airspaces.end(),
+                                 [](const map::MapAirspace& airspace) -> bool {
+    return !airspace.isOnline();
+  }), airspaces.end());
+
+  screenIndex->updateAirspaceScreenGeometry(getCurrentViewBoundingBox());
+  update();
+}
+
+void MapPaintWidget::clearAirspaceHighlightsOnline()
+{
+  QList<map::MapAirspace>& airspaces = screenIndex->getAirspaceHighlights();
+  airspaces.erase(std::remove_if(airspaces.begin(), airspaces.end(),
+                                 [](const map::MapAirspace& airspace) -> bool {
+    return airspace.isOnline();
+  }), airspaces.end());
+
+  screenIndex->updateAirspaceScreenGeometry(getCurrentViewBoundingBox());
+  update();
+}
+
 void MapPaintWidget::clearAirwayHighlights()
 {
   screenIndex->setAirwayHighlights(QList<QList<map::MapAirway> >());
@@ -1033,9 +1078,19 @@ bool MapPaintWidget::hasHighlights() const
          !screenIndex->getAirwayHighlights().isEmpty();
 }
 
+bool MapPaintWidget::hasAnyMapMarkers() const
+{
+  return screenIndex->hasAnyMapMarkers();
+}
+
 int MapPaintWidget::getAircraftTrailSize() const
 {
   return aircraftTrail != nullptr ? aircraftTrail->size() : 0;
+}
+
+int MapPaintWidget::getMaxStoredTrailEntries() const
+{
+  return aircraftTrail != nullptr ? AircraftTrail::getMaxStoredTrailEntries() : 0;
 }
 
 const map::MapResult& MapPaintWidget::getSearchHighlights() const
@@ -1058,12 +1113,12 @@ const proc::MapProcedureLeg& MapPaintWidget::getProcedureLegHighlight() const
   return screenIndex->getProcedureLegHighlight();
 }
 
-const QVector<proc::MapProcedureLegs>& MapPaintWidget::getProcedureHighlights() const
+const QList<proc::MapProcedureLegs>& MapPaintWidget::getProcedureHighlights() const
 {
   return screenIndex->getProcedureHighlights();
 }
 
-void MapPaintWidget::changeProcedureHighlights(const QVector<proc::MapProcedureLegs>& procedures)
+void MapPaintWidget::changeProcedureHighlights(const QList<proc::MapProcedureLegs>& procedures)
 {
 #ifdef DEBUG_INFORMATION_PROC_HIGHLIGHT
   qDebug() << Q_FUNC_INFO << procedures;
@@ -1117,6 +1172,16 @@ void MapPaintWidget::changeAirwayHighlights(const QList<QList<map::MapAirway> >&
 void MapPaintWidget::updateLogEntryScreenGeometry()
 {
   screenIndex->updateLogEntryScreenGeometry(getCurrentViewBoundingBox());
+}
+
+MapMarkers *MapPaintWidget::getMapMarkers()
+{
+  return screenIndex->getMapMarkers();
+}
+
+const MapMarkers *MapPaintWidget::getMapMarkers() const
+{
+  return screenIndex->getMapMarkers();
 }
 
 void MapPaintWidget::changeSearchHighlights(const map::MapResult& newHighlights, bool updateAirspace, bool updateLogEntries)
@@ -1211,49 +1276,6 @@ const QList<int>& MapPaintWidget::getRouteHighlights() const
   return screenIndex->getRouteHighlights();
 }
 
-const QHash<int, map::RangeMarker>& MapPaintWidget::getRangeMarks() const
-{
-  return screenIndex->getRangeMarks();
-}
-
-const QHash<int, map::DistanceMarker>& MapPaintWidget::getDistanceMarks() const
-{
-  return screenIndex->getDistanceMarks();
-}
-
-const QHash<int, map::PatternMarker>& MapPaintWidget::getPatternsMarks() const
-{
-  return screenIndex->getPatternMarks();
-}
-
-const QHash<int, map::HoldingMarker>& MapPaintWidget::getHoldingMarks() const
-{
-  return screenIndex->getHoldingMarks();
-}
-
-const QHash<int, map::MsaMarker>& MapPaintWidget::getMsaMarks() const
-{
-  return screenIndex->getMsaMarks();
-}
-
-QList<map::MapHolding> MapPaintWidget::getHoldingMarksFiltered() const
-{
-  QList<map::MapHolding> retval;
-  const QHash<int, map::HoldingMarker>& marks = screenIndex->getHoldingMarks();
-  for(auto it = marks.constBegin(); it != marks.constEnd(); ++it)
-    retval.append(it.value().holding);
-  return retval;
-}
-
-QList<map::MapAirportMsa> MapPaintWidget::getMsaMarksFiltered() const
-{
-  QList<map::MapAirportMsa> retval;
-  const QHash<int, map::MsaMarker>& marks = screenIndex->getMsaMarks();
-  for(auto it = marks.constBegin(); it != marks.constEnd(); ++it)
-    retval.append(it.value().msa);
-  return retval;
-}
-
 const atools::fs::sc::SimConnectUserAircraft& MapPaintWidget::getUserAircraft() const
 {
   return screenIndex->getUserAircraft();
@@ -1264,7 +1286,7 @@ const atools::fs::sc::SimConnectData& MapPaintWidget::getSimConnectData() const
   return screenIndex->getSimConnectData();
 }
 
-const QVector<atools::fs::sc::SimConnectAircraft>& MapPaintWidget::getAiAircraft() const
+const QList<atools::fs::sc::SimConnectAircraft>& MapPaintWidget::getAiAircraft() const
 {
   return screenIndex->getAiAircraft();
 }
@@ -1391,7 +1413,7 @@ bool MapPaintWidget::loadKml(const QString& filename, bool center)
 {
   if(QFile::exists(filename))
   {
-    model()->addGeoDataFile(filename, 0, center && OptionData::instance().getFlags() & opts::GUI_CENTER_KML);
+    model()->addGeoDataFile(filename, 0, center && OptionData::instance().getFlags().testFlag(opts::GUI_CENTER_KML));
 
     if(center)
       showAircraft(false);

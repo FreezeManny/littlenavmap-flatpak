@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,10 @@
 #include "fs/pln/flightplan.h"
 #include "fs/util/fsutil.h"
 #include "gui/clicktooltiphandler.h"
+#include "gui/linktooltiphandler.h"
+#include "gui/widgetzoomhandler.h"
+#include "mapgui/maptooltip.h"
+#include "options/optiondata.h"
 #include "perf/aircraftperfcontroller.h"
 #include "query/airportquery.h"
 #include "query/mapquery.h"
@@ -51,13 +55,33 @@ RouteLabel::RouteLabel(QWidget *parent, const Route& routeParam)
   Ui::MainWindow *ui = NavApp::getMainUi();
   connect(ui->labelRouteInfo, &QLabel::linkActivated, this, &RouteLabel::flightplanLabelLinkActivated);
 
+  linkTooltipHandler = new atools::gui::LinkTooltipHandler(this);
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
+  linkTooltipHandler->addWidget(ui->labelRouteInfo);
+
+  // The keys have to match the query item key "tooltip" to provide a tooltip ============================
+  // Use callback function to get airport information tooltip
+  linkTooltipHandler->addUrlTooltipFunction({QStringLiteral("showdeparture"), QStringLiteral("showdestination"),
+                                             QStringLiteral("showdepartureparking")},
+                                            std::bind(&RouteLabel::tooltipFunction, this, std::placeholders::_1));
+
   // Show error messages in tooltip on click ========================================
   ui->labelRouteError->installEventFilter(new atools::gui::ClickToolTipHandler(ui->labelRouteError));
   ui->labelRouteError->setVisible(false);
 
   ui->labelRouteSelection->setVisible(false);
   ui->labelRouteInfo->setVisible(false); // Will be shown if route is created
-  updateFont();
+
+  zoomHandler = new atools::gui::WidgetZoomHandler(NavApp::getMainUi()->labelRouteInfo);
+
+  // Load text size from options
+  zoomHandler->zoomPercent(OptionData::instance().getGuiRouteInfoTextSize());
+}
+
+RouteLabel::~RouteLabel()
+{
+  delete linkTooltipHandler;
+  delete zoomHandler;
 }
 
 void RouteLabel::saveState() const
@@ -81,16 +105,49 @@ void RouteLabel::styleChanged()
   QTimer::singleShot(0, this, &RouteLabel::updateAll);
 }
 
-void RouteLabel::optionsChanged()
+void RouteLabel::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
-  updateFont();
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_TEXT_SIZES) || changeFlags.testFlag(optc::OPTION_CHANGE_UI_FONT))
+    fontChanged(QGuiApplication::font());
+
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
 }
 
-void RouteLabel::updateFont()
+void RouteLabel::fontChanged(const QFont&)
 {
-  QFont font = QApplication::font();
-  font.setPointSizeF(font.pointSizeF() * OptionData::instance().getGuiRouteInfoTextSize() / 100.f);
-  NavApp::getMainUi()->labelRouteInfo->setFont(font);
+  zoomHandler->zoomPercent(OptionData::instance().getGuiRouteInfoTextSize());
+}
+
+QString RouteLabel::tooltipFunction(const QString& key)
+{
+  QString prefix;
+
+  map::MapResult result;
+
+  if(key == QStringLiteral("showdeparture"))
+  {
+    result.airports.append(route.getDepartureAirportLeg().getAirport());
+    prefix = tr("Click here to show the departure airport on the map and in information.");
+  }
+  else if(key == QStringLiteral("showdestination"))
+  {
+    result.airports.append(route.getDestinationAirportLeg().getAirport());
+    prefix = tr("Click here to show the destination airport on the map and in information.");
+  }
+  else if(key == QStringLiteral("showdepartureparking"))
+  {
+    if(route.hasDepartureStart())
+      result.starts.append(route.getDepartureStart());
+
+    if(route.hasDepartureParking())
+      result.parkings.append(route.getDepartureParking());
+
+    prefix = tr("Click here to show the start position on the map.");
+  }
+
+  MapTooltip mapTooltip(NavApp::getMainWindow());
+  return mapTooltip.buildTooltip(result, atools::geo::EMPTY_POS, nullptr, true /* airportDiagram */,
+                                 optsd::TOOLTIP_AIRPORT, prefix);
 }
 
 void RouteLabel::updateAll()
@@ -115,13 +172,16 @@ void RouteLabel::updateHeaderLabel()
     map::MapRunway takeoffRunway, landingRunway;
     map::MapRunwayEnd takeoffRunwayEnd, landingRunwayEnd;
 
+    // Fetch runways ==============================================
     if(isFlag(routelabel::HEADER_RUNWAY_TAKEOFF) || isFlag(routelabel::HEADER_RUNWAY_TAKEOFF_WIND))
       fetchTakeoffRunway(takeoffRunway, takeoffRunwayEnd);
 
     if(isFlag(routelabel::HEADER_RUNWAY_LAND) || isFlag(routelabel::HEADER_RUNWAY_LAND_WIND))
       fetchLandingRunway(landingRunway, landingRunwayEnd);
 
-    autil::HtmlBuilder htmlAirports, htmlDistTime, htmlRunwayTakeoffDepart, htmlArrival, htmlRunwayLand;
+    // Build header components ==============================================
+    autil::HtmlBuilder html(false /* backgroundColorUsed */, NavApp::isGuiStyleDark());
+    autil::HtmlBuilder htmlAirports(html), htmlDistTime(html), htmlRunwayTakeoffDepart(html), htmlArrival(html), htmlRunwayLand(html);
     if(isFlag(routelabel::HEADER_AIRPORTS))
       buildHeaderAirports(htmlAirports, true /* widget */);
 
@@ -146,9 +206,49 @@ void RouteLabel::updateHeaderLabel()
     if(isFlag(routelabel::HEADER_RUNWAY_LAND_WIND))
       buildHeaderRunwayLandWind(htmlRunwayLand, landingRunwayEnd);
 
-    // Join all texts with <br>
-    ui->labelRouteInfo->setTextFormat(Qt::RichText);
-    ui->labelRouteInfo->setText(HtmlBuilder::joinBr({htmlAirports, htmlDistTime, htmlRunwayTakeoffDepart, htmlArrival, htmlRunwayLand}));
+    // Fill text ==================================================
+    if(!htmlAirports.isEmpty() || !htmlDistTime.isEmpty() || !htmlRunwayTakeoffDepart.isEmpty() || !htmlArrival.isEmpty() ||
+       !htmlRunwayLand.isEmpty())
+    {
+      // Use table cell with line at bottom border as separator
+      const QHash<QString, QString> tdAttributesBorder({
+        {QStringLiteral("style"),
+         QStringLiteral("border-bottom-style: solid; border-bottom-width: 1px; border-bottom-color: %1").
+         arg(QGuiApplication::palette().color(QPalette::Active, NavApp::isGuiStyleDark() ? QPalette::Light : QPalette::Mid).name())}
+      });
+
+      // Build table =====================================================
+      HtmlBuilder label(false /* backgroundColorUsed */, NavApp::isGuiStyleDark());
+      label.table(0 /* border */, 0 /* padding */, 0 /* spacing */, 100 /* widthPercent */);
+
+      bool secondSection = !htmlRunwayTakeoffDepart.isEmpty() || !htmlArrival.isEmpty() || !htmlRunwayLand.isEmpty();
+
+      // First section above line ======================
+      if(!htmlAirports.isEmpty())
+        label.tr().tdAtts(htmlDistTime.isEmpty() && secondSection ? tdAttributesBorder : QHash<QString, QString>()).
+        text(htmlAirports.getHtml(), ahtml::NO_ENTITIES).tdEnd().trEnd();
+
+      if(!htmlDistTime.isEmpty())
+        label.tr().tdAtts(secondSection ? tdAttributesBorder : QHash<QString, QString>()).
+        text(htmlDistTime.getHtml(), ahtml::NO_ENTITIES).tdEnd().trEnd();
+
+      // Second section below line ======================
+      if(!htmlRunwayTakeoffDepart.isEmpty())
+        label.tr().td().text(htmlRunwayTakeoffDepart.getHtml(), ahtml::NO_ENTITIES).tdEnd().trEnd();
+
+      if(!htmlArrival.isEmpty())
+        label.tr().td().text(htmlArrival.getHtml(), ahtml::NO_ENTITIES).tdEnd().trEnd();
+
+      if(!htmlRunwayLand.isEmpty())
+        label.tr().td().text(htmlRunwayLand.getHtml(), ahtml::NO_ENTITIES).tdEnd().trEnd();
+
+      label.tableEnd();
+
+      ui->labelRouteInfo->setTextFormat(Qt::RichText);
+      ui->labelRouteInfo->setText(label.getHtml());
+    }
+    else
+      ui->labelRouteInfo->clear();
   }
   else
     ui->labelRouteInfo->clear();
@@ -161,7 +261,9 @@ void RouteLabel::buildHtmlText(atools::util::HtmlBuilder& html)
 
 void RouteLabel::buildPrintText(atools::util::HtmlBuilder& html, bool titleOnly)
 {
-  autil::HtmlBuilder htmlAirports, htmlTodTod, htmlDistTime, htmlRunwayTakeoff, htmlDepart, htmlArrival, htmlRunwayLand;
+  autil::HtmlBuilder htmlTemp(false /* backgroundColorUsed */, NavApp::isGuiStyleDark());
+  autil::HtmlBuilder htmlAirports(htmlTemp), htmlTodTod(htmlTemp), htmlDistTime(htmlTemp), htmlRunwayTakeoff(htmlTemp),
+  htmlDepart(htmlTemp), htmlArrival(htmlTemp), htmlRunwayLand(htmlTemp);
 
   // Header h1
   buildHeaderAirports(htmlAirports, false /* widget */);
@@ -213,7 +315,7 @@ void RouteLabel::buildHeaderAirports(atools::util::HtmlBuilder& html, bool widge
     {
       const map::MapStart& start = route.getDepartureAirportLeg().getDepartureStart();
       if(route.hasDepartureHelipad())
-        departureParking += tr("Helipad %1").arg(start.runwayName);
+        departureParking += tr("Helipad %1").arg(start.helipadNumber);
       else if(route.hasDepartureRunway())
         departureParking += tr("Runway %1").arg(start.runwayName);
       else
@@ -244,18 +346,16 @@ void RouteLabel::buildHeaderAirports(atools::util::HtmlBuilder& html, bool widge
       // Add airports with links ==============================
       ahtml::Flags htmlFlags = ahtml::BOLD;
 
-      if(isFlag(routelabel::HEADER_DISTTIME))
-        htmlFlags |= ahtml::LINK_NO_UL;
-      else
+      if(!isFlag(routelabel::HEADER_DISTTIME))
         // No distance - add separator underline
         html.u();
 
-      html.a(departureAirport, "lnm://showdeparture", htmlFlags);
+      html.a(departureAirport, QStringLiteral("lnm://showdeparture?tooltip=showdeparture"), htmlFlags);
       if(!departureParking.isEmpty())
-        html.text(tr(" / ")).a(departureParking, "lnm://showdepartureparking", htmlFlags);
+        html.text(tr(" / ")).a(departureParking, QStringLiteral("lnm://showdepartureparking?tooltip=showdepartureparking"), htmlFlags);
 
       if(!destinationAirport.isEmpty() && route.getSizeWithoutAlternates() > 1)
-        html.text(tr(" to ")).a(destinationAirport, "lnm://showdestination", htmlFlags);
+        html.text(tr(" to ")).a(destinationAirport, QStringLiteral("lnm://showdestination?tooltip=showdestination"), htmlFlags);
 
       if(!isFlag(routelabel::HEADER_DISTTIME))
         html.uEnd();
@@ -300,7 +400,7 @@ void RouteLabel::buildHeaderDepart(atools::util::HtmlBuilder& html, bool widget)
 
       QString sid(sidLegs.procedureFixIdent);
       if(!sidLegs.transitionFixIdent.isEmpty())
-        sid += "." % sidLegs.transitionFixIdent;
+        sid += QStringLiteral(".") % sidLegs.transitionFixIdent;
 
       departHtml.b(sid);
       departHtml.text(tr(". "));
@@ -332,7 +432,7 @@ void RouteLabel::buildHeaderArrival(atools::util::HtmlBuilder& html, bool widget
 
       QString star(starLegs.procedureFixIdent);
       if(!starLegs.transitionFixIdent.isEmpty())
-        star += "." % starLegs.transitionFixIdent;
+        star += QStringLiteral(".") % starLegs.transitionFixIdent;
       arrHtml.b(star);
 
       starRunway = starLegs.runway;
@@ -579,15 +679,12 @@ void RouteLabel::buildHeaderTocTod(atools::util::HtmlBuilder& html)
   html.text(tr("."));
 }
 
-void RouteLabel::buildHeaderDistTime(atools::util::HtmlBuilder& html, bool widget)
+void RouteLabel::buildHeaderDistTime(atools::util::HtmlBuilder& html, bool)
 {
   if(!route.isEmpty())
   {
     if(route.getSizeWithoutAlternates() > 1)
     {
-      if(widget)
-        html.u();
-
       html.b(tr("Distance ")).text(Unit::distNm(route.getTotalDistance()));
 
       if(route.getAltitudeLegs().getTravelTimeHours() > 0.f)
@@ -600,9 +697,6 @@ void RouteLabel::buildHeaderDistTime(atools::util::HtmlBuilder& html, bool widge
         html.text(formatter::formatMinutesHoursLong(route.getAltitudeLegs().getTravelTimeHours()));
       }
       html.text(tr("."));
-
-      if(widget)
-        html.uEnd();
     }
   }
 }
@@ -649,9 +743,9 @@ void RouteLabel::updateFooterErrorLabel()
   else
   {
     ui->labelRouteError->setVisible(false);
-    ui->labelRouteError->setText(QString());
-    ui->labelRouteError->setToolTip(QString());
-    ui->labelRouteError->setStatusTip(QString());
+    ui->labelRouteError->setText(QStringLiteral());
+    ui->labelRouteError->setToolTip(QStringLiteral());
+    ui->labelRouteError->setStatusTip(QStringLiteral());
   }
 }
 
@@ -666,10 +760,10 @@ void RouteLabel::buildErrorLabel(QString& toolTipText, QStringList errors, const
     }
 
     toolTipText.append(header);
-    toolTipText.append("<ul>");
-    for(const QString& str : qAsConst(errors))
-      toolTipText.append("<li>" % str % "</li>");
-    toolTipText.append("</ul>");
+    toolTipText.append(QStringLiteral("<ul>"));
+    for(const QString& str : std::as_const(errors))
+      toolTipText.append(QStringLiteral("<li>") % str % QStringLiteral("</li>"));
+    toolTipText.append(QStringLiteral("</ul>"));
   }
 }
 
@@ -764,7 +858,7 @@ void RouteLabel::updateFooterSelectionLabel()
   else
   {
     ui->labelRouteSelection->setVisible(false);
-    ui->labelRouteSelection->setText(QString());
-    ui->labelRouteSelection->setToolTip(QString());
+    ui->labelRouteSelection->setText(QStringLiteral());
+    ui->labelRouteSelection->setToolTip(QStringLiteral());
   }
 }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,11 +22,12 @@
 #include "common/maptypes.h"
 #include "common/unit.h"
 #include "fs/common/morareader.h"
-#include "gui/mainwindow.h"
+#include "gui/statusbar.h"
 #include "mapgui/mapairporthandler.h"
 #include "mapgui/maplayer.h"
 #include "mapgui/mapmarkhandler.h"
 #include "mappainter/mappaintlayer.h"
+#include "options/optiondata.h"
 #include "query/airspacequeries.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
@@ -52,7 +53,7 @@ void MapVisible::updateVisibleObjectsStatusBar()
 {
   if(simDbEmpty)
   {
-    NavApp::getMainWindow()->setMapObjectsShownMessageText(
+    NavApp::getStatusBar()->setMapObjectsShownMessageText(
       atools::util::HtmlBuilder::errorMessage(tr("Database is empty")),
       tr("<p style='white-space:pre'>The currently selected scenery database for the simulator is empty.<br/>Go to: "
            "Main menu -&gt; \"Scenery Library\" -&gt; \"Load Scenery Library\" "
@@ -70,8 +71,11 @@ void MapVisible::updateVisibleObjectsStatusBar()
       map::MapDisplayTypes shownDispTypes = paintLayer->getShownMapDisplayTypes();
 
       QStringList airportShortLabel;
-      atools::util::HtmlBuilder tooltip(false);
-      tooltip.b(tr("Currently shown on map:"));
+      atools::util::HtmlBuilder tooltip(false /* backgroundColorUsed */, NavApp::isGuiStyleDark());
+      if(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK))
+        tooltip.text(tr("Click \"Reset Display Settings\" in menu \"View\" to restore to defaults."),
+                     atools::util::html::SMALL | atools::util::html::BOLD).hr().
+        b(tr("Currently shown on map:"));
       tooltip.table();
 
       // Collect airport information ==========================================================
@@ -108,12 +112,17 @@ void MapVisible::updateVisibleObjectsStatusBar()
             tooltip.text(tr("With ") % atools::strJoin(runways, tr(", "), tr(" and "), tr(" runways."))).br();
         }
 
-        int minRunwayLength = std::max(NavApp::getMapAirportHandler()->getMinimumRunwayFt(), layer->getMinRunwayLength());
-        if(minRunwayLength > 0)
-        {
+        // Airport runway limitations
+        const MapAirportHandler *airportHandler = NavApp::getMapAirportHandler();
+        int minRunwayLength = std::max(airportHandler->getMinimumRunwayFt(), layer->getMinRunwayLength());
+        if(minRunwayLength != -1)
           apShort.append(">" % QLocale().toString(minRunwayLength / 100));
-          tooltip.text(tr("Having runway length > %1.").arg(Unit::distShortFeet(minRunwayLength))).br();
-        }
+
+        int maxRunwayLength = airportHandler->getMaximumRunwayFt();
+        if(maxRunwayLength != -1)
+          apShort.append("<" % QLocale().toString(maxRunwayLength / 100));
+
+        tooltip.text(airportHandler->getRunwayText()).br();
 
         QStringList features;
         if(shown.testFlag(map::AIRPORT_EMPTY))
@@ -161,7 +170,7 @@ void MapVisible::updateVisibleObjectsStatusBar()
           features.append(tr("add-on overrides zoom (AZ)"));
           apShort.append(tr("AZ", "Airport status"));
         }
-        else if(shown.testFlag(map::AIRPORT_ADDON_ZOOM_FILTER))
+        else if(shown.testFlag(map::AIRPORT_ADDON_ZOOM_AND_FILTER))
         {
           features.append(tr("add-on overrides zoom and filter (AF)"));
           apShort.append(tr("AF", "Airport status"));
@@ -253,7 +262,7 @@ void MapVisible::updateVisibleObjectsStatusBar()
         for(int i = 0; i <= map::MAP_AIRSPACE_TYPE_BITS; i++)
         {
           map::MapAirspaceTypes type(1 << i);
-          if(airspaceFilter.types & type)
+          if(airspaceFilter.types.testAnyFlag(type))
             airspacesTooltip.append(map::airspaceTypeToString(map::MapAirspaceType(type)));
         }
         std::sort(airspacesTooltip.begin(), airspacesTooltip.end());
@@ -414,14 +423,14 @@ void MapVisible::updateVisibleObjectsStatusBar()
 
       if(layer->isUserpoint())
       {
-        QStringList types = NavApp::getUserdataController()->getSelectedTypes();
+        const QMap<QString, QString>& types = NavApp::getUserdataController()->getSelectedTypesMap();
         if(!types.isEmpty())
-          tooltip.tr().td().b(tr("Userpoints: ")).text(atools::elideTextShort(types.join(tr(", ")), 160)).tdEnd().trEnd();
+          tooltip.tr().td().b(tr("Userpoints: ")).text(atools::elideTextShort(types.keys().join(tr(", ")), 160)).tdEnd().trEnd();
       }
 
       QStringList markTypes = NavApp::getMapMarkHandler()->getMarkTypesText();
       if(!markTypes.isEmpty())
-        tooltip.tr().td().b(tr("User features: ")).text(markTypes.join(tr(", "))).tdEnd().trEnd();
+        tooltip.tr().td().b(tr("Map Markers: ")).text(markTypes.join(tr(", "))).tdEnd().trEnd();
 
       tooltip.tableEnd();
 
@@ -443,10 +452,10 @@ void MapVisible::updateVisibleObjectsStatusBar()
         label.append(tr(" — "));
 
       // Update the statusbar label text and tooltip of the label
-      NavApp::getMainWindow()->setMapObjectsShownMessageText(atools::elideTextShort(label.join(tr("/")), 40), tooltip.getHtml());
+      NavApp::getStatusBar()->setMapObjectsShownMessageText(atools::elideTextShort(label.join(tr("/")), 40), tooltip.getHtml());
     } // if(layer != nullptr && !paintLayer->noRender())
     else
-      NavApp::getMainWindow()->setMapObjectsShownMessageText(tr(" — "), tr("Nothing shown. Zoom in to see map features."));
+      NavApp::getStatusBar()->setMapObjectsShownMessageText(tr(" — "), tr("Nothing shown. Zoom in to see map features."));
   } // if(!NavApp::hasDataInDatabase()) ... else
 }
 

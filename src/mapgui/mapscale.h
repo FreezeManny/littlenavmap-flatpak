@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -90,8 +90,8 @@ public:
     return 1.f / getPixelForNm(1.f, directionDeg);
   }
 
-  /*Get an approximation in screen pixes for the given coordinate rectangle */
-  QSize getScreeenSizeForRect(const atools::geo::Rect& rect) const;
+  /* Get an approximation in screen pixels for the given coordinate rectangle */
+  QSize getScreeenSizeForRect(const atools::geo::Rect& rect, int minSize = 0) const;
 
   /* @return true if initialized */
   bool isValid() const
@@ -112,7 +112,7 @@ private:
   double lastDistance = 0., lastCenterLonXRad = 0., lastCenterLatYRad = 0.;
 
   /* Screen pixel per km for eight directions */
-  QVector<float> scales;
+  QList<float> scales;
   Marble::ViewportParams *viewport = nullptr;
 };
 

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #ifndef LITTLENAVMAP_MAPRESULT_H
 #define LITTLENAVMAP_MAPRESULT_H
 
-#include "common/maptypes.h"
+#include "common/mapmarkertypes.h"
 
 namespace map {
 // =====================================================================
@@ -29,8 +29,21 @@ namespace map {
 struct MapResult
 {
   /* Create from base class. Inspects type and adds one object to this */
-  MapResult& addFromMapBase(const map::MapBase *base);
-  static MapResult createFromMapBase(const map::MapBase *base);
+  map::MapResult& addFromMapBase(const map::MapBase *base);
+
+  static map::MapResult createFromMapBase(const map::MapBase *base)
+  {
+    return MapResult().addFromMapBase(base);
+  }
+
+  /* Adds valid object copies from list */
+  map::MapResult& addFromMapBase(const std::initializer_list<const map::MapBase *>& bases);
+
+  /* Adds valid object copies from list */
+  static map::MapResult createFromMapBase(const std::initializer_list<const map::MapBase *>& bases)
+  {
+    return MapResult().addFromMapBase(bases);
+  }
 
   QList<map::MapAirport> airports;
   QSet<int> airportIds; /* Ids used to deduplicate when merging highlights and nearest */
@@ -106,20 +119,21 @@ struct MapResult
     return size(types) > 0;
   }
 
+  /* Get parameters from first map object looking through the list of types. First one is returned. */
+  void getParams(const std::initializer_list<MapTypes>& types, int *id = nullptr,
+                 atools::geo::Pos *pos = nullptr, MapNav *nav = nullptr) const;
+
   /* Get id and type from the result. Vector of types defines priority. true if something was found.
    * id is set to -1 if nothing was found. */
-  bool getIdAndType(int& id, map::MapTypes& type, const std::initializer_list<map::MapTypes>& types) const;
+  bool getIdAndType(int& id, map::MapType& type, const std::initializer_list<map::MapTypes>& types) const;
   map::MapRef getRef(const std::initializer_list<map::MapTypes>& types) const;
-
-  /* Get id. This assumes there is only one object for the given type. Returns -1 if not found. */
-  int getId(const map::MapTypes& type) const;
 
   /* Get routeIndex. This assumes there is only one object for the given type. Returns -1 if not found.
    * Only for flight plan related types. */
   int getRouteIndex(const map::MapTypes& type) const;
 
   /* Get position and returns first for the list of types defining priority by order */
-  const atools::geo::Pos& getPosition(const std::initializer_list<map::MapTypes>& types) const;
+  const atools::geo::Pos getPosition(const std::initializer_list<map::MapTypes>& types) const;
 
   /* As above for ident */
   QString getIdent(const std::initializer_list<map::MapTypes>& types) const;
@@ -135,6 +149,13 @@ struct MapResult
 
   /* Sets routeIndex for all flight plan related types to -1 */
   MapResult& clearRouteIndex(const map::MapTypes& types = map::ALL);
+
+  /* Removes all userpoints which are currently not visible on the map */
+  MapResult& clearHiddenUserpoints(const QMap<QString, QString>& selectedTypes, const QMap<QString, QString>& allTypes,
+                                   bool showUnknownType);
+
+  /* Build label with frequency (if applicable) for marker types. */
+  QString markerLabel() const;
 
   /* Give online airspaces/centers priority */
   void moveOnlineAirspacesToFront();
@@ -323,10 +344,36 @@ QDebug operator<<(QDebug out, const map::MapResult& record);
 /* Maintains only pointers to the original objects and creates a copy the MapSearchResult. */
 /* Alternatively uses pointers to refer to another result which must not be changed in this case. */
 struct MapResultIndex
-  : public QVector<const map::MapBase *>
+  : public QList<const map::MapBase *>
 {
+  MapResultIndex()
+  {
+  }
+
+  /* Add objects */
+  explicit MapResultIndex(const map::MapResult& resultParam, const map::MapTypes& types = map::ALL)
+  {
+    add(resultParam, types);
+  }
+
+  /* Add references */
+  explicit MapResultIndex(const map::MapResult * resultParam, const map::MapTypes& types = map::ALL)
+  {
+    addRef(*resultParam, types);
+  }
+
   /* Sorting callback */
   typedef std::function<bool (const MapBase *, const MapBase *)> SortFunction;
+
+  const map::MapBase *constFirstOrNull() const
+  {
+    return ptrOrNull(0);
+  }
+
+  const map::MapBase *ptrOrNull(int index) const
+  {
+    return atools::inRange(*this, index) ? at(index) : nullptr;
+  }
 
   /* Add all result object pointers to list. Result and all objects are copied. */
   MapResultIndex& add(const map::MapResult& resultParam, const map::MapTypes& types = map::ALL);
@@ -335,7 +382,7 @@ struct MapResultIndex
   MapResultIndex& addRef(const map::MapResult& resultParm, const map::MapTypes& types = map::ALL);
 
   /* Sort objects by given type list. First in type list is put to start of list. */
-  MapResultIndex& sort(const QVector<map::MapTypes>& types)
+  MapResultIndex& sort(const QList<map::MapTypes>& types)
   {
     return sort(types, nullptr);
   }
@@ -347,7 +394,7 @@ struct MapResultIndex
   }
 
   /* Sort by type list and then by callback */
-  MapResultIndex& sort(const QVector<map::MapTypes>& types, const map::MapResultIndex::SortFunction& sortFunc);
+  MapResultIndex& sort(const QList<map::MapTypes>& types, const map::MapResultIndex::SortFunction& sortFunc);
 
   /* Sort objects by distance to pos in the list */
   MapResultIndex& sort(const atools::geo::Pos& pos, bool sortNearToFar = true);
@@ -358,12 +405,31 @@ struct MapResultIndex
   /* Remove all objects which are more far away  from pos than max distance */
   MapResultIndex& remove(const atools::geo::Pos& pos, float maxDistanceNm);
 
+  /* Remove all objects of the given types */
+  MapResultIndex& remove(map::MapType types);
+
+  /* Keep all objects of the given types and remove all others */
+  MapResultIndex& removeNot(map::MapType types)
+  {
+    remove(~map::MapTypes(types));
+    return *this;
+  }
+
   /* Remove all objects having a routeIndex = -1 */
   void eraseNonRouteIndexLegs();
 
   /* Remove duplicate MapProcedurePoint objects.
    * Ignore transitions and erase duplicates based on airport and approaches if true */
   void eraseDuplicateProcedures(bool base = false);
+
+  /* Return a result with only the closest in the index */
+  map::MapResult getClosestUnique(const atools::geo::Pos& pos);
+
+  /* Put first entry into a result structure or return an empty result. */
+  map::MapResult getResultFromFirst() const
+  {
+    return map::MapResult::createFromMapBase(constFirstOrNull());
+  }
 
 private:
   friend QDebug operator<<(QDebug out, const map::MapResultIndex& record);
@@ -412,6 +478,6 @@ QDebug operator<<(QDebug out, const map::MapResultIndex& record);
 
 } // namespace map
 
-Q_DECLARE_TYPEINFO(map::MapResult, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapResult, Q_RELOCATABLE_TYPE);
 
 #endif // LITTLENAVMAP_MAPRESULT_H

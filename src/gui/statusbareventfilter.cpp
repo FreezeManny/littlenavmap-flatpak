@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -37,12 +37,12 @@ bool StatusBarEventFilter::eventFilter(QObject *object, QEvent *event)
 {
   if(event->type() == QEvent::ToolTip)
   {
-    QHelpEvent *mouseEvent = dynamic_cast<QHelpEvent *>(event);
-    if(mouseEvent != nullptr)
+    QHelpEvent *helpEvent = dynamic_cast<QHelpEvent *>(event);
+    if(helpEvent != nullptr)
     {
       // Allow tooltip events only on the left side of the first label widget
       QRect rect(0, 0, firstWidget->geometry().left(), statusBar->height());
-      if(!rect.contains(mouseEvent->pos()))
+      if(!rect.contains(helpEvent->pos()))
         return true;
     }
   }
@@ -52,8 +52,8 @@ bool StatusBarEventFilter::eventFilter(QObject *object, QEvent *event)
     if(mouseEvent != nullptr)
     {
       // Allow tooltips on click only on the left side of the first label widget
-      QRect rect(0, 0, firstWidget->geometry().left(), statusBar->height());
-      if(rect.contains(mouseEvent->pos()))
+      QRectF rect(0., 0., firstWidget->geometry().left(), statusBar->height());
+      if(rect.contains(mouseEvent->position()))
       {
         QToolTip::showText(QCursor::pos(), statusBar->toolTip(), statusBar);
         return true;

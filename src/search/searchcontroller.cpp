@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@
 
 using atools::gui::HelpHandler;
 
-SearchController::SearchController(QMainWindow *parent, QTabWidget *tabWidgetSearchParam)
+SearchController::SearchController(MainWindow *parent, QTabWidget *tabWidgetSearchParam)
   : mainWindow(parent), tabWidgetSearch(tabWidgetSearchParam)
 {
   mapQuery = QueryManager::instance()->getQueriesGui()->getMapQuery();
@@ -54,11 +54,8 @@ SearchController::SearchController(QMainWindow *parent, QTabWidget *tabWidgetSea
   connect(ui->pushButtonAirportHelpSearch, &QPushButton::clicked, this, &SearchController::helpPressed);
   connect(ui->pushButtonNavHelpSearch, &QPushButton::clicked, this, &SearchController::helpPressed);
   connect(ui->pushButtonProcedureHelpSearch, &QPushButton::clicked, this, &SearchController::helpPressedProcedure);
-
   connect(ui->pushButtonUserdataHelp, &QPushButton::clicked, this, &SearchController::helpPressedUserdata);
-
   connect(ui->pushButtonLogdataHelp, &QPushButton::clicked, this, &SearchController::helpPressedLogdata);
-
   connect(ui->pushButtonOnlineClientHelpSearch, &QPushButton::clicked, this, &SearchController::helpPressedOnlineClient);
   connect(ui->pushButtonOnlineCenterHelpSearch, &QPushButton::clicked, this, &SearchController::helpPressedOnlineCenter);
 
@@ -91,17 +88,27 @@ void SearchController::getSelectedMapObjects(map::MapResult& result) const
     allSearchTabs.at(id)->getSelectedMapObjects(result);
 }
 
-void SearchController::optionsChanged()
+void SearchController::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
-    search->optionsChanged();
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
+    search->optionsChanged(changeFlags);
 }
 
 void SearchController::styleChanged()
 {
   tabHandlerSearch->styleChanged();
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
     search->styleChanged();
+}
+
+void SearchController::fontChanged(const QFont& font)
+{
+  qDebug() << Q_FUNC_INFO;
+
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
+    search->fontChanged(font);
+
+  tabHandlerSearch->fontChanged(font, NavApp::getMinButtonSize());
 }
 
 void SearchController::dockVisibilityChanged(bool visible)
@@ -165,7 +172,7 @@ void SearchController::tabChanged(int index)
 
 void SearchController::saveState() const
 {
-  for(AbstractSearch *searchTab : qAsConst(allSearchTabs))
+  for(AbstractSearch *searchTab : std::as_const(allSearchTabs))
     searchTab->saveState();
 
   tabHandlerSearch->saveState();
@@ -175,7 +182,7 @@ void SearchController::restoreState()
 {
   tabHandlerSearch->restoreState();
 
-  for(AbstractSearch *searchTab : qAsConst(allSearchTabs))
+  for(AbstractSearch *searchTab : std::as_const(allSearchTabs))
     searchTab->restoreState();
 }
 
@@ -253,14 +260,19 @@ void SearchController::postCreateSearch(AbstractSearch *search)
 
 void SearchController::preDatabaseLoad()
 {
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
     search->preDatabaseLoad();
 }
 
 void SearchController::postDatabaseLoad()
 {
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
+  {
+#ifdef DEBUG_INFORMATION
+    qDebug() << Q_FUNC_INFO << search->objectName();
+#endif
     search->postDatabaseLoad();
+  }
 }
 
 void SearchController::refreshUserdata()
@@ -275,7 +287,7 @@ void SearchController::refreshLogdata()
 
 void SearchController::clearSelection()
 {
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
     search->clearSelection();
 }
 
@@ -287,7 +299,7 @@ void SearchController::clearProcedureSelectionAndPreviews()
 bool SearchController::hasSelection()
 {
   bool selection = false;
-  for(AbstractSearch *search : qAsConst(allSearchTabs))
+  for(AbstractSearch *search : std::as_const(allSearchTabs))
     selection |= search->hasSelection();
   return selection;
 }
@@ -398,6 +410,11 @@ si::TabSearchId SearchController::getCurrentSearchTabId()
   return static_cast<si::TabSearchId>(tabHandlerSearch->getCurrentTabId());
 }
 
+QString SearchController::getCurrentSearchTabText()
+{
+  return tabHandlerSearch->getCurrentTabText();
+}
+
 void SearchController::resetTabLayout()
 {
   tabHandlerSearch->reset();
@@ -407,39 +424,38 @@ void SearchController::searchSelectionChanged(const SearchBaseTable *source, int
 {
   Ui::MainWindow *ui = NavApp::getMainUi();
   bool updateAirspace = false, updateLogEntries = false;
-  QString selectionLabelText = tr("%1 of %2 %3 selected, %4 visible.%5");
-  QString type, lastUpdate;
-  if(source->getTabIndex() == si::SEARCH_ONLINE_CLIENT || source->getTabIndex() == si::SEARCH_ONLINE_CENTER)
+  const QString selectionLabelText = tr("%1 of %2 %3 selected, %4 visible.%5");
+  QString lastUpdate;
+
+  ui->actionSearchShowAll->setEnabled(source->getTotalRowCount() > 0);
+  ui->actionSearchExportCsv->setEnabled(source->getTotalRowCount() > 0);
+  ui->actionSearchTableCopy->setEnabled(source->getTotalRowCount() > 0);
+
+  si::TabSearchId tabIndex = source->getTabIndex();
+  if(tabIndex == si::SEARCH_ONLINE_CLIENT || tabIndex == si::SEARCH_ONLINE_CENTER)
   {
-    QDateTime lastUpdateTime = NavApp::getOnlinedataController()->getLastUpdateTime();
-    lastUpdate = lastUpdateTime.isValid() ? tr(" Last Update: %1").arg(lastUpdateTime.toString(Qt::DefaultLocaleShortDate)) : QString();
+    lastUpdate = NavApp::getOnlinedataController()->getLastUpdateTime().isValid() ?
+                 tr(" Last Update: %1").arg(QLocale().toString(QLocale::ShortFormat)) : QStringLiteral();
   }
 
-  if(source->getTabIndex() == si::SEARCH_AIRPORT)
+  if(tabIndex == si::SEARCH_AIRPORT)
+    ui->labelAirportSearchStatus->setText(selectionLabelText.arg(selected).arg(total).
+                                          arg(tr("Airports")).arg(visible).arg(QStringLiteral()));
+  else if(tabIndex == si::SEARCH_NAV)
+    ui->labelNavSearchStatus->setText(selectionLabelText.arg(selected).arg(total).
+                                      arg(tr("Navaids")).arg(visible).arg(QStringLiteral()));
+  else if(tabIndex == si::SEARCH_USER)
+    ui->labelUserdata->setText(selectionLabelText.arg(selected).arg(total).
+                               arg(tr("Userpoints")).arg(visible).arg(QStringLiteral()));
+  else if(tabIndex == si::SEARCH_LOG)
   {
-    type = tr("Airports");
-    ui->labelAirportSearchStatus->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(QString()));
-  }
-  else if(source->getTabIndex() == si::SEARCH_NAV)
-  {
-    type = tr("Navaids");
-    ui->labelNavSearchStatus->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(QString()));
-  }
-  else if(source->getTabIndex() == si::SEARCH_USER)
-  {
-    type = tr("Userpoints");
-    ui->labelUserdata->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(QString()));
-  }
-  else if(source->getTabIndex() == si::SEARCH_LOG)
-  {
-    type = tr("Logbook Entries");
     updateLogEntries = true;
 
     map::MapResult result;
     source->getSelectedMapObjects(result);
 
     float travelTimeRealHours = 0.f, travelTimeSimHours = 0.f, distanceNm = 0.f, distanceFlownNm = 0.f;
-    for(const map::MapLogbookEntry& entry : qAsConst(result.logbookEntries))
+    for(const map::MapLogbookEntry& entry : std::as_const(result.logbookEntries))
     {
       travelTimeRealHours += entry.travelTimeRealHours;
       travelTimeSimHours += entry.travelTimeSimHours;
@@ -464,18 +480,17 @@ void SearchController::searchSelectionChanged(const SearchBaseTable *source, int
     if(!logInformation.isEmpty())
       logText = tr("\nTotals: %1.").arg(atools::strJoin(logInformation, tr(", ")));
 
-    ui->labelLogdata->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(logText));
+    ui->labelLogdata->setText(selectionLabelText.arg(selected).arg(total).
+                              arg(tr("Logbook Entries")).arg(visible).arg(logText));
   }
-  else if(source->getTabIndex() == si::SEARCH_ONLINE_CLIENT)
-  {
-    type = tr("Clients");
-    ui->labelOnlineClientSearchStatus->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(lastUpdate));
-  }
-  else if(source->getTabIndex() == si::SEARCH_ONLINE_CENTER)
+  else if(tabIndex == si::SEARCH_ONLINE_CLIENT)
+    ui->labelOnlineClientSearchStatus->setText(selectionLabelText.arg(selected).arg(total).
+                                               arg(tr("Online Clients")).arg(visible).arg(lastUpdate));
+  else if(tabIndex == si::SEARCH_ONLINE_CENTER)
   {
     updateAirspace = true;
-    type = tr("Centers");
-    ui->labelOnlineCenterSearchStatus->setText(selectionLabelText.arg(selected).arg(total).arg(type).arg(visible).arg(lastUpdate));
+    ui->labelOnlineCenterSearchStatus->setText(selectionLabelText.arg(selected).arg(total).
+                                               arg(tr("Online Centers")).arg(visible).arg(lastUpdate));
   }
 
   map::MapResult result;

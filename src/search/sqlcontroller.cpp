@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -84,15 +84,15 @@ void SqlController::rebuildQuery()
 
 void SqlController::refreshData(bool loadAll, bool keepSelection, bool force)
 {
-  QItemSelectionModel *sm = view->selectionModel();
+  QItemSelectionModel *selectionModel = view->selectionModel();
 
   // Get all selected rows and highest selected row number
   int maxRow = 0;
   QSet<int> rows;
-  if(sm != nullptr && keepSelection)
+  if(selectionModel != nullptr && keepSelection)
   {
-    const QModelIndexList selectedRows = sm->selectedRows(0);
-    for(const QModelIndex& index : selectedRows)
+    const QModelIndexList selectedIndexes = selectionModel->selectedRows();
+    for(const QModelIndex& index : selectedIndexes)
     {
       if(index.row() > maxRow)
         maxRow = index.row();
@@ -110,9 +110,9 @@ void SqlController::refreshData(bool loadAll, bool keepSelection, bool force)
   }
 
   // Selection changes when updating model
-  sm = view->selectionModel();
+  selectionModel = view->selectionModel();
 
-  if(sm != nullptr && keepSelection)
+  if(selectionModel != nullptr && keepSelection)
   {
     int visibleRowCount = getVisibleRowCount();
 
@@ -126,13 +126,13 @@ void SqlController::refreshData(bool loadAll, bool keepSelection, bool force)
 
     // Update selection in new data result set
     int totalRowCount = getTotalRowCount();
-    sm->blockSignals(true);
+    selectionModel->blockSignals(true);
     for(int row : rows)
     {
       if(row < totalRowCount)
-        sm->select(model->index(row, 0), QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        selectionModel->select(model->index(row, 0), QItemSelectionModel::Select | QItemSelectionModel::Rows);
     }
-    sm->blockSignals(false);
+    selectionModel->blockSignals(false);
   }
 }
 
@@ -227,7 +227,7 @@ void SqlController::filterBySpinBox(const Column *col, int value)
   view->clearSelection();
   if(col->getSpinBoxWidget()->value() == col->getSpinBoxWidget()->minimum())
     // Send a null variant if spin box is at minimum value
-    model->filter(col, QVariant(QVariant::Int), QVariant(), false /* exact */);
+    model->filter(col, QVariant(QMetaType::fromType<int>()), QVariant(), false /* exact */);
   else
     model->filter(col, value, QVariant(), false /* exact */);
   searchParamsChanged = true;
@@ -252,11 +252,11 @@ void SqlController::filterByMinMaxSpinBox(const Column *col, int minValue, int m
   QVariant minVal(minValue), maxVal(maxValue);
   if(col->getMinSpinBoxWidget()->value() == col->getMinSpinBoxWidget()->minimum())
     // Send a null variant for min if minimum spin box is at minimum value
-    minVal = QVariant(QVariant::Int);
+    minVal = QVariant(QMetaType::fromType<int>());
 
   if(col->getMaxSpinBoxWidget()->value() == col->getMaxSpinBoxWidget()->maximum())
     // Send a null variant for max if maximum spin box is at maximum value
-    maxVal = QVariant(QVariant::Int);
+    maxVal = QVariant(QMetaType::fromType<int>());
 
   model->filter(col, minVal, maxVal, false /* exact */);
   searchParamsChanged = true;
@@ -278,7 +278,7 @@ void SqlController::filterByCheckbox(const Column *col, int state, bool triState
         break;
       case Qt::PartiallyChecked:
         // null for partially checked
-        model->filter(col, QVariant(QVariant::Int), QVariant(), false /* exact */);
+        model->filter(col, QVariant(QMetaType::fromType<int>()), QVariant(), false /* exact */);
         break;
       case Qt::Checked:
         model->filter(col, 1, QVariant(), false /* exact */);
@@ -286,7 +286,7 @@ void SqlController::filterByCheckbox(const Column *col, int state, bool triState
     }
   }
   else
-    model->filter(col, state == Qt::Checked ? 1 : QVariant(QVariant::Int), QVariant(), false /* exact */);
+    model->filter(col, state == Qt::Checked ? 1 : QVariant(QMetaType::fromType<int>()), QVariant(), false /* exact */);
   searchParamsChanged = true;
 }
 
@@ -298,7 +298,7 @@ void SqlController::filterByComboBox(const Column *col, int value, bool noFilter
   view->clearSelection();
   if(noFilter)
     // Index 0 for combo box means here: no filter, so remove it and send null variant
-    model->filter(col, QVariant(QVariant::Int), QVariant(), false /* exact */);
+    model->filter(col, QVariant(QMetaType::fromType<int>()), QVariant(), false /* exact */);
   else
     model->filter(col, value, QVariant(), false /* exact */);
   searchParamsChanged = true;
@@ -504,11 +504,6 @@ void SqlController::resetSearch()
     model->resetSearch();
 }
 
-QString SqlController::getCurrentSqlQuery() const
-{
-  return model->getCurrentSqlQuery();
-}
-
 QModelIndex SqlController::getModelIndexAt(const QPoint& pos) const
 {
   return view->indexAt(pos);
@@ -559,7 +554,7 @@ void SqlController::processViewColumns()
     QString field = rec.fieldName(i);
     const Column *colDescr = columns->getColumn(field);
 
-    if(!isDistanceSearch() && colDescr->isDistance())
+    if(!isDistanceSearch() && colDescr->isDistanceHeading())
       // Hide special distance search columns "distance" and "heading"
       view->hideColumn(i);
     else if(colDescr->isHidden())
@@ -598,7 +593,7 @@ void SqlController::processViewColumns()
       if(colDescrCurSort->isHidden())
         view->sortByColumn(idx, colDescrDefSort->getDefaultSortOrder());
       else if(!isDistanceSearch())
-        if(colDescrCurSort->isDistance())
+        if(colDescrCurSort->isDistanceHeading())
           view->sortByColumn(idx, colDescrDefSort->getDefaultSortOrder());
     }
   }
@@ -664,9 +659,9 @@ void SqlController::loadAllRows()
   QGuiApplication::restoreOverrideCursor();
 }
 
-QVector<const Column *> SqlController::getCurrentColumns() const
+QList<const Column *> SqlController::getCurrentColumns() const
 {
-  QVector<const Column *> cols;
+  QList<const Column *> cols;
   atools::sql::SqlRecord rec = model->getSqlRecord();
   for(int i = 0; i < rec.count(); i++)
     cols.append(columns->getColumn(rec.fieldName(i)));

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -25,14 +25,13 @@
 #include "common/symbolpainter.h"
 #include "common/textplacement.h"
 #include "common/unit.h"
-#include "geo/calculations.h"
 #include "mapgui/maplayer.h"
 #include "mapgui/mappaintwidget.h"
 #include "mapgui/mapscale.h"
+#include "mappainter/paintcontext.h"
+#include "options/optiondata.h"
 #include "util/paintercontextsaver.h"
 
-#include <marble/GeoDataLineString.h>
-#include <marble/GeoDataLinearRing.h>
 #include <marble/GeoPainter.h>
 
 #include <QPixmapCache>
@@ -77,73 +76,6 @@ AirportPaintData& AirportPaintData::operator=(const AirportPaintData& other)
   return *this;
 }
 
-void PaintContext::szFont(float scale) const
-{
-  mapcolors::scaleFont(painter, scale, &defaultFont);
-}
-
-textflags::TextFlags PaintContext::airportTextFlags() const
-{
-  // Build and draw airport text
-  textflags::TextFlags textflags = textflags::NONE;
-
-  if(mapLayerText->isAirportInfo())
-    textflags = textflags::INFO;
-
-  if(mapLayerText->isAirportIdent())
-    textflags |= textflags::IDENT;
-
-  if(mapLayerText->isAirportName())
-    textflags |= textflags::NAME;
-
-  if(!flags2.testFlag(opts2::MAP_AIRPORT_TEXT_BACKGROUND))
-    textflags |= textflags::NO_BACKGROUND;
-
-  return textflags;
-}
-
-textflags::TextFlags PaintContext::airportTextFlagsMinor() const
-{
-  // Build and draw airport text
-  textflags::TextFlags textflags = textflags::NONE;
-
-  if(mapLayerText->isAirportMinorInfo())
-    textflags = textflags::INFO;
-
-  if(mapLayerText->isAirportMinorIdent())
-    textflags |= textflags::IDENT;
-
-  if(mapLayerText->isAirportMinorName())
-    textflags |= textflags::NAME;
-
-  if(!flags2.testFlag(opts2::MAP_AIRPORT_TEXT_BACKGROUND))
-    textflags |= textflags::NO_BACKGROUND;
-
-  return textflags;
-}
-
-textflags::TextFlags PaintContext::airportTextFlagsRoute(bool drawAsRoute, bool drawAsLog) const
-{
-  // Show ident always on route
-  textflags::TextFlags textflags = textflags::IDENT;
-
-  if(drawAsRoute)
-    textflags |= textflags::ROUTE_TEXT;
-
-  if(drawAsLog)
-    textflags |= textflags::LOG_TEXT;
-
-  // Use more more detailed text for flight plan
-  if(mapLayerRouteText->isAirportRouteInfo())
-    textflags |= textflags::NAME | textflags::INFO;
-
-  if(!(flags2 & opts2::MAP_ROUTE_TEXT_BACKGROUND))
-    textflags |= textflags::NO_BACKGROUND;
-
-  return textflags;
-}
-
-// =================================================
 MapPainter::MapPainter(MapPaintWidget *parentMapWidget, MapScale *mapScale, PaintContext *paintContext)
   : CoordinateConverter(parentMapWidget->viewport()), context(paintContext), mapPaintWidget(parentMapWidget), scale(mapScale)
 {
@@ -192,7 +124,7 @@ bool MapPainter::wToSBuf(const atools::geo::Pos& coords, QPointF& point, const Q
 void MapPainter::paintArc(GeoPainter *painter, const Pos& centerPos, float radiusNm, float angleDegStart, float angleDegEnd,
                           bool fast) const
 {
-  if(radiusNm > atools::geo::EARTH_CIRCUMFERENCE_METER / 4.f)
+  if(radiusNm > atools::geo::EARTH_CIRCUMFERENCE_METER / 4.)
     return;
 
   // Calculate the number of points to use depending on screen resolution
@@ -259,9 +191,9 @@ void MapPainter::paintArc(GeoPainter *painter, const Pos& centerPos, float radiu
   }
 }
 
-void MapPainter::paintCircle(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPoint *textPos) const
+void MapPainter::paintCircle(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPointF *textPos) const
 {
-  if(radiusNm > atools::geo::EARTH_CIRCUMFERENCE_METER / 4.f)
+  if(radiusNm > atools::geo::EARTH_CIRCUMFERENCE_METER / 4.)
     return;
 
   if(radiusNm < 1.f && atools::geo::meterToNm(context->zoomDistanceMeter) < 5.f)
@@ -273,22 +205,25 @@ void MapPainter::paintCircle(GeoPainter *painter, const Pos& centerPos, float ra
     paintCircleLargeInternal(painter, centerPos, radiusNm, fast, textPos);
 }
 
-void MapPainter::paintCircleSmallInternal(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPoint *textPos) const
+void MapPainter::paintCircleSmallInternal(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPointF *textPos) const
 {
   Q_UNUSED(fast)
 
   // Get pixel size for line from center to north
-  int pixel = scale->getPixelIntForMeter(nmToMeter(radiusNm), 0.f);
+  float pixel = scale->getPixelForMeter(nmToMeter(radiusNm), 0.f);
 
   bool visible, hidden;
-  QPoint pt = wToS(centerPos, QSize(pixel * 3, pixel * 3), &visible, &hidden);
+  QPointF pt = wToSF(centerPos, QSize(pixel * 3, pixel * 3), &visible, &hidden);
+
+  if(textPos != nullptr)
+    *textPos = QPointF();
 
   if(!hidden)
   {
     // Rectangle for the circle
-    QRect rect(pt.x() - pixel, pt.y() - pixel, pixel * 2, pixel * 2);
+    QRectF rect(pt.x() - pixel, pt.y() - pixel, pixel * 2, pixel * 2);
 
-    if(context->screenRect.intersects(rect))
+    if(context->screenRect.intersects(rect.toRect()))
     {
       // Draw simple circle
       painter->drawEllipse(pt, pixel, pixel);
@@ -301,15 +236,15 @@ void MapPainter::paintCircleSmallInternal(GeoPainter *painter, const Pos& center
           QLineF line(pt.x(), pt.y(), pt.x(), pt.y() - pixel);
           line.setAngle(atools::geo::angleToQt(angle));
 
-          if(context->screenRect.contains(atools::roundToInt(line.p2().x()), atools::roundToInt(line.p2().y())))
-            *textPos = line.p2().toPoint();
+          if(context->screenRect.contains(line.p2().toPoint()))
+            *textPos = line.p2();
         }
       }
     }
   }
 }
 
-void MapPainter::paintCircleLargeInternal(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPoint *textPos) const
+void MapPainter::paintCircleLargeInternal(GeoPainter *painter, const Pos& centerPos, float radiusNm, bool fast, QPointF *textPos) const
 {
   // float PIXEL_PER_SEGMENT = 10;
   // float circumferenceNm = 2.f * radiusNm * 3.1415926f;
@@ -329,10 +264,10 @@ void MapPainter::paintCircleLargeInternal(GeoPainter *painter, const Pos& center
   int step = 360 / numPoints;
   int x1, y1, x2 = -1, y2 = -1;
   if(textPos != nullptr)
-    *textPos = QPoint(0, 0);
+    *textPos = QPointF();
 
-  QVector<int> xtexts;
-  QVector<int> ytexts;
+  QList<int> xtexts;
+  QList<int> ytexts;
 
   // Use north endpoint of radius as start position
   Pos startPoint = centerPos.endpoint(radiusMeter, 0);
@@ -450,20 +385,23 @@ void MapPainter::drawText(Marble::GeoPainter *painter, const Pos& pos, const QSt
   }
 }
 
-void MapPainter::drawCross(Marble::GeoPainter *painter, int x, int y, int size) const
+void MapPainter::drawCross(Marble::GeoPainter *painter, float x, float y, float size) const
 {
-  painter->drawLine(x, y - size, x, y + size);
-  painter->drawLine(x - size, y, x + size, y);
+  painter->drawLine(QPointF(x, y - size), QPointF(x, y + size));
+  painter->drawLine(QPointF(x - size, y), QPointF(x + size, y));
 }
 
 void MapPainter::drawPolyline(Marble::GeoPainter *painter, const atools::geo::LineString& linestring) const
 {
-  QVector<QPolygonF *> polygons = createPolylines(linestring, context->screenRect, true /* splitLongLines */);
-  drawPolylines(painter, polygons);
-  releasePolylines(polygons);
+  QList<QPolygonF *> polylines = createPolylines(linestring, context->screenRect, true /* splitLongLines */);
+  if(!polylines.isEmpty())
+  {
+    drawPolylines(painter, polylines);
+    releasePolylines(polylines);
+  }
 }
 
-void MapPainter::drawPolylines(Marble::GeoPainter *painter, const QVector<QPolygonF *>& polygons) const
+void MapPainter::drawPolylines(Marble::GeoPainter *painter, const QList<QPolygonF *>& polygons) const
 {
   for(const QPolygonF *polygon : polygons)
     drawPolyline(painter, *polygon);
@@ -498,12 +436,12 @@ void MapPainter::drawPolyline(Marble::GeoPainter *painter, const QPolygonF& poly
 
 void MapPainter::drawPolygon(Marble::GeoPainter *painter, const atools::geo::LineString& linestring) const
 {
-  QVector<QPolygonF *> polygons = createPolygons(linestring, context->screenRect);
+  QList<QPolygonF *> polygons = createPolygons(linestring, context->screenRect);
   drawPolygons(painter, polygons);
   releasePolygons(polygons);
 }
 
-void MapPainter::drawPolygons(Marble::GeoPainter *painter, const QVector<QPolygonF *>& polygons) const
+void MapPainter::drawPolygons(Marble::GeoPainter *painter, const QList<QPolygonF *>& polygons) const
 {
   for(const QPolygonF *polygon : polygons)
     drawPolygon(painter, *polygon);
@@ -544,11 +482,11 @@ void MapPainter::drawLine(Marble::GeoPainter *painter, const atools::geo::Line& 
   // Move latitude values slightly up and down to workaround Marble drawing straight lines
   maptools::correctLatY(linestring, false /* polygon */);
 
-  QVector<QPolygonF *> polygons = createPolylines(linestring, context->screenRect, true /* splitLongLines */);
-  if(!polygons.isEmpty())
+  QList<QPolygonF *> polylines = createPolylines(linestring, context->screenRect, true /* splitLongLines */);
+  if(!polylines.isEmpty())
   {
-    drawPolylines(painter, polygons);
-    releasePolylines(polygons);
+    drawPolylines(painter, polylines);
+    releasePolylines(polylines);
   }
   else if(forceDraw)
   {
@@ -576,7 +514,7 @@ void MapPainter::paintArc(QPainter *painter, const QPointF& p1, const QPointF& p
 void MapPainter::paintHoldWithText(QPainter *painter, float x, float y, float direction,
                                    float lengthNm, float minutes, bool left, const QString& text, const QString& text2,
                                    const QColor& textColor, const QColor& textColorBackground,
-                                   const QVector<float>& inboundArrows, const QVector<float>& outboundArrows) const
+                                   const QList<float>& inboundArrows, const QList<float>& outboundArrows) const
 {
   // Scale to total length given in the leg
   // length = 2 * p + 2 * PI * p / 2
@@ -804,7 +742,7 @@ void MapPainter::paintProcedureTurnWithText(QPainter *painter, float x, float y,
   painter->restore();
 }
 
-void MapPainter::paintAircraftTrail(const QVector<LineString>& lineStrings, float minAlt, float maxAlt,
+void MapPainter::paintAircraftTrail(const QList<LineString>& lineStrings, float minAlt, float maxAlt,
                                     const atools::geo::Pos& aircraftPos) const
 {
   if(!lineStrings.isEmpty())
@@ -857,14 +795,14 @@ void MapPainter::paintAircraftTrail(const QVector<LineString>& lineStrings, floa
   }
 }
 
-QPolygonF MapPainter::buildArrow(float size, bool downwards) const
+QPolygonF MapPainter::buildArrow(float size, bool downwards, const QPointF& offset) const
 {
   if(downwards)
     // Pointing downwards
-    return QPolygonF({QPointF(0., size), QPointF(size, -size), QPointF(0., -size / 2.), QPointF(-size, -size)});
+    return QPolygonF({QPointF(0., size), QPointF(size, -size), QPointF(0., -size / 2.), QPointF(-size, -size)}).translated(offset);
   else
     // Point up
-    return QPolygonF({QPointF(0., -size), QPointF(size, size), QPointF(0., size / 2.), QPointF(-size, size)});
+    return QPolygonF({QPointF(0., -size), QPointF(size, size), QPointF(0., size / 2.), QPointF(-size, size)}).translated(offset);
 }
 
 void MapPainter::paintArrowAlongLine(QPainter *painter, const atools::geo::Line& line, const QPolygonF& arrow, float pos,
@@ -910,7 +848,7 @@ bool MapPainter::sortAirportFunction(const AirportPaintData& airportPaintData1, 
 
   // Put add-on on top if any add-on filter is set
   bool addonFlag = context->objectTypes.testFlag(map::AIRPORT_ADDON_ZOOM) ||
-                   context->objectTypes.testFlag(map::AIRPORT_ADDON_ZOOM_FILTER);
+                   context->objectTypes.testFlag(map::AIRPORT_ADDON_ZOOM_AND_FILTER);
 
   bool empty3dFlag = od.getFlags2().testFlag(opts2::MAP_EMPTY_AIRPORTS_3D) &&
                      NavApp::getCurrentSimulatorDb() != atools::fs::FsPaths::XPLANE_12;
@@ -932,7 +870,7 @@ void MapPainter::initQueries()
 
 void MapPainter::getPixmap(QPixmap& pixmap, const QString& resource, int size) const
 {
-  if(!QPixmapCache::find(resource % "_" % QString::number(size), &pixmap))
+  if(!QPixmapCache::find(resource % QStringLiteral("_") % QString::number(size), &pixmap))
   {
     // Not found - create new one from resource
     pixmap = QIcon(resource).pixmap(QSize(size, size));
@@ -940,7 +878,7 @@ void MapPainter::getPixmap(QPixmap& pixmap, const QString& resource, int size) c
   }
 }
 
-void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool user, bool drawFast) const
+void MapPainter::paintMsaMarkers(const QList<const map::MapAirportMsa *>& airportMsa, bool user, bool drawFast) const
 {
   Q_UNUSED(user)
 
@@ -950,14 +888,14 @@ void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool
   atools::util::PainterContextSaver saver(context->painter);
   GeoPainter *painter = context->painter;
 
-  for(const map::MapAirportMsa& msa : airportMsa)
+  for(const map::MapAirportMsa *msa : airportMsa)
   {
     float x, y;
-    bool msaVisible = wToS(msa.position, x, y, scale->getScreeenSizeForRect(msa.bounding));
+    bool msaVisible = wToS(msa->position, x, y, scale->getScreeenSizeForRect(msa->bounding));
 
     if(!msaVisible)
       // Check bounding rect for visibility
-      msaVisible = msa.bounding.overlaps(context->viewportRect);
+      msaVisible = context->visible(msa->bounding);
 
     if(msaVisible)
     {
@@ -973,32 +911,32 @@ void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool
 
       // Fill color for circle
       painter->setBrush(context->darkMap ? mapcolors::msaDiagramFillColorDark : mapcolors::msaDiagramFillColor);
-      drawPolygon(painter, msa.geometry);
+      drawPolygon(painter, msa->geometry);
 
       TextPlacement textPlacement(painter, this, context->screenRect);
-      QVector<atools::geo::Line> lines;
+      QList<atools::geo::Line> lines;
       QStringList texts;
 
       if(!drawFast)
       {
         // Skip lines if restriction is full circle
-        if(msa.altitudes.size() > 1)
+        if(msa->altitudes.size() > 1)
         {
           // Draw sector bearing lines and collect geometry and texts for placement =========================
-          for(int i = 0; i < msa.bearingEndPositions.size(); i++)
+          for(int i = 0; i < msa->bearingEndPos.size(); i++)
           {
-            texts.append(tr("%1%2").arg(atools::geo::normalizeCourse(msa.bearings.value(i))).arg(msa.trueBearing ? tr("°T") : tr("°M")));
+            texts.append(tr("%1%2").arg(atools::geo::normalizeCourse(msa->bearings.value(i))).arg(msa->trueBearing ? tr("°T") : tr("°M")));
 
-            atools::geo::Line line(msa.bearingEndPositions.value(i), msa.position);
+            atools::geo::Line line(msa->bearingEndPos.value(i), msa->position);
             lines.append(line);
             drawLine(painter, line);
           }
         }
 
         // Calculate font size from radius
-        float fontSize = scale->getPixelForNm(msa.radius) / 8.f * context->textSizeAirportMsa;
+        float fontSize = scale->getPixelForNm(msa->radius) / 8.f * context->textSizeAirportMsa * context->sizeAll;
 
-        if(msa.altitudes.size() == 1)
+        if(msa->altitudes.size() == 1)
           // Larger font for full circle restriction
           fontSize *= 2.f;
 
@@ -1014,16 +952,16 @@ void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool
           context->painter->setFont(font);
 
           // Draw altitude labels ===================================================================
-          for(int i = 0; i < msa.altitudes.size(); i++)
+          for(int i = 0; i < msa->altitudes.size(); i++)
           {
-            const atools::geo::Pos labelPos = msa.labelPositions.value(i);
+            const atools::geo::Pos labelPos = msa->labelPositions.value(i);
 
             float xp, yp;
-            bool visible = wToS(labelPos, xp, yp, scale->getScreeenSizeForRect(msa.bounding));
+            bool visible = wToS(labelPos, xp, yp, scale->getScreeenSizeForRect(msa->bounding));
 
             if(visible)
             {
-              QString text = Unit::altFeet(msa.altitudes.at(i), true /* addUnit */, true /* narrow */);
+              QString text = Unit::altFeet(msa->altitudes.at(i), true /* addUnit */, true /* narrow */);
               QSizeF txtsize = painter->fontMetrics().boundingRect(text).size();
               painter->drawText(QPointF(xp - txtsize.width() / 2., yp + txtsize.height() / 2.), text);
             }
@@ -1038,8 +976,8 @@ void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool
         context->szFont(context->textSizeAirportMsa);
 
         painter->setPen(context->darkMap ? mapcolors::msaDiagramLinePenDark : mapcolors::msaDiagramLinePen);
-        painter->setBrush(Qt::white);
-        painter->setBackground(Qt::white);
+        painter->setBrush(mapcolors::markerTextBackgroundColor);
+        painter->setBackground(mapcolors::markerTextBackgroundColor);
         painter->setBackgroundMode(Qt::OpaqueMode);
 
         // Draw bearing labels ==========================================================================
@@ -1047,14 +985,14 @@ void MapPainter::paintMsaMarks(const QList<map::MapAirportMsa>& airportMsa, bool
         textPlacement.drawTextAlongLines();
 
         // Draw small center circle ===================================================================
-        drawCircle(painter, msa.position, 4);
+        drawCircle(painter, msa->position, 4);
       }
     }
   }
 }
 
-void MapPainter::paintHoldingMarks(const QList<map::MapHolding>& holdings, const MapLayer *layer, const MapLayer *layerText, bool user,
-                                   bool drawFast, bool darkMap) const
+void MapPainter::paintHoldings(const QList<const map::MapHolding *>& holdings, const QStringList& texts, const MapLayer *layer,
+                               const MapLayer *layerText, bool user, bool drawFast, bool darkMap) const
 {
   if(holdings.isEmpty())
     return;
@@ -1068,31 +1006,33 @@ void MapPainter::paintHoldingMarks(const QList<map::MapHolding>& holdings, const
   QColor backColor = user || context->flags2 & opts2::MAP_NAVAID_TEXT_BACKGROUND ? QColor(Qt::white) : QColor(Qt::transparent);
 
   if(user)
-    context->szFont(context->textSizeRangeUserFeature);
+    context->szFont(context->textSizeRangeMarker);
   else
     context->szFont(context->textSizeNavaid);
 
   QColor holdingColor = mapcolors::holdingColor.lighter(darkMap ? 250 : 100);
 
-  for(const map::MapHolding& holding : holdings)
+  for(int i = 0; i < holdings.size(); i++)
   {
+    const map::MapHolding *holding = holdings.at(i);
+    const QString& text = texts.isEmpty() ? QStringLiteral() : texts.at(i);
     bool visible, hidden;
-    QPointF pt = wToS(holding.getPosition(), DEFAULT_WTOS_SIZE, &visible, &hidden);
+    QPointF pt = wToS(holding->getPosition(), DEFAULT_WTOS_SIZE, &visible, &hidden);
     if(hidden)
       continue;
 
-    QColor color = user ? holding.color : holdingColor;
+    QColor color = user ? holding->color : holdingColor;
 
-    float dist = holding.distance();
+    float dist = holding->distance();
     float distPixel = scale->getPixelForNm(dist);
-    float lineWidth = user ? context->szF(context->thicknessUserFeature, 3) : (detail2 ? 2.5f : 1.5f);
+    float lineWidth = user ? context->szF(context->thicknessMapMarker, (detail ? 2.5f : 1.5f)) : (detail2 ? 2.5f : 1.5f);
 
     if(layer->isApproach() && distPixel > 10.f)
     {
       // Calculcate approximate rectangle
-      Rect rect(holding.position, atools::geo::nmToMeter(dist) * 2.f, true /* fast */);
+      Rect rect(holding->position, atools::geo::nmToMeter(dist) * 2.f, true /* fast */);
 
-      if(context->viewportRect.overlaps(rect))
+      if(context->visible(rect))
       {
         painter->setPen(QPen(color, lineWidth, Qt::SolidLine));
 
@@ -1102,51 +1042,56 @@ void MapPainter::paintHoldingMarks(const QList<map::MapHolding>& holdings, const
           if(detail2)
           {
             // Text for inbound leg =======================================
-            inboundText.append(formatter::courseTextFromTrue(holding.courseTrue, holding.magvar, false /* magBold */, false /* magBig */,
+            inboundText.append(formatter::courseTextFromTrue(holding->courseTrue, holding->nav.magvar, false /* magBold */,
+                                                             false /* magBig */,
                                                              false /* trueSmall */, true /* narrow */));
 
-            if(holding.time > 0.f)
-              inboundText.append(tr("%1min").arg(QString::number(holding.time, 'g', 2)));
-            if(holding.length > 0.f)
-              inboundText.append(Unit::distNm(holding.length, true /* addUnit */, 1, true /* narrow */));
+            if(holding->time > 0.f)
+              inboundText.append(tr("%1min").arg(QString::number(holding->time, 'g', 2)));
+            if(holding->length > 0.f)
+              inboundText.append(Unit::distNm(holding->length, true /* addUnit */, 1, true /* narrow */));
           }
 
-          if(!holding.navIdent.isEmpty())
-            inboundText.append(holding.navIdent);
+          if(!text.isEmpty())
+            inboundText.append(text);
+          else if(!holding->nav.ident.isEmpty())
+            inboundText.append(holding->nav.ident);
 
           if(detail2)
           {
             // Text for outbound leg =======================================
-            outboundText.append(formatter::courseTextFromTrue(opposedCourseDeg(holding.courseTrue), holding.magvar,
+            outboundText.append(formatter::courseTextFromTrue(opposedCourseDeg(holding->courseTrue), holding->nav.magvar,
                                                               false /* magBold */, false /* magBig */, false /* trueSmall */,
                                                               true /* narrow */));
 
             if(user)
             {
-              if(holding.speedKts > 0.f)
-                outboundText.append(Unit::speedKts(holding.speedKts, true /* addUnit */, true /* narrow */));
-              outboundText.append(Unit::altFeet(holding.position.getAltitude(), true /* addUnit */, true /* narrow */));
+              if(holding->speedKts > 0.f)
+                outboundText.append(Unit::speedKts(holding->speedKts, true /* addUnit */, true /* narrow */));
+              outboundText.append(Unit::altFeet(holding->position.getAltitude(), true /* addUnit */, true /* narrow */));
             }
             else
             {
-              if(holding.speedLimit > 0.f)
-                outboundText.append(Unit::speedKts(holding.speedLimit, true /* addUnit */, true /* narrow */));
+              if(holding->speedLimit > 0.f)
+                outboundText.append(Unit::speedKts(holding->speedLimit, true /* addUnit */, true /* narrow */));
 
-              if(holding.minAltititude > 0.f)
-                outboundText.append(tr("A%1").arg(Unit::altFeet(holding.minAltititude, true /* addUnit */,
+              if(holding->minAltititude > 0.f)
+                outboundText.append(tr("A%1").arg(Unit::altFeet(holding->minAltititude, true /* addUnit */,
                                                                 true /* narrow */)));
-              if(holding.maxAltititude > 0.f)
-                outboundText.append(tr("B%2").arg(Unit::altFeet(holding.maxAltititude, true /* addUnit */,
+              if(holding->maxAltititude > 0.f)
+                outboundText.append(tr("B%2").arg(Unit::altFeet(holding->maxAltititude, true /* addUnit */,
                                                                 true /* narrow */)));
             }
           }
         }
 
+        QColor textColor = user ? mapcolors::markerTextColor : color;
+        QColor textColorBackground = user ? mapcolors::markerTextBackgroundColor : backColor;
         paintHoldWithText(context->painter, static_cast<float>(pt.x()), static_cast<float>(pt.y()),
-                          holding.courseTrue, dist, 0.f, holding.turnLeft,
-                          inboundText.join(tr("/")), outboundText.join(tr("/")), color, backColor,
-                          detail && !drawFast ? QVector<float>({0.80f}) : QVector<float>() /* inbound arrows */,
-                          detail && !drawFast ? QVector<float>({0.80f}) : QVector<float>() /* outbound arrows */);
+                          holding->courseTrue, dist, 0.f, holding->turnLeft,
+                          inboundText.join(tr("/")), outboundText.join(tr("/")), textColor, textColorBackground,
+                          detail && !drawFast ? QList<float>({0.80f}) : QList<float>() /* inbound arrows */,
+                          detail && !drawFast ? QList<float>({0.80f}) : QList<float>() /* outbound arrows */);
       } // if(context->viewportRect.overlaps(rect))
     } // if(context->mapLayer->isApproach() && scale->getPixelForNm(hold.distance()) > 10.f)
 

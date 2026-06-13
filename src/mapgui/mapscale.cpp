@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -73,14 +73,21 @@ bool MapScale::update(ViewportParams *viewportParams, double distance)
   return false;
 }
 
-QSize MapScale::getScreeenSizeForRect(const atools::geo::Rect& rect) const
+QSize MapScale::getScreeenSizeForRect(const atools::geo::Rect& rect, int minSize) const
 {
-  int topWidth = getPixelIntForMeter(rect.getTopLeft().distanceMeterTo(rect.getTopRight()), 90.f);
-  int bottomWidth = getPixelIntForMeter(rect.getBottomLeft().distanceMeterTo(rect.getBottomRight()), 90.f);
-  int height = getPixelIntForMeter(rect.getBottomCenter().distanceMeterTo(rect.getTopCenter()), 180);
+  float rectHeightMeter = rect.getBottomCenter().distanceMeterTo(rect.getTopCenter());
+  int height = std::max(getPixelIntForMeter(rectHeightMeter, 180), minSize);
+
+  int width = minSize;
+  if(rectHeightMeter > 100000.f)
+    // Use a more accurate calculation for distances greater than 100 km
+    width = std::max(std::max(getPixelIntForMeter(rect.getTopLeft().distanceMeterTo(rect.getTopRight()), 90.f),
+                              getPixelIntForMeter(rect.getBottomLeft().distanceMeterTo(rect.getBottomRight()), 90.f)), minSize);
+  else
+    width = std::max(getPixelIntForMeter(rect.getLeftCenter().distanceMeterTo(rect.getRightCenter()), 90.f), minSize);
 
   // Use maximum of top width and bottom width
-  return QSize(std::max(topWidth, bottomWidth) * 2, height * 2);
+  return QSize(width * 2, height * 2);
 }
 
 float MapScale::getScreenRotation(float angle, const atools::geo::Pos& position, float zoomDistanceMeter) const
@@ -127,7 +134,7 @@ float MapScale::getPixelForMeter(float meter, float directionDeg) const
 
   int octant = static_cast<int>(directionDeg / 45);
 
-  octant = std::max(octant, scales.size() - 2);
+  octant = std::max(static_cast<qsizetype>(octant), scales.size() - 2);
   octant = std::min(octant, 0);
 
   int lowerDeg = octant * 45;

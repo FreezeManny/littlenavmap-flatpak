@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,8 @@
 #ifndef LITTLENAVMAP_COLUMN_H
 #define LITTLENAVMAP_COLUMN_H
 
+#include "common/unit.h"
 #include <QStringList>
-#include <functional>
 
 class QAction;
 class QWidget;
@@ -89,17 +89,17 @@ public:
   /* Set to true if a condition map includes the column name */
   Column& includesName(bool value = true);
 
-  /* Can be set to indicate that this is one of the tow distance search special columns "distance" and "heading". */
-  Column& distanceCol(bool value = true);
+  /* Can be set to indicate that this is one of the two distance search special columns "distance" and "heading". */
+  Column& distanceHeadingCol(bool value = true);
 
   /* Indicates a condition that should be use for a spin box value, i.e. ">", "<" etc. */
   Column& condition(const QString& cond);
 
   /* Unit conversion function */
-  Column& convertFunc(std::function<float(float value)> unitConvertFunc);
+  Column& convertFunction(UnitRevFloatFunc unitConvertFunction);
 
   /* Sql function to build column like "strftime('%s', destination_time) - strftime('%s', departure_time)" */
-  Column& sqlFunc(const QString& sqlFunctionParam);
+  Column& sqlFunction(const QString& sqlFunctionParam);
 
   /* true if either column or min/max widgets are set and enabled */
   bool isWidgetEnabled() const;
@@ -122,6 +122,12 @@ public:
   const QString& getColumnName() const
   {
     return colName;
+  }
+
+  const QString getCleanDisplayName() const
+  {
+    QString dispName = getDisplayName();
+    return dispName.replace(QStringLiteral("-\n"), QStringLiteral()).replace('\n', ' ');
   }
 
   const QString& getDisplayName() const
@@ -170,7 +176,7 @@ public:
     return colIsHiddenColumn;
   }
 
-  bool isDistance() const
+  bool isDistanceHeading() const
   {
     return colIsDistance;
   }
@@ -240,14 +246,14 @@ public:
     return colMinWidgetSuffix;
   }
 
-  std::function<float(float value)> getUnitConvert() const
+  UnitRevFloatFunc getUnitConvert() const
   {
-    return unitConvert;
+    return unitConvertFunc;
   }
 
-  const QString& getSqlFunc() const
+  const QString& getSqlFunction() const
   {
-    return sqlFunction;
+    return sqlFunc;
   }
 
   /* Action which is used to show the potentially hidden related option for this column */
@@ -276,7 +282,7 @@ private:
   QString colCondition;
 
   /* SQL function to build column */
-  QString sqlFunction;
+  QString sqlFunc;
 
   /* Condition list used for combo boxes */
   QStringList colIndexConditionMap;
@@ -284,7 +290,7 @@ private:
   int index = -1;
 
   /* Function to convert from default units to widget units */
-  std::function<float(float value)> unitConvert = nullptr;
+  UnitRevFloatFunc unitConvertFunc = nullptr;
 
   bool colCanBeFiltered = false;
   bool colCanBeFilteredBuilder = false;

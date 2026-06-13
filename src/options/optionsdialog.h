@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,13 +18,15 @@
 #ifndef LITTLENAVMAP_OPTIONSDIALOG_H
 #define LITTLENAVMAP_OPTIONSDIALOG_H
 
-#include "options/optiondata.h"
+#include "options/optionchangeflags.h"
 
 #include <QDialog>
-#include <QLocale>
+#include <QDialogButtonBox>
+#include <QSize>
 
+class QLabel;
 namespace Ui {
-class Options;
+class OptionsDialog;
 }
 
 class QAbstractButton;
@@ -41,12 +43,14 @@ class QListWidget;
 class QFontDialog;
 class QTableWidgetItem;
 class QTableWidget;
+struct OptionsPrivate;
 
 namespace atools {
 namespace gui {
+class LinkTooltipHandler;
 class ListWidgetIndex;
 class GridDelegate;
-class ItemViewZoomHandler;
+class WidgetZoomHandler;
 }
 }
 /* Takes care about loading, changing and saving of global options.
@@ -71,22 +75,25 @@ public:
   /* Load and select best language option and fill combo box. */
   void initLanguage();
 
+  /* Copy main menu actions to allow using shortcuts in the non-modal dialog too */
+  void initActions();
+
   /* Saves the state of all widgets */
   void saveState();
 
   /* Restores state of all widgets. Has to be called before getting the OptionData instance. */
   void restoreState();
 
-  /* Show the dialog */
-  virtual void open() override;
+  /* Assign default size and center window */
+  void resetWindowLayout();
 
   /* Get override region settings options directly from settings file*/
   static bool isOverrideRegion();
 
-  /* Test if a public network is used with a too low update rate */
+  /* Test if a public network is used with a too low update rate - checks widgets */
   void checkOfficialOnlineUrls();
 
-  /* Enable or disable tooltips changed */
+  /* Enable or disable tooltips changed in NavApp */
   void updateTooltipOption();
 
   void styleChanged();
@@ -97,23 +104,39 @@ public:
 
   void fontChanged(const QFont& font);
 
+  /* Called by signal from WebController */
+  void webserverStatusChanged(bool);
+
 signals:
   /* Emitted whenever OK or Apply is pressed on the dialog window */
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& change);
 
-  /* QGuiApplication::fontChanged is emitted for font changes */
+  /* Open load scenery library dialog. Connect queued to allow the options to close before. */
+  void loadSceneryLibrary();
+
+  /* Restart. Connect queued to allow the options to close before. */
+  void restartApplication(bool resetLayout);
+
+  /* QGuiApplication::fontChanged is additionally emitted for font changes */
 
 private:
   /* Catch close button too since dialog is kept alive */
   virtual void reject() override;
 
+  /* Dialog shown */
+  virtual void showEvent(QShowEvent *) override;
+
+  /* Dialog hidden. Save state. */
+  virtual void hideEvent(QHideEvent *) override;
+
   void updateWidgetStates();
   void updateTrailStates();
 
   void buttonBoxClicked(QAbstractButton *button);
+  void buttonBoxHandler(QDialogButtonBox::StandardButton button, bool fromReject = false);
 
   /* Copy widget states to OptionData object */
-  void widgetsToOptionData();
+  void widgetsToOptionData(OptionData& data);
 
   /* Copy OptionData object to widget */
   void optionDataToWidgets(const OptionData& data);
@@ -125,7 +148,8 @@ private:
   void selectXplane11PathClicked();
   void selectXplane12PathClicked();
   void weatherXplane11WindPathSelectClicked();
-  void clearMemCachedClicked();
+  void clearMemCacheMapClicked();
+  void clearMemCacheProfileClicked();
   void updateWeatherButtonState();
   void updateActiveSkyPathStatus();
   void updateXplane11PathStatus();
@@ -163,6 +187,7 @@ private:
   void resetWeatherIvaoUrlClicked();
   void resetWeatherNoaaWindUrlClicked();
 
+  /* Update all widget units in this dialog */
   void updateWidgetUnits();
 
   void flightplanColorClicked();
@@ -176,7 +201,6 @@ private:
   void mapHighlightProfileColorClicked();
 
   void trailColorClicked();
-  void mapMeasurementColorClicked();
   void eastWestRuleClicked();
 
   // Add items to the tree widget and to the  displayOptItemIndex
@@ -199,8 +223,9 @@ private:
   template<typename TYPE>
   void displayOptWidgetToOptionData(TYPE& type, const QHash<TYPE, QTreeWidgetItem *>& index) const;
 
-  void updateFontFromData();
+  void updateGuiFontFromData();
   void updateMapFontLabel();
+  void updateProfileFontLabel();
   void updateGuiFontLabel();
   void updateButtonColors();
   void updateCacheElevationStates();
@@ -218,8 +243,7 @@ private:
   void onlineTestUrl(const QString& url, bool statusFile);
 
   /* Add a dialog page */
-  QListWidgetItem *pageListItem(QListWidget *parent, const QString& text, const QString& tooltip = QString(),
-                                const QString& iconPath = QString());
+  void addPageListItem(const QString& id, const QString& text, const QString& tooltip, const QString& iconPath);
   void changePage(QListWidgetItem *current, QListWidgetItem *previous);
 
   /* Update label for docroot path */
@@ -228,6 +252,8 @@ private:
 
   /* Show listening address(es)*/
   void updateWebServerStatus();
+
+  /* Activated by button */
   void startStopWebServerClicked();
 
   /* copy values from widgets to server for instant check of parameters */
@@ -247,55 +273,81 @@ private:
   void resetGuiFontClicked();
   void selectMapFontClicked();
   void resetMapFontClicked();
+  void selectProfileFontClicked();
+  void resetProfileFontClicked();
   void buildFontDialog(const QFont& initialFont);
   void toolbarSizeClicked();
+  void adjustFont(QString& font);
 
-  void flightplanPatterShortClicked();
-  void flightplanPatterLongClicked();
+  void flightplanPatternShortClicked();
+  void flightplanPatternLongClicked();
   void updateFlightplanExample();
   void updateLinks();
   void colorButtonClicked(QColor& color);
   void updateGuiWidgets();
 
   void hintLinkActivated(const QString& link);
+  void updateLinkTooltipHandler();
+  void restoreNetworkSettings(OptionData& od);
 
   /* Converts range ring string to vector of floats. Falls back to 100 units single ring if nothing is valid.
    * Uses current locale to convert numbers and check min and max. */
-  QVector<float> rangeStringToFloat(const QString& rangeStr) const;
-  QString rangeFloatToString(const QVector<float>& ranges) const;
+  QList<float> rangeStringToFloat(const QString& rangeStr) const;
+  QString rangeFloatToString(const QList<float>& ranges) const;
   void mapThemeKeyEdited(QTableWidgetItem *item);
 
   void searchTextEdited(const QString& text);
 
-  QString guiLanguage, guiFont, mapFont;
-  QColor flightplanColor, flightplanOutlineColor, flightplanProcedureColor, flightplanActiveColor, trailColor, measurementColor,
+  /* Save and reload window position and size */
+  void restoreDialogState();
+  void saveDialogState();
+
+  void emitOptionsChanged();
+
+  optc::OptionChangeFlags buildFlagsFromChange(const OptionData& saved, const OptionData& changed);
+
+  bool buttonBoxHandlerActive = false;
+
+  QString guiLanguage, guiFont, mapFont, profileFont;
+  QColor flightplanColor, flightplanOutlineColor, flightplanProcedureColor, flightplanActiveColor, trailColor,
          flightplanPassedColor, highlightFlightplanColor, highlightSearchColor, highlightProfileColor;
 
-  Ui::Options *ui;
+  Ui::OptionsDialog *ui;
   QMainWindow *mainWindow;
+
+  /* All widgets having their state saved */
   QList<QObject *> widgets;
 
+  /* Labels showing a hint and having a internal link to a page */
+  QList<QLabel *> hintLabels;
+
+  /* All labels having a http link */
+  QList<QLabel *> linkLabels;
+
+  QHash<QString, QListWidgetItem *> listWidgetItemIndex;
+
   // Maps options flags to items in the tree widget
-  QHash<optsac::DisplayOptionsUserAircraft, QTreeWidgetItem *> displayOptItemIndexUser;
-  QHash<optsac::DisplayOptionsAiAircraft, QTreeWidgetItem *> displayOptItemIndexAi;
-  QHash<optsd::DisplayOptionsAirport, QTreeWidgetItem *> displayOptItemIndexAirport;
-  QHash<optsd::DisplayOptionsNavAid, QTreeWidgetItem *> displayOptItemIndexNavAid;
-  QHash<optsd::DisplayOptionsAirspace, QTreeWidgetItem *> displayOptItemIndexAirspace;
-  QHash<optsd::DisplayOptionsRose, QTreeWidgetItem *> displayOptItemIndexRose;
-  QHash<optsd::DisplayOptionsMeasurement, QTreeWidgetItem *> displayOptItemIndexMeasurement;
-  QHash<optsd::DisplayOptionsRoute, QTreeWidgetItem *> displayOptItemIndexRoute;
+  OptionsPrivate *p;
 
   UnitStringTool *units = nullptr;
 
   QFontDialog *fontDialog = nullptr;
 
-  atools::gui::ItemViewZoomHandler *zoomHandlerLabelTree = nullptr, *zoomHandlerMapThemeKeysTable = nullptr,
-                                   *zoomHandlerDatabaseInclude = nullptr, *zoomHandlerDatabaseExclude = nullptr,
-                                   *zoomHandlerDatabaseAddonExclude = nullptr;
+  atools::gui::WidgetZoomHandler *zoomHandlerLabelTree = nullptr, *zoomHandlerMapThemeKeysTable = nullptr,
+                                 *zoomHandlerDatabaseInclude = nullptr, *zoomHandlerDatabaseExclude = nullptr,
+                                 *zoomHandlerDatabaseAddonExclude = nullptr;
 
   atools::gui::GridDelegate *gridDelegate = nullptr;
 
   atools::gui::ListWidgetIndex *listWidgetIndex = nullptr;
+
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
+
+  /* Size as given in UI */
+  QSize defaultSize;
+
+  /* Saved when opening dialog. Can be restored when closing if user answers yes to question */
+  OptionData *savedOptionData;
 };
 
 #endif // LITTLENAVMAP_OPTIONSDIALOG_H

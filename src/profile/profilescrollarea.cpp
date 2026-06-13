@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,16 +16,18 @@
 *****************************************************************************/
 
 #include "profile/profilescrollarea.h"
-#include "gui/tools.h"
-#include "profile/profilewidget.h"
-#include "profile/profilelabelwidgetvert.h"
-#include "profile/profilelabelwidgethoriz.h"
-#include "profile/profileoptions.h"
-#include "gui/widgetstate.h"
+
 #include "common/constants.h"
 #include "gui/helphandler.h"
-#include "route/route.h"
+#include "gui/widgetzoomhandler.h"
+#include "gui/tools.h"
+#include "gui/widgetstate.h"
 #include "options/optiondata.h"
+#include "profile/profilelabelwidgethoriz.h"
+#include "profile/profilelabelwidgetvert.h"
+#include "profile/profileoptions.h"
+#include "profile/profilewidget.h"
+#include "route/route.h"
 
 #include "app/navapp.h"
 #include "atools.h"
@@ -156,7 +158,7 @@ void ProfileScrollArea::expandWidget()
   scrollArea->setWidgetResizable(false);
 }
 
-void ProfileScrollArea::showTooltip(const QPoint& globalPos, const QString& text)
+void ProfileScrollArea::showTooltip(const QPointF& globalPos, const QString& text)
 {
   if(profileWidget->getProfileOptions()->getDisplayOptions().testFlag(optsp::PROFILE_TOOLTIP))
   {
@@ -360,31 +362,21 @@ void ProfileScrollArea::updateWidgets()
 bool ProfileScrollArea::eventFilter(QObject *object, QEvent *event)
 {
   bool consumed = false;
-  if(object == scrollArea->viewport())
-  {
-    // Do not let wheel event propagate from the viewport to the scroll bars
-    if(event->type() == QEvent::Wheel)
-      return true;
-  }
-  else if(object == scrollArea)
-  {
-    // Work on own events
-    // qDebug() << Q_FUNC_INFO << event->type();
-    if(event->type() == QEvent::Resize)
-      consumed = resizeEvent();
-    else if(event->type() == QEvent::Wheel)
-      consumed = wheelEvent(dynamic_cast<QWheelEvent *>(event));
-    else if(event->type() == QEvent::MouseButtonPress)
-      consumed = mousePressEvent(dynamic_cast<QMouseEvent *>(event));
-    else if(event->type() == QEvent::MouseButtonRelease)
-      consumed = mouseReleaseEvent(dynamic_cast<QMouseEvent *>(event));
-    else if(event->type() == QEvent::MouseMove)
-      consumed = mouseMoveEvent(dynamic_cast<QMouseEvent *>(event));
-    else if(event->type() == QEvent::MouseButtonDblClick)
-      consumed = mouseDoubleClickEvent(dynamic_cast<QMouseEvent *>(event));
-    else if(event->type() == QEvent::KeyPress)
-      consumed = keyEvent(dynamic_cast<QKeyEvent *>(event));
-  }
+
+  if(event->type() == QEvent::Resize)
+    consumed = resizeEvent();
+  else if(event->type() == QEvent::Wheel)
+    consumed = wheelEvent(dynamic_cast<QWheelEvent *>(event));
+  else if(event->type() == QEvent::MouseButtonPress)
+    consumed = mousePressEvent(dynamic_cast<QMouseEvent *>(event));
+  else if(event->type() == QEvent::MouseButtonRelease)
+    consumed = mouseReleaseEvent(dynamic_cast<QMouseEvent *>(event));
+  else if(event->type() == QEvent::MouseMove)
+    consumed = mouseMoveEvent(dynamic_cast<QMouseEvent *>(event));
+  else if(event->type() == QEvent::MouseButtonDblClick)
+    consumed = mouseDoubleClickEvent(dynamic_cast<QMouseEvent *>(event));
+  else if(event->type() == QEvent::KeyPress)
+    consumed = keyEvent(dynamic_cast<QKeyEvent *>(event));
 
   if(!consumed)
     // if you want to filter the event out, i.e. stop it being handled further, return true
@@ -523,7 +515,7 @@ bool ProfileScrollArea::wheelEvent(QWheelEvent *event)
 {
   static const int ANGLE_THRESHOLD = 120;
 
-  if(!viewport->geometry().contains(event->pos()))
+  if(!viewport->geometry().contains(event->position().toPoint()))
     // Ignore wheel events that appear outside of the view and on the scrollbars
     return false;
 
@@ -553,8 +545,8 @@ bool ProfileScrollArea::wheelEvent(QWheelEvent *event)
       // Reset summed up values if accepted
       lastWheelAngle = 0;
 
-      QPoint mouse = (event->pos() + getOffset());
-      QPoint mouseToCenter = event->pos() - viewport->geometry().center(); // left neg, right pos
+      QPoint mouse = (event->position().toPoint() + getOffset());
+      QPoint mouseToCenter = event->position().toPoint() - viewport->geometry().center(); // left neg, right pos
 
       if(event->modifiers() == Qt::NoModifier)
       {
@@ -891,10 +883,10 @@ void ProfileScrollArea::styleChanged()
 #if !defined(Q_OS_LINUX) || defined(DEBUG_INFORMATION)
   // Make the elevation profile splitter handle better visible - update background color
   NavApp::getMainUi()->splitterProfile->setStyleSheet(
-    QString("QSplitter::handle { "
-            "background: %1;"
-            "image: url(:/littlenavmap/resources/icons/splitterhandhoriz.png);"
-            " }").
+    QStringLiteral("QSplitter::handle { "
+                   "background: %1;"
+                   "image: url(:/littlenavmap/resources/icons/splitterhandhoriz.png);"
+                   " }").
     arg(QApplication::palette().color(QPalette::Window).darker(120).name()));
 #endif
   optionsChanged();
@@ -909,7 +901,7 @@ void ProfileScrollArea::optionsChanged()
 
 void ProfileScrollArea::fontChanged(const QFont& font)
 {
-  atools::gui::updateAllFonts(this, font);
+  atools::gui::updateAllFonts(this, font, atools::gui::WidgetZoomHandler::getRegisteredWidgets());
 }
 
 void ProfileScrollArea::setMaxVertZoom()

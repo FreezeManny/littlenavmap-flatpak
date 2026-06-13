@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,10 +16,10 @@
 #ifndef LITTLENAVMAP_NAVMAPWIDGET_H
 #define LITTLENAVMAP_NAVMAPWIDGET_H
 
+#include "geo/linestring.h"
+#include "gui/mapposhistory.h"
 #include "mapgui/mappaintwidget.h"
 #include "mapgui/mapwidgetflags.h"
-#include "gui/mapposhistory.h"
-#include "geo/linestring.h"
 
 #include <QDateTime>
 #include <QTimer>
@@ -39,6 +39,7 @@ class SqlRecord;
 }
 
 namespace map {
+struct MapNav;
 struct MapUserpoint;
 struct MapParking;
 struct MapHelipad;
@@ -104,8 +105,8 @@ public:
   /* End all distance line and route dragging modes */
   virtual void cancelDragAll() override;
 
-  /* Start function move userpoint */
-  void startUserpointDrag(const map::MapUserpoint& userpoint, const QPoint& point);
+  /* Set start mode for measurment line. Next click will start a line */
+  void startDistanceMarkerDrag();
 
   /* New data from simconnect has arrived. Update aircraft position and track. */
   void simDataChanged(const atools::fs::sc::SimConnectData& simulatorData);
@@ -119,23 +120,23 @@ public:
   /* Update the shown map object types depending on action status (toolbar or menu) */
   virtual void updateMapObjectsShown() override;
 
-  /* Opens a dialog for configuration of a traffic pattern display object */
-  void addPatternMark(const map::MapAirport& airport);
+  /* Opens a dialog for configuration of a traffic pattern display object from context menus in search and route */
+  void addPatternMarker(const map::MapAirport& airport);
 
   /* Remove pattern at index and update the map */
-  void removePatternMark(int id);
+  void removePatternMarker(int id);
 
-  /* Opens a dialog for configuration and adds a hold */
-  void addHold(const map::MapResult& result, const atools::geo::Pos& position);
+  /* Opens a dialog for configuration and adds a hold from context menus in search and route */
+  void addHoldingMarker(const map::MapResult& result, const atools::geo::Pos& position);
 
   /* Remove hold at index and update the map */
   void removeHoldMark(int id);
 
-  /* Adds MSA diagram at position */
-  void addMsaMark(map::MapAirportMsa airportMsa);
+  /* Adds MSA diagram at position from context menus in search and route */
+  void addMsaMarker(map::MapAirportMsa airportMsa);
 
   /* Remove airport MSA diagram at index and update the map */
-  void removeMsaMark(int id);
+  void removeMsaMarker(int id);
 
   /* Jump to the search center mark using default zoom */
   void showSearchMark();
@@ -158,11 +159,22 @@ public:
   /* Save current position and zoom distance as home */
   void changeHome();
 
-  /* Add general (red) range ring */
-  void addRangeMark(const atools::geo::Pos& pos, bool showDialog);
+  /* Add general range ring or navaid ranges. From map click. */
+  void addRangeMarkFromMap(const atools::geo::Pos& pos, bool showDialog);
+
+  /* Add general range ring or navaid ranges. From context menu. */
+  void addRangeMark(const atools::geo::Pos& pos, const map::MapResult& result, bool showDialog);
+
+  /* Show selection menu if needed and fill markers from result. show menu allows menu. */
+  bool fillRangeMarkerMenu(map::RangeMarker& marker, const atools::geo::Pos& pos, map::MapResult result, bool showMenu);
+  bool fillHoldingMarkerMenu(map::HoldingMarker& marker, const atools::geo::Pos& pos, map::MapResult result, bool showMenu);
+
+  /* Fill marker text, navaid information, position and more from result. Takes first valid entry in order. */
+  void fillFromResult(QString& text, map::MapNav& nav, atools::geo::Pos& pos, const atools::geo::Pos& currentPos,
+                      const map::MapResult& result);
 
   /* Add radio navaid range ring. Falls back to normal range rings if range is 0. */
-  void addNavRangeMark(const atools::geo::Pos& pos, map::MapTypes type, const QString& displayIdent, const QString& frequency, float range);
+  void addNavRangeMark(const map::MapResult& result, const atools::geo::Pos& position);
 
   /* Remove range rings on index, print message and update map */
   void removeRangeMark(int id);
@@ -175,9 +187,6 @@ public:
 
   /* Reset details and feature visibility on the map back to default */
   void resetSettingsToDefault();
-
-  /* Removes all range rings and distance measurement lines */
-  void clearAllMarkers(map::MapTypes types);
 
   /* Return number of truncated points */
   void loadAircraftTrail(const QString& filename, int& numLoaded, int& numTruncated);
@@ -211,17 +220,19 @@ public:
 
   void resetTakeoffLandingDetection();
 
-  /* Currently dragging measurement line */
-  int getCurrentDistanceMarkerId() const
-  {
-    return currentDistanceMarkerId;
-  }
+  /* Currently dragging objects */
+  int getCurrentDistanceMarkerId() const;
+  int getCurrentHoldingMarkerId() const;
+  int getCurrentRangeMarkerId() const;
 
   /* Shows the configuration dialog for the degree grid */
   void showGridConfiguration();
 
   /* Logs map display settings */
   void printMapTypesToLog();
+
+  /* MapPaintWidget overrides for UI updates mostly ============================================================ */
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) override;
 
 signals:
   /* Emitted when connection is established and user aircraft turned from invalid to valid */
@@ -238,13 +249,9 @@ signals:
   void aircraftTakeoff(const atools::fs::sc::SimConnectUserAircraft& aircraft);
   void aircraftLanding(const atools::fs::sc::SimConnectUserAircraft& aircraft, float flownDistanceNm);
 
-  /* Set parking position, departure, destination for flight plan from context menu */
-  void routeSetParkingStart(const map::MapParking& parking);
-  void routeSetHelipadStart(const map::MapHelipad& helipad);
-
   /* Set route departure or destination from context menu */
-  void routeSetStart(const map::MapAirport& ap);
-  void routeSetDest(const map::MapAirport& ap);
+  void routeSetDeparture(const map::MapAirport& ap, bool undo = true);
+  void routeSetDestination(const map::MapAirport& ap, bool undo = true);
   void routeAddAlternate(const map::MapAirport& ap);
 
   /* Add, replace or delete object from flight plan from context menu or drag and drop.
@@ -255,6 +262,9 @@ signals:
 
   /* Direct to flight plan waypoint, navaid or position */
   void directTo(int id, const atools::geo::Pos& userPos, map::MapTypes type, int legIndex);
+
+  /* Convert route procedure to waypoints */
+  void convertProcedure(int routeIndex);
 
   /* Show a map object in the search panel (context menu) */
   void showInSearch(map::MapTypes type, const atools::sql::SqlRecord& record, bool select);
@@ -267,42 +277,46 @@ signals:
 
   /* Add user point and pass result to it so it can prefill the dialog */
   void addUserpointFromMap(const map::MapResult& result, const atools::geo::Pos& pos, bool airportAddon);
-  void editUserpointFromMap(const map::MapResult& result);
+  void editUserpointFromMap(int id);
   void deleteUserpointFromMap(int id);
 
+  void editUserWaypointName(int index);
+
   void editLogEntryFromMap(int id);
+  void deleteLogbookEntryFromMap(int id);
+  void routeDelete(int index, bool selectCurrent);
 
   /* Passed point with updated coordinates */
   void moveUserpointFromMap(const map::MapUserpoint& point);
 
   /* Show approaches from context menu */
   void showProcedures(const map::MapAirport& airport, bool departureFilter, bool arrivalFilter);
-  void showCustomApproach(const map::MapAirport& airport, const QString& suffix);
-  void showCustomDeparture(const map::MapAirport& airport, const QString& suffix);
+  void showCustomApproach(const map::MapAirport& airport);
+  void showCustomDeparture(const map::MapAirport& airport, const map::MapParking& parking, const map::MapHelipad& helipad);
 
   /* Emitted when the user presses the on-screen button */
   void exitFullScreenPressed();
 
   /* Add the complete procedure to the route */
-  void routeInsertProcedure(const proc::MapProcedureLegs& legs);
+  void routeInsertProcedure(const proc::MapProcedureLegs& legs, bool undo = true);
 
 private:
   /* For touchscreen mode. Grid of 3x3 rectangles numbered from lef to right and top to bottom */
   enum TouchArea
   {
-    ZOOMIN,
-    MOVEUP,
-    ZOOMOUT,
+    TOUCH_AREA_ZOOMIN,
+    TOUCH_AREA_MOVE_UP,
+    TOUCH_AREA_ZOOM_OUT,
 
-    MOVELEFT,
-    CENTER,
-    MOVERIGHT,
+    TOUCH_AREA_MOVE_LEFT,
+    TOUCH_AREA_CENTER,
+    TOUCH_AREA_MOVE_RIGHT,
 
-    BACKWARD,
-    MOVEDOWN,
-    FORWARD,
+    TOUCH_AREA_BACKWARD,
+    TOUCH_AREA_MOVE_DOWN,
+    TOUCH_AREA_FORWARD,
 
-    NONE = 999
+    TOUCH_AREA_NONE = 999
   };
 
   /* Change map detail level in paint layer and update map visible tooltip in statusbar */
@@ -334,14 +348,26 @@ private:
 
   /* Scroll and zoom for touchscreen area mode */
   bool handleTouchAreaClick(QMouseEvent *event);
-  TouchArea touchAreaClick(QMouseEvent *event);
 
   /* Touch/navigation areas are enabled and cursor is within a touch area. false for areas CENTER and NONE. */
-  bool touchAreaClicked(QMouseEvent *event);
+  bool isTouchArea(QMouseEvent *event);
+  TouchArea touchArea(QMouseEvent *event);
 
   /* Cancel mouse actions */
-  void cancelDragDistance();
+  /* Stop new distance line or change dragging and restore backup or delete new line */
+  void cancelDragDistanceMarker();
+  void cancelDragRangeMarker();
+  void cancelDragHoldingMarker();
+
+  void editRangeMark(int id);
+  void editDistanceMark(int id);
+  void editHoldingMark(int id);
+  void editPatternMark(int id);
+
+  /* Stop route editing and reset all coordinates */
   void cancelDragRoute();
+
+  /* Stop userpoint editing and reset coordinates and pixmap */
   void cancelDragUserpoint();
 
   /* Full redraw after timout when drag and drop to avoid missing objects while moving rubber band */
@@ -351,13 +377,13 @@ private:
   void elevationDisplayTimerTimeout();
 
   /* Start a line measurement after context menu selection or click+modifier */
-  void addDistanceMarker(const atools::geo::Pos& pos, const map::MapResult& result);
-  void addDistanceMarker(const atools::geo::Pos& pos, const map::MapAirport *airport, const map::MapVor *vor,
-                         const map::MapNdb *ndb, const map::MapWaypoint *waypoint, const map::MapUserpoint *userpoint);
-  void fillDistanceMarker(map::DistanceMarker& distanceMarker, const atools::geo::Pos& pos, const map::MapResult& result);
-  void fillDistanceMarker(map::DistanceMarker& distanceMarker, const atools::geo::Pos& pos, const map::MapAirport *airport,
-                          const map::MapVor *vor, const map::MapNdb *ndb, const map::MapWaypoint *waypoint,
-                          const map::MapUserpoint *userpoint);
+  int addDistanceMarker(const map::MapResult& result, const atools::geo::Pos& pos);
+
+  /* Show disambiguation menu if needed and fill marker */
+  bool fillDistanceMarkerMenu(map::DistanceMarker& marker, const atools::geo::Pos& pos, map::MapResult result, bool showMenu);
+
+  /* Add departure airport, parking or helipad probably showing the departure runway dialog */
+  void addDeparture(const map::MapBase *base);
 
   /* Show the given object in the search search window with filters and selection set */
   void showResultInSearch(const map::MapBase *base);
@@ -375,23 +401,27 @@ private:
   void jumpBackToAircraftTimeout(const atools::geo::Pos& pos);
 
   /* Needed filter to avoid and/or disable some Marble pecularities */
-  bool eventFilter(QObject *obj, QEvent *eventParam) override;
+  bool eventFilter(QObject *obj, QEvent *event) override;
 
   /* Check for modifiers on mouse click and start actions like range rings on Ctrl+Click */
   bool mousePressCheckModifierActions(QMouseEvent *event);
 
   /* Update the flight plan from a drag and drop result. Show a menu if multiple objects are
    * found at the button release position. */
-  void updateRoute(const QPoint& point, int leg, int pointIndex, bool fromClickAdd, bool fromClickAppend);
+  void updateRouteMenu(const QPoint& point, int leg, int pointIndex, bool fromClickAdd, bool fromClickAppend);
 
-  /* Show menu to allow selection of a map feature below the cursor */
-  bool showFeatureSelectionMenu(int& id, map::MapTypes& type, const map::MapResult& result, const QString& menuText);
+  /* Show menu to allow selection of the one closest map feature below the cursor */
+  bool showFeatureSelectionMenu(map::MapRef& mapRef, const map::MapResult& result, const QString& menuText);
+
+  /* Show menu to allow selection of the one closest map feature below the cursor. Skips selection if
+   * showMenu is false and returns only the nearest. */
+  bool featureSelectionMenu(map::MapResult& result, const atools::geo::Pos& pos, const map::MapType types,
+                            const QString& menuText, bool showMenu);
 
   void jumpToCoordinatesPos(const atools::geo::Pos& pos);
   void copyCoordinatesPos(const atools::geo::Pos& pos);
 
   /* MapPaintWidget overrides for UI updates mostly ============================================================ */
-  virtual void optionsChanged() override;
   virtual void overlayStateFromMenu() override;
   virtual void overlayStateToMenu() const override;
 
@@ -422,15 +452,22 @@ private:
   virtual void wheelEvent(QWheelEvent *event) override;
 
   virtual void contextMenuEvent(QContextMenuEvent *event) override;
+
+  /* From context menu. Edit or remove action is selected by type in base. All markers, userpoints and logbook entries. */
+  void editAny(const map::MapBase *base);
+  void removeAny(const map::MapBase *base);
+
+  /* Stop all line drag and drop if the map loses focus */
   virtual void focusOutEvent(QFocusEvent *) override;
   virtual void keyPressEvent(QKeyEvent *keyEvent) override;
-  virtual void leaveEvent(QEvent *) override;
 
-  /* Catch tooltip event */
-  virtual bool event(QEvent *event) override;
+  /* Hide tooltip and coordinate display */
+  virtual void leaveEvent(QEvent *) override;
 
   /* Aircraft and next leg centering set in options and all other conditions are met (flight plan present, etc.) */
   bool isCenterLegAndAircraftActive();
+
+  bool isMarkerEditActive() const;
 
   void zoomInOut(bool directionIn, bool smooth);
 
@@ -446,17 +483,24 @@ private:
   void disconnectGlobalActions();
   void connectGlobalActions();
 
+  void visibleLatLonAltBoxChanged(const Marble::GeoDataLatLonAltBox& visibleLatLonAltBox);
+
+  void setMouseCursor(const QCursor& cursorParam);
+
+  /* Get features at click position */
+  map::MapResult resultAtPoint(const QPointF& point, map::MapObjectQueryType types, bool includeHiddenUserpoints);
+  map::MapResult resultAtPoint(const QPoint& point, map::MapObjectQueryType types, bool includeHiddenUserpoints);
+
   int screenSearchDistance /* Radius for click sensitivity */,
       screenSearchDistanceTooltip /* Radius for tooltip sensitivity */;
 
-  /* Used to check if mouse moved between button down and up */
-  QPoint mouseMoved;
-
-  mapwin::MouseStates mouseState = mapwin::NONE;
-  bool contextMenuActive = false;
+  ms::MouseStates mouseState = ms::DRAG_NONE;
+  bool noInfoClick = false;
+  bool scrolling = false;
+  bool contextMenuActive = false, distanceDragShowDialog = false;
 
   /* Current moving position when dragging a flight plan point or leg */
-  QPoint routeDragCur;
+  QPoint routeDragCurrrent;
 
   /* Do a full redraw after timout when using drag and drop */
   QTimer resetPaintForDragTimer;
@@ -467,11 +511,6 @@ private:
   int routeDragPoint = -1 /* Index of changed point */,
       routeDragLeg = -1 /* index of changed leg */;
 
-  /* Current position and pixmap when drawing userpoint on map */
-  QPoint userpointDragCur;
-  map::MapUserpoint *userpointDrag;
-  QPixmap userpointDragPixmap;
-
   /* Save last tooltip position. If invalid/null no tooltip will be shown */
   QPoint tooltipGlobalPos;
   map::MapResult *mapResultTooltip, *mapResultTooltipLast, *mapResultInfoClick;
@@ -480,6 +519,13 @@ private:
 
   /* Backup of distance marker for drag and drop in case the action is cancelled */
   map::DistanceMarker *distanceMarkerBackup;
+  map::HoldingMarker *holdingMarkerBackup;
+  map::RangeMarker *rangeMarkerBackup;
+
+  /* Current position and pixmap when drawing userpoint on map */
+  QPoint userpointDragCurrrent;
+  map::MapUserpoint *userpointBackup;
+  QPixmap userpointDragPixmap;
 
   atools::gui::MapPosHistory history;
 
@@ -523,11 +569,10 @@ private:
   /* Maps overlay name to menu action for hide/show */
   QHash<QString, QAction *> mapOverlays;
 
-  /* Distance marker that is changed using drag and drop */
-  int currentDistanceMarkerId = -1;
-
   QPushButton *pushButtonExitFullscreen = nullptr;
 
+  /* Filled on mouse press. Drag is cancelled if distance is too far on mouse release */
+  QPointF buttonDownPoint;
 };
 
 #endif // LITTLENAVMAP_NAVMAPWIDGET_H

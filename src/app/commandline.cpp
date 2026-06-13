@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -38,60 +38,82 @@ CommandLine::CommandLine()
   parser->addHelpOption();
   parser->addVersionOption();
 
-  settingsPathOpt = new QCommandLineOption({"p", "settings-path"},
-                                           QObject::tr("Use <settings-path> to store options and databases into the given directory. "
-                                                       "<settings-path> can be relative or absolute. "
-                                                         "Missing directories are created. Path can be on any drive."),
-                                           QObject::tr("settings-path"));
-  parser->addOption(*settingsPathOpt);
+  buildOption(settingsPathOpt, "p", "settings-path",
+              tr("Use <settings-path> to store options and databases into the given directory. "
+                 "<settings-path> can be relative or absolute. "
+                   "Missing directories are created. Path can be on any drive."),
+              tr("settings-path"));
 
-  logPathOpt = new QCommandLineOption({"l", "log-path"},
-                                      QObject::tr("Use <log-path> to store log files into the given directory. "
-                                                  "<log-path> can be relative or absolute. "
-                                                    "Missing directories are created. Path can be on any drive."),
-                                      QObject::tr("settings-path"));
-  parser->addOption(*logPathOpt);
+  buildOption(logPathOpt, "l", "log-path",
+              tr("Use <log-path> to store log files into the given directory. "
+                 "<log-path> can be relative or absolute. "
+                   "Missing directories are created. Path can be on any drive."),
+              tr("log-path"));
 
-  cachePathOpt = new QCommandLineOption({"c", "cache-path"},
-                                        QObject::tr("Use <cache-path> to store tiles from online maps. "
-                                                    "Missing directories are created. Path can be on any drive."),
-                                        QObject::tr("cache-path"));
-  parser->addOption(*cachePathOpt);
+  buildOption(cachePathOpt, "c", "cache-path",
+              tr("Use <cache-path> to store tiles from online maps. "
+                 "Missing directories are created. Path can be on any drive."),
+              tr("cache-path"));
 
-  flightplanOpt = new QCommandLineOption({"f", lnm::STARTUP_FLIGHTPLAN},
-                                         QObject::tr("Load the given <%1> file on startup. Can be one of the supported formats like "
-                                                     "\".lnmpln\", \".pln\", \".fms\", "
-                                                     "\".fgfp\", \".fpl\", \".gfp\" or others.").arg(lnm::STARTUP_FLIGHTPLAN),
-                                         lnm::STARTUP_FLIGHTPLAN);
-  parser->addOption(*flightplanOpt);
+  buildOption(flightplanOpt, "f", lnm::STARTUP_FLIGHTPLAN,
+              tr("Load the given <%1> file on startup. Can be one of the supported formats like "
+                 "\".lnmpln\", \".pln\", \".fms\", "
+                 "\".fgfp\", \".fpl\", \".gfp\" or others.").arg(lnm::STARTUP_FLIGHTPLAN),
+              lnm::STARTUP_FLIGHTPLAN);
 
-  flightplanDescrOpt = new QCommandLineOption({"d", lnm::STARTUP_FLIGHTPLAN_DESCR},
-                                              QObject::tr("Parse and load the given <%1> flight plan route description on startup. "
-                                                          "Example \"EDDF BOMBI LIRF\".").arg(lnm::STARTUP_FLIGHTPLAN_DESCR),
-                                              lnm::STARTUP_FLIGHTPLAN_DESCR);
-  parser->addOption(*flightplanDescrOpt);
+  buildOption(flightplanDescrOpt, "d", lnm::STARTUP_FLIGHTPLAN_DESCR,
+              tr("Parse and load the given <%1> flight plan route description on startup. "
+                 "Example \"EDDF BOMBI LIRF\".").arg(lnm::STARTUP_FLIGHTPLAN_DESCR),
+              lnm::STARTUP_FLIGHTPLAN_DESCR);
 
-  performanceOpt = new QCommandLineOption({"a", lnm::STARTUP_AIRCRAFT_PERF},
-                                          QObject::tr("Load the given <%1> aircraft performance file "
-                                                      "\".lnmperf\" on startup.").arg(lnm::STARTUP_AIRCRAFT_PERF),
-                                          lnm::STARTUP_AIRCRAFT_PERF);
-  parser->addOption(*performanceOpt);
+  // Load aircraft performance =============================
+  buildOption(performanceOpt, "a", lnm::STARTUP_AIRCRAFT_PERF,
+              tr("Load the given <%1> aircraft performance file "
+                 "\".lnmperf\" on startup.").arg(lnm::STARTUP_AIRCRAFT_PERF),
+              lnm::STARTUP_AIRCRAFT_PERF);
 
-  layoutOpt = new QCommandLineOption({"y", lnm::STARTUP_LAYOUT},
-                                     QObject::tr("Load the given <%1> window layout file"
-                                                 "\".lnmlayout\" on startup.").arg(lnm::STARTUP_LAYOUT),
-                                     lnm::STARTUP_LAYOUT);
-  parser->addOption(*layoutOpt);
+  // Load layout =============================
+  buildOption(layoutOpt, "y", lnm::STARTUP_LAYOUT,
+              tr("Load the given <%1> window layout file"
+                 "\".lnmlayout\" on startup.").arg(lnm::STARTUP_LAYOUT),
+              lnm::STARTUP_LAYOUT);
 
-  quitOpt = new QCommandLineOption({"q", lnm::STARTUP_QUIT}, QObject::tr("Quit an already running instance. "
-                                                                         "The running instance might still ask about exiting or saving files."));
-  parser->addOption(*quitOpt);
+  // Load GPX =============================
+  buildOption(gpxOpt, "x", lnm::STARTUP_GPX,
+              tr("Load the given <%1> GPX file \".gpx\" on startup.").arg(lnm::STARTUP_GPX),
+              lnm::STARTUP_GPX);
 
-  languageOpt = new QCommandLineOption({"g", "language"},
-                                       QObject::tr("Use language code <language> like \"de\" or \"en_US\" for the user interface. "
-                                                   "The code is not checked for existence or validity and "
-                                                   "is saved for the next startup."), "language");
-  parser->addOption(*languageOpt);
+  // Load marker =============================
+  buildOption(markerOpt, "m", lnm::STARTUP_MARKER,
+              tr("Load the given <%1> map marker file \".lnmmarker\" on startup.").arg(lnm::STARTUP_MARKER),
+              lnm::STARTUP_MARKER);
+
+  // Force =============================
+  buildOption(forceOpt, QStringLiteral(), lnm::STARTUP_FORCE_LOADING,
+              tr("Force overwriting of files without asking. Be careful with this option."));
+
+  // Quit =============================
+  buildOption(quitOpt, "q", lnm::STARTUP_COMMAND_QUIT,
+              tr("Quit an already running instance. "
+                 "The running instance might still ask about exiting or saving files."));
+
+  // Disable data exchange - do not send a message to a running application =============================
+  buildOption(noDataExchangeOpt, QStringLiteral(), lnm::STARTUP_NO_DATA_EXCHANGE,
+              tr("Do not activate another instance. "
+                 "This is used only internally. Using this the wrong way might result in data loss."), QStringLiteral(), QStringLiteral(),
+              true /* hiddenFromHelp */);
+
+  // Reset window layout after restart =============================
+  buildOption(resetLayoutOpt, QStringLiteral(), lnm::STARTUP_RESET_LAYOUT,
+              tr("Reset window layout back to default. "
+                 "This is used only internally. Using this the wrong way might result in data loss."), QStringLiteral(), QStringLiteral(),
+              true /* hiddenFromHelp */);
+
+  // Language =============================
+  buildOption(languageOpt, "g", "language",
+              tr("Use language code <language> like \"de\" or \"en_US\" for the user interface. "
+                 "The code is not checked for existence or validity and "
+                 "is saved for the next startup."), "language");
 }
 
 CommandLine::~CommandLine()
@@ -104,8 +126,24 @@ CommandLine::~CommandLine()
   delete flightplanDescrOpt;
   delete performanceOpt;
   delete layoutOpt;
+  delete gpxOpt;
+  delete markerOpt;
   delete languageOpt;
+  delete forceOpt;
   delete quitOpt;
+  delete noDataExchangeOpt;
+}
+
+void CommandLine::buildOption(QCommandLineOption *& option, const QString& shortOption, const QString& longOption,
+                              const QString& description, const QString& valueName, const QString& defaultValue, bool hiddenFromHelp)
+{
+  QStringList opts({shortOption, longOption});
+  opts.removeAll(QStringLiteral());
+  option = new QCommandLineOption(opts, description, valueName, defaultValue);
+  if(hiddenFromHelp)
+    option->setFlags(QCommandLineOption::HiddenFromHelp);
+
+  parser->addOption(*option);
 }
 
 QString CommandLine::getOption(int argc, char *argv[], const QString& name, const QString& longname)
@@ -133,7 +171,7 @@ QString CommandLine::getOption(int argc, char *argv[], const QString& name, cons
     }
   }
 
-  return QString();
+  return QStringLiteral();
 }
 
 void CommandLine::process()
@@ -151,7 +189,7 @@ void CommandLine::process()
 
   // File loading
   if(parser->isSet(*flightplanOpt) && parser->isSet(*flightplanDescrOpt))
-    qWarning() << QObject::tr("Only one of options -f and -d can be used");
+    qWarning() << tr("Only one of options -f and -d can be used");
 
   if(parser->isSet(*flightplanOpt) && !parser->value(*flightplanOpt).isEmpty())
     Application::addStartupOptionStr(lnm::STARTUP_FLIGHTPLAN, parser->value(*flightplanOpt));
@@ -165,8 +203,23 @@ void CommandLine::process()
   if(parser->isSet(*layoutOpt) && !parser->value(*layoutOpt).isEmpty())
     Application::addStartupOptionStr(lnm::STARTUP_LAYOUT, parser->value(*layoutOpt));
 
+  if(parser->isSet(*gpxOpt) && !parser->value(*gpxOpt).isEmpty())
+    Application::addStartupOptionStr(lnm::STARTUP_GPX, parser->value(*gpxOpt));
+
+  if(parser->isSet(*markerOpt) && !parser->value(*markerOpt).isEmpty())
+    Application::addStartupOptionStr(lnm::STARTUP_MARKER, parser->value(*markerOpt));
+
+  if(parser->isSet(*forceOpt))
+    Application::addStartupOptionStr(lnm::STARTUP_FORCE_LOADING, QStringLiteral());
+
   if(parser->isSet(*quitOpt))
-    Application::addStartupOptionStr(lnm::STARTUP_QUIT, QString());
+    Application::addStartupOptionStr(lnm::STARTUP_COMMAND_QUIT, QStringLiteral());
+
+  if(parser->isSet(*noDataExchangeOpt))
+    Application::addStartupOptionStr(lnm::STARTUP_NO_DATA_EXCHANGE, QStringLiteral());
+
+  if(parser->isSet(*resetLayoutOpt))
+    Application::addStartupOptionStr(lnm::STARTUP_RESET_LAYOUT, QStringLiteral());
 
   // Other arguments without option
   if(!parser->positionalArguments().isEmpty())

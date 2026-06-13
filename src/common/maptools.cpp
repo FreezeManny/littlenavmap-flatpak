@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ RwEnd::RwEnd(const QString& name, const QString& surface, int lengthParam, float
   crossWind = atools::roundToInt(std::abs(crossWindParam));
 }
 
-void RwVector::appendRwEnd(const QString& name, const QString& surface, int length, float heading)
+void RunwayList::appendRwEnd(const QString& name, const QString& surface, int length, float heading)
 {
   if(speed >= minSpeed)
   {
@@ -72,7 +72,7 @@ void RwVector::appendRwEnd(const QString& name, const QString& surface, int leng
   }
 }
 
-void RwVector::sortRunwayEnds()
+void RunwayList::sortRunwayEnds()
 {
   totalNumber = 0;
 
@@ -80,7 +80,7 @@ void RwVector::sortRunwayEnds()
   {
     QMap<RwKey, RwEnd> endMap;
 
-    for(const RwEnd& end : qAsConst(*this))
+    for(const RwEnd& end : std::as_const(*this))
     {
       RwKey key(end);
       if(endMap.contains(key))
@@ -108,10 +108,10 @@ void RwVector::sortRunwayEnds()
     totalNumber = constFirst().names.size();
 }
 
-QStringList RwVector::getSortedRunways(int minHeadWind) const
+QStringList RunwayList::getSortedRunways(int minHeadWind) const
 {
   QStringList runways;
-  for(const maptools::RwEnd& end : qAsConst(*this))
+  for(const maptools::RwEnd& end : std::as_const(*this))
   {
     if(end.headWind <= minHeadWind)
       break;

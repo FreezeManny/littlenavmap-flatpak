@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,8 @@ using atools::gui::HelpHandler;
 DatabaseDialog::DatabaseDialog(QWidget *parent, const SimulatorTypeMap& pathMap)
   : QDialog(parent), ui(new Ui::DatabaseDialog), simulators(pathMap)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -52,15 +53,21 @@ DatabaseDialog::DatabaseDialog(QWidget *parent, const SimulatorTypeMap& pathMap)
   });
 
   // Add an item to the combo box for each installed simulator
-  bool simFound = false;
-  for(atools::fs::FsPaths::SimulatorType type : qAsConst(keys))
+  bool simFound = false, anyXplaneFound = false;
+  for(atools::fs::FsPaths::SimulatorType type : std::as_const(keys))
   {
     if(simulators.value(type).isInstalled)
     {
       ui->comboBoxSimulator->addItem(FsPaths::typeToDisplayName(type), QVariant::fromValue<atools::fs::FsPaths::SimulatorType>(type));
       simFound = true;
+
+      if(FsPaths::isAnyXplane(type))
+        anyXplaneFound = true;
     }
   }
+
+  // Set hint about X-Plane path only if XP found
+  ui->labelXplaneHint->setVisible(anyXplaneFound);
 
   if(!simFound)
     ui->labelDatabaseInformation->setText(tr("<b>No Simulator and no database found.</b>"));
@@ -123,7 +130,7 @@ void DatabaseDialog::simComboChanged(int index)
 void DatabaseDialog::selectBasePathClicked()
 {
   QString path = atools::gui::Dialog(this).openDirectoryDialog(
-    tr("Select Flight Simulator Basepath"), QString() /* lnm::DATABASE_BASEPATH */,
+    tr("Select Flight Simulator Basepath"), QStringLiteral() /* lnm::DATABASE_BASEPATH */,
     ui->lineEditDatabaseBasePath->text());
 
   if(!path.isEmpty())
@@ -138,7 +145,7 @@ void DatabaseDialog::selectSceneryConfigClicked()
   QString path = atools::gui::Dialog(this).openFileDialog(
     tr("Open Scenery Configuration File"),
     tr("Scenery Configuration Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_SCENERYCONFIG),
-    QString() /* lnm::DATABASE_SCENERYCONFIG */, ui->lineEditDatabaseSceneryFile->text());
+    QStringLiteral() /* lnm::DATABASE_SCENERYCONFIG */, ui->lineEditDatabaseSceneryFile->text());
 
   if(!path.isEmpty())
   {

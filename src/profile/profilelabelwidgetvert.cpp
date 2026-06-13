@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "common/mapcolors.h"
 #include "common/symbolpainter.h"
 #include "common/unit.h"
+#include "options/optiondata.h"
 #include "profile/profileoptions.h"
 #include "profile/profilescrollarea.h"
 #include "profile/profilewidget.h"
@@ -36,14 +37,9 @@ ProfileLabelWidgetVert::ProfileLabelWidgetVert(ProfileWidget *parent, ProfileScr
   setFocusPolicy(Qt::StrongFocus);
 }
 
-ProfileLabelWidgetVert::~ProfileLabelWidgetVert()
-{
-
-}
-
 void ProfileLabelWidgetVert::routeChanged()
 {
-  setVisible(profileWidget->getProfileOptions()->getDisplayOptions() & optsp::PROFILE_LABELS_ALT);
+  setVisible(profileWidget->getProfileOptions()->getDisplayOptions().testFlag(optsp::PROFILE_LABELS_ALT));
   update();
 }
 
@@ -94,19 +90,18 @@ void ProfileLabelWidgetVert::paintEvent(QPaintEvent *)
       int flightplanY = profileWidget->getFlightplanAltY() - offset.y();
       float routeAlt = NavApp::getRouteConst().getCruiseAltitudeFt();
 
+      const OptionData& optionData = OptionData::instance();
+      QFont defaultFont = optionData.getProfileFont();
+      mapcolors::scaleFont(&painter, optionData.getDisplayTextSizeFlightplanProfile() / 100.f, &defaultFont);
+      QFontMetrics metrics = painter.fontMetrics();
+
       // Draw labels on left side widget ========================================================
 
       // Draw altitude labels ================================
       SymbolPainter symPainter;
-      const QVector<std::pair<int, int> > scaleValues = profileWidget->calcScaleValues();
+      const QList<std::pair<int, int> > scaleValues = profileWidget->calcScaleValues();
 
-      QFont f = QApplication::font();
-      f.setPointSizeF(f.pointSizeF() * 0.9);
-      f.setBold(true);
-      painter.setFont(f);
-      QFontMetrics metrics(f);
-
-      textatt::TextAttributes atts = textatt::BOLD | textatt::LEFT;
+      text::Attribute atts = text::BOLD | text::LEFT;
       QColor baseColor = QApplication::palette().color(QPalette::Base);
       int maxw = 1;
       for(const std::pair<int, int>& scale : scaleValues)
@@ -116,7 +111,7 @@ void ProfileLabelWidgetVert::paintEvent(QPaintEvent *)
         {
           QString str = QLocale().toString(scale.second);
           symPainter.textBox(&painter, {str}, mapcolors::profileElevationScalePen, w - 2, y, atts, 0, baseColor);
-          maxw = std::max(metrics.boundingRect(str).width(), maxw);
+          maxw = std::max(metrics.horizontalAdvance(str), maxw);
         }
       }
 
@@ -130,7 +125,7 @@ void ProfileLabelWidgetVert::paintEvent(QPaintEvent *)
           {
             QString str = Unit::altFeet(minSafeAltitudeFt);
             symPainter.textBox(&painter, {str}, mapcolors::profileSafeAltLinePen, w - 2, safeAltY, atts, 255, baseColor);
-            maxw = std::max(metrics.boundingRect(str).width(), maxw);
+            maxw = std::max(metrics.horizontalAdvance(str), maxw);
           }
         }
       }
@@ -140,7 +135,7 @@ void ProfileLabelWidgetVert::paintEvent(QPaintEvent *)
       {
         QString str = Unit::altFeet(routeAlt);
         symPainter.textBox(&painter, {str}, QApplication::palette().color(QPalette::Text), w - 2, flightplanY, atts, 255, baseColor);
-        maxw = std::max(metrics.boundingRect(str).width(), maxw);
+        maxw = std::max(metrics.horizontalAdvance(str), maxw);
       }
       setMinimumWidth(maxw + metrics.horizontalAdvance("X"));
     }

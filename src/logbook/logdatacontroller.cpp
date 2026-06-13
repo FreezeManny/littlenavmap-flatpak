@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -78,7 +78,7 @@ LogdataController::LogdataController(atools::fs::userdata::LogdataManager *logda
   statsDialog = new LogStatisticsDialog(nullptr, this);
 
   // Add to dock handler to enable auto raise and closing on exit
-  NavApp::addDialogToDockHandler(statsDialog);
+  NavApp::registerDialogInDockHandler(statsDialog);
 
   connect(this, &LogdataController::logDataChanged, statsDialog, &LogStatisticsDialog::logDataChanged);
   connect(this, &LogdataController::logDataChanged, manager, &atools::sql::DataManagerBase::updateUndoRedoActions);
@@ -86,15 +86,18 @@ LogdataController::LogdataController(atools::fs::userdata::LogdataManager *logda
   Ui::MainWindow *ui = NavApp::getMainUi();
   connect(ui->actionSearchLogdataUndo, &QAction::triggered, this, &LogdataController::undoTriggered);
   connect(ui->actionSearchLogdataRedo, &QAction::triggered, this, &LogdataController::redoTriggered);
+  connect(ui->actionMainLogdataUndo, &QAction::triggered, this, &LogdataController::undoTriggered);
+  connect(ui->actionMainLogdataRedo, &QAction::triggered, this, &LogdataController::redoTriggered);
 
   manager->setMaximumUndoSteps(50);
   manager->setTextSuffix(tr("Logbook Entry", "Log singular"), tr("Logbook Entries", "Log plural"));
-  manager->setActions(ui->actionSearchLogdataUndo, ui->actionSearchLogdataRedo);
+  manager->setActionLists({ui->actionSearchLogdataUndo, ui->actionMainLogdataUndo},
+                          {ui->actionSearchLogdataRedo, ui->actionMainLogdataRedo});
 }
 
 LogdataController::~LogdataController()
 {
-  NavApp::removeDialogFromDockHandler(statsDialog);
+  NavApp::unregisterDialogInDockHandler(statsDialog);
   delete statsDialog;
   delete aircraftAtTakeoff;
   delete dialog;
@@ -230,6 +233,21 @@ atools::sql::SqlRecord LogdataController::getLogEntryRecordById(int id)
   return manager->getRecord(id);
 }
 
+SqlRecord LogdataController::getLogEntryRecordByIdForShowInSearch(const map::MapLogbookEntry& logEntry)
+{
+  return atools::sql::SqlRecord().
+         appendFieldAndValueIf("departure_ident", logEntry.departureIdent).
+         appendFieldAndValueIf("destination_ident", logEntry.destinationIdent).
+         appendFieldAndValueIf("simulator", logEntry.simulator).
+         appendFieldAndValueIf("aircraft_type", logEntry.aircraftType).
+         appendFieldAndValueIf("aircraft_registration", logEntry.aircraftRegistration);
+}
+
+SqlRecord LogdataController::getLogEntryRecordByIdForShowInSearch(int id)
+{
+  return getLogEntryRecordByIdForShowInSearch(getLogEntryById(id));
+}
+
 void LogdataController::getFlightStatsTime(QDateTime& earliest, QDateTime& latest, QDateTime& earliestSim,
                                            QDateTime& latestSim)
 {
@@ -257,13 +275,14 @@ void LogdataController::getFlightStatsAircraft(int& numTypes, int& numRegistrati
   manager->getFlightStatsAircraft(numTypes, numRegistrations, numNames, numSimulators);
 }
 
-void LogdataController::getFlightStatsSimulator(QVector<std::pair<int, QString> >& numSimulators)
+void LogdataController::getFlightStatsSimulator(QList<std::pair<int, QString> >& numSimulators)
 {
   manager->getFlightStatsSimulator(numSimulators);
 }
 
 void LogdataController::statisticsLogbookShow()
 {
+  statsDialog->setWindowState((statsDialog->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
   statsDialog->show();
   statsDialog->raise();
   statsDialog->activateWindow();
@@ -349,16 +368,16 @@ void LogdataController::createTakeoffLanding(const atools::fs::sc::SimConnectUse
 
 bool LogdataController::doesFlightMatchRecord(const atools::sql::SqlRecord& record, const atools::fs::sc::SimConnectUserAircraft& aircraft)
 {
-  return record.valueStr("aircraft_type", QString()) == aircraft.getAirplaneModel() &&
-         record.valueStr("simulator", QString()) == NavApp::getCurrentSimulatorShortName();
+  return record.valueStr("aircraft_type", QStringLiteral()) == aircraft.getAirplaneModel() &&
+         record.valueStr("simulator", QStringLiteral()) == NavApp::getCurrentSimulatorShortName();
 }
 
 bool LogdataController::recordIsTakeoff(const atools::sql::SqlRecord& record)
 {
   // Requires not empty record, departure set and destination empty
   return !record.isEmpty() &&
-         !record.valueStr("departure_ident", QString()).isEmpty() &&
-         record.valueStr("destination_ident", QString()).isEmpty();
+         !record.valueStr("departure_ident", QStringLiteral()).isEmpty() &&
+         record.valueStr("destination_ident", QStringLiteral()).isEmpty();
 }
 
 void LogdataController::recordTakeoff(const atools::fs::sc::SimConnectUserAircraft& aircraft, const map::MapAirport& airport,
@@ -420,7 +439,7 @@ void LogdataController::recordTakeoff(const atools::fs::sc::SimConnectUserAircra
   aircraftAtTakeoff = new atools::fs::sc::SimConnectUserAircraft(aircraft);
 
   NavApp::setStatusMessage(tr("Logbook entry for %1 at %2%3 added.").arg(tr("departure")).arg(ident).
-                           arg(runwayEnd.isValid() ? tr(" runway %1").arg(runwayEnd.name) : QString()), true /* addToLog */);
+                           arg(runwayEnd.isValid() ? tr(" runway %1").arg(runwayEnd.name) : QStringLiteral()), true /* addToLog */);
 }
 
 void LogdataController::recordLanding(atools::sql::SqlRecord& record, const atools::fs::sc::SimConnectUserAircraft& aircraft,
@@ -483,7 +502,7 @@ void LogdataController::recordLanding(atools::sql::SqlRecord& record, const atoo
   NavApp::setStatusMessage(tr("Logbook entry for %1 at %2%3 updated.").
                            arg(tr("arrival")).
                            arg(ident).
-                           arg(runwayEnd.isValid() ? tr(" runway %1").arg(runwayEnd.name) : QString()), true /* addToLog */);
+                           arg(runwayEnd.isValid() ? tr(" runway %1").arg(runwayEnd.name) : QStringLiteral()), true /* addToLog */);
 
   logEntryId = -1;
   saveLogEntryId();
@@ -636,7 +655,7 @@ void LogdataController::connectDialogSignals(LogdataDialog *dialogParam)
   connect(dialogParam, &LogdataDialog::perfSaveAs, this, &LogdataController::perfSaveAs);
 }
 
-void LogdataController::editLogEntries(const QVector<int>& ids)
+void LogdataController::editLogEntries(const QList<int>& ids)
 {
   qDebug() << Q_FUNC_INFO << ids;
 
@@ -835,7 +854,7 @@ void LogdataController::cleanupLogEntries()
     // Show preview table ===============================================
     if(choiceDialog.isButtonChecked(SHOW_PREVIEW))
     {
-      QVector<atools::sql::SqlColumn> previewCols({
+      QList<atools::sql::SqlColumn> previewCols({
         SqlColumn("departure_time", tr("Departure\nReal Time")),
         SqlColumn("aircraft_name", tr("Aircraft\nModel")),
         SqlColumn("aircraft_type", tr("Aircraft\nType")),
@@ -924,18 +943,41 @@ void LogdataController::cleanupLogEntries()
   }
 }
 
-void LogdataController::deleteLogEntries(const QSet<int>& ids)
+void LogdataController::deleteLogEntries(const QList<int>& ids)
 {
-  qDebug() << Q_FUNC_INFO;
+  // Generate a truncated list of object names to delete
+  QStringList texts;
+  for(int id : ids)
+  {
+    texts.append(map::logEntryTextShort(getLogEntryById(id)));
+    if(texts.size() > 6)
+      break;
+  }
 
-  QString txt = ids.size() == 1 ? tr("entry") : tr("entries");
-  SqlTransaction transaction(manager->getDatabase());
-  manager->deleteRows(ids);
-  transaction.commit();
+  // Function relies on line feeds - join and split again to get a list
+  texts = atools::elideTextLinesShort(texts.join('\n'), 5, 20, true /* compressEmpty */, true /* ellipseLastLine */).split('\n');
 
-  logChanged(false /* load all */, false /* keep selection */);
+  int result = dialog->showQuestionMsgBox(lnm::ACTIONS_SHOW_DELETE_LOGBOOKENTRY,
+                                          tr("<p>Delete %1 %2?</p>"
+                                               "<ul><li>%3</li></ul>"
+                                                 "<p>Note that you can undo this action in menu \"Logbook\".</p>").
+                                          arg(ids.size()).
+                                          arg(ids.size() == 1 ? tr("logbook entry") : tr("logbook entries")).
+                                          arg(texts.join(tr("</li><li>"))),
+                                          tr("Do not &show this dialog again."),
+                                          QMessageBox::Yes | QMessageBox::No, QMessageBox::No, QMessageBox::Yes);
 
-  NavApp::setStatusMessage(tr("%1 logbook %2 deleted.").arg(ids.size()).arg(txt));
+  if(result == QMessageBox::Yes)
+  {
+    QString txt = ids.size() == 1 ? tr("entry") : tr("entries");
+    SqlTransaction transaction(manager->getDatabase());
+    manager->deleteRows(QSet<int>(ids.constBegin(), ids.constEnd()));
+    transaction.commit();
+
+    logChanged(false /* load all */, false /* keep selection */);
+
+    NavApp::setStatusMessage(tr("%1 logbook %2 deleted.").arg(ids.size()).arg(txt));
+  }
 }
 
 void LogdataController::importXplane()
@@ -1000,7 +1042,7 @@ void LogdataController::importCsv()
   {
     QString file = dialog->openFileDialog(
       tr("Open Logbook CSV File"),
-      tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_USERDATA_CSV), "Logdata/Csv");
+      tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_CSV), "Logdata/Csv");
 
     int numImported = 0;
     if(!file.isEmpty())
@@ -1049,11 +1091,11 @@ void LogdataController::exportCsv()
                                    "Columns will be empty on export if disabled.");
 
     int numSelected = NavApp::getLogdataSearch()->getSelectedRowCount();
-    choiceDialog.addCheckBox(APPEND, tr("&Append to an already present file"),
+    choiceDialog.addCheckBox(APPEND, tr("&Append to an existing file"),
                              tr("File header will be ignored if this is enabled."), false);
-    choiceDialog.addCheckBox(SELECTED, tr("Export &selected entries only"), QString(), true,
+    choiceDialog.addCheckBox(SELECTED, tr("Export &selected entries only"), QStringLiteral(), true,
                              numSelected == 0 /* disabled */);
-    choiceDialog.addCheckBox(HEADER, tr("Add a &header to the first line"), QString(), false);
+    choiceDialog.addCheckBox(HEADER, tr("Add a &header to the first line"), QStringLiteral(), true);
     choiceDialog.addLine();
     choiceDialog.addCheckBox(EXPORTPLAN, tr("&Flight plan in LNMPLN format"), attachmentToolTip, false);
     choiceDialog.addCheckBox(EXPORTPERF, tr("&Aircraft performance"), attachmentToolTip, false);
@@ -1073,12 +1115,12 @@ void LogdataController::exportCsv()
     {
       QString file = dialog->saveFileDialog(
         tr("Export Logbook Entry CSV File"),
-        tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_USERDATA_CSV), ".csv", "Logdata/Csv",
-        QString(), QString(), choiceDialog.isButtonChecked(APPEND));
+        tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_CSV), ".csv", "Logdata/Csv",
+        QStringLiteral(), tr("Logbook.csv"), choiceDialog.isButtonChecked(APPEND));
 
       if(!file.isEmpty())
       {
-        QVector<int> ids;
+        QList<int> ids;
         if(choiceDialog.isButtonChecked(SELECTED))
           ids = NavApp::getLogdataSearch()->getSelectedIds();
 
@@ -1136,7 +1178,7 @@ void LogdataController::convertUserdata()
     if(!converter.getErrors().isEmpty())
     {
       // Show errors and warnings ======================
-      atools::util::HtmlBuilder html(true);
+      atools::util::HtmlBuilder html(true /* backgroundColorUsed */, NavApp::isGuiStyleDark());
 
       html.p(tr("Logbook Conversion"), atools::util::html::BOLD | atools::util::html::BIG);
 
@@ -1212,7 +1254,7 @@ void LogdataController::planOpen(atools::sql::SqlRecord *record, QWidget *parent
 void LogdataController::planAdd(atools::sql::SqlRecord *record, QWidget *parent)
 {
   qDebug() << Q_FUNC_INFO;
-  planAttachLnmpln(record, mainWindow->routeOpenFileDialog(), parent);
+  planAttachLnmpln(record, mainWindow->openFlightplanFileDialog(), parent);
 }
 
 void LogdataController::planAttachLnmpln(atools::sql::SqlRecord *record, const QString& filename, QWidget *parent)
@@ -1313,7 +1355,6 @@ void LogdataController::gpxAdd(atools::sql::SqlRecord *record, QWidget *parent)
       if(file.open(QIODevice::ReadOnly | QIODevice::Text))
       {
         QTextStream stream(&file);
-        stream.setCodec("UTF-8");
 
         // Decompress GPX and save as is into the database
         record->setValue("aircraft_trail", atools::zip::gzipCompress(stream.readAll().toUtf8()));
@@ -1374,12 +1415,12 @@ void LogdataController::gpxSaveAs(atools::sql::SqlRecord *record, QWidget *paren
       qDebug() << Q_FUNC_INFO << "Error reading flight plan" << e.what();
     }
 
-    QString defFilename = buildFilename(record, flightplan, ".gpx");
+    const QString defaultFilename = buildFilename(record, flightplan, ".gpx");
 
     QString filename = dialog->saveFileDialog(
       tr("Save GPX"),
       tr("GPX Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_GPX),
-      "lnmpln", "Route/Gpx", atools::documentsDir(), defFilename, false /* confirm overwrite */);
+      "lnmpln", "Route/Gpx", atools::documentsDir(), defaultFilename);
 
     if(!filename.isEmpty())
     {
@@ -1388,7 +1429,6 @@ void LogdataController::gpxSaveAs(atools::sql::SqlRecord *record, QWidget *paren
       {
         // Decompress and save track as is ==============
         QTextStream stream(&file);
-        stream.setCodec("UTF-8");
         stream << QString(atools::zip::gzipDecompress(record->value("aircraft_trail").toByteArray())).toUtf8();
         file.close();
       }
@@ -1471,4 +1511,9 @@ void LogdataController::perfSaveAs(atools::sql::SqlRecord *record, QWidget *pare
   {
     atools::gui::ErrorHandler(mainWindow).handleUnknownException();
   }
+}
+
+bool LogdataController::hasLogdata() const
+{
+  return manager->hasData();
 }

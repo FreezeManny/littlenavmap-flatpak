@@ -18,18 +18,18 @@
 #ifndef LITTLENAVMAP_PROCTREECONTROLLER_H
 #define LITTLENAVMAP_PROCTREECONTROLLER_H
 
-#include "common/procflags.h"
 #include "common/mapflags.h"
+#include "common/proctypes.h"
 #include "search/abstractsearch.h"
 
 #include <QBitArray>
 #include <QFont>
 #include <QObject>
-#include <QVector>
+#include <QList>
 
-class SearchWidgetEventFilter;
 namespace atools {
 namespace gui {
+class LinkTooltipHandler;
 class GridDelegate;
 }
 
@@ -46,12 +46,7 @@ namespace map {
 struct MapAirport;
 }
 
-namespace proc {
-struct MapProcedureRef;
-struct MapProcedureLeg;
-struct MapProcedureLegs;
-}
-
+class SearchWidgetKeyEventFilter;
 class ProcIndexEntry;
 class InfoQuery;
 class QTreeWidget;
@@ -67,7 +62,7 @@ class ProcedureSearch :
   Q_OBJECT
 
 public:
-  ProcedureSearch(QMainWindow *main, QTreeWidget *treeWidgetParam, si::TabSearchId tabWidgetIndex);
+  ProcedureSearch(MainWindow *main, QTreeWidget *treeWidgetParam, si::TabSearchId tabWidgetIndex);
   virtual ~ProcedureSearch() override;
 
   ProcedureSearch(const ProcedureSearch& other) = delete;
@@ -84,7 +79,7 @@ public:
   virtual void restoreState() override;
 
   /* Update fonts units, etc. */
-  virtual void optionsChanged() override;
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) override;
 
   /* GUI style has changed */
   virtual void styleChanged() override;
@@ -103,7 +98,7 @@ public:
 signals:
   /* Show approaches and highlight circles on the map */
   void procedureSelected(const proc::MapProcedureRef& refs);
-  void proceduresSelected(const QVector<proc::MapProcedureRef>& refs);
+  void proceduresSelected(const QList<proc::MapProcedureRef>& refs);
   void procedureLegSelected(const proc::MapProcedureRef& refs);
 
   /* Zoom to approaches/transitions or waypoints */
@@ -111,7 +106,7 @@ signals:
   void showRect(const atools::geo::Rect& rect, bool doubleClick);
 
   /* Add the complete procedure to the route */
-  void routeInsertProcedure(const proc::MapProcedureLegs& legs);
+  void routeInsertProcedure(const proc::MapProcedureLegs& legs, bool undo = true);
 
   /* Show information info window on navaid on double click */
   void showInformation(const map::MapResult& result);
@@ -155,6 +150,10 @@ private:
   virtual void activateView() override;
   virtual void showFirstEntry() override;
 
+  virtual void fontChanged(const QFont&) override;
+
+  virtual void resetView() override;
+
   void itemSelectionChanged();
   void itemSelectionChangedInternal(bool noFollow);
   void itemDoubleClicked(QTreeWidgetItem *item, int);
@@ -174,8 +173,8 @@ private:
   void attachProcedure();
 
   // Save and restore expanded and selected item state
-  QSet<int> treeViewStateSave() const;
-  void treeViewStateRestore(const QSet<int>& state);
+  QSet<int> treeWidgetStateSave() const;
+  void treeWidgetStateRestore(const QSet<int>& state);
 
   /* Build full approach or transition items for the tree view */
   QTreeWidgetItem *buildProcedureItem(QTreeWidgetItem *rootItem, const QString& ident, const atools::sql::SqlRecord& recProcedure,
@@ -204,7 +203,7 @@ private:
 
   /* Fill header for tree or selected/table view */
   void updateTreeHeader();
-  void createFonts();
+  void createFontsFromTreeWidget();
 
   void updateHeaderLabel();
   void updateWidgets();
@@ -218,7 +217,6 @@ private:
   void updateFilterBoxes();
   void resetSearch();
   void dockVisibilityChanged(bool visible);
-  void fontChanged(const QFont&);
 
   static proc::MapProcedureTypes buildTypeFromProcedureRec(const atools::sql::SqlRecord& recApp);
 
@@ -228,14 +226,16 @@ private:
   /* Order by name */
   static bool transitionSortFunc(const atools::sql::SqlRecord& rec1, const atools::sql::SqlRecord& rec2);
 
+  /* If approach has no legs and a single transition: SID special case. get transition id from cache */
   void fetchSingleTransitionId(proc::MapProcedureRef& ref) const;
 
   /* For header and menu item */
   QString procedureAndTransitionText(const QTreeWidgetItem *item, bool header) const;
 
   void clearSelectionClicked();
-  void showAllToggled(bool checked);
+  void showAllToggled(bool checked, bool zoom);
   void showAllToggledAction(bool checked);
+  void showAllToggledButton(bool checked);
 
   /* Get procedure reference with ids only */
   const proc::MapProcedureRef& fetchProcRef(const QTreeWidgetItem *item) const;
@@ -254,12 +254,18 @@ private:
   void updateProcedureWind();
 
   /* Intial selection and expand items for current selection in route */
-  void treeViewStateFromRoute();
+  void treeWidgetStateFromRoute();
 
   /* Get first and last waypoint from record */
   QStringList firstLastWaypoint(const atools::sql::SqlRecord& record) const;
 
-  inline const proc::MapProcedureRef& refFromItem(const QTreeWidgetItem *item) const;
+  const proc::MapProcedureRef& refFromItem(const QTreeWidgetItem *item) const;
+
+  /* Emit showRect with leg bounding plus airport */
+  void showLegs(const proc::MapProcedureLegs *legs, bool doubleClick);
+
+  /* Callback to show tooltip for airport link */
+  QString tooltipFunction(const QString&);
 
   QString transitionIndicator, transitionIndicatorOne;
 
@@ -282,7 +288,7 @@ private:
   QStringList runwayMismatches;
 
   /* Fonts for tree elements */
-  QFont procedureBoldFont, procedureNormalFont, legFont, missedLegFont, invalidLegFont, identFont;
+  QFont procedureBoldFont, procedureNormalFont, legFont, missedLegFont, invalidLegBoldFont, identBoldFont;
 
   map::MapAirport *currentAirportNav, *currentAirportSim, *savedAirportSim;
 
@@ -297,10 +303,31 @@ private:
   TreeEventFilter *treeEventFilter = nullptr;
 
   /* Event filter for line input */
-  SearchWidgetEventFilter *lineInputEventFilter = nullptr;
+  SearchWidgetKeyEventFilter *lineInputEventFilter = nullptr;
   bool errors = false;
 
   bool savedDepartureFilter = false, savedArrivalFilter = false;
+
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
+};
+
+/* Use event filter to catch mouse click in white area and deselect all entries */
+class TreeEventFilter :
+  public QObject
+{
+  Q_OBJECT
+
+public:
+  TreeEventFilter(ProcedureSearch *parent)
+    : QObject(parent), search(parent)
+  {
+  }
+
+private:
+  virtual bool eventFilter(QObject *object, QEvent *event) override;
+
+  ProcedureSearch *search;
 };
 
 #endif // LITTLENAVMAP_PROCTREECONTROLLER_H

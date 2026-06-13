@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,10 +17,11 @@
 
 #include "mappainter/mappainteruser.h"
 
+#include "app/navapp.h"
 #include "atools.h"
 #include "common/symbolpainter.h"
 #include "mapgui/maplayer.h"
-#include "app/navapp.h"
+#include "mappainter/paintcontext.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
 #include "userdata/userdataicons.h"
@@ -47,14 +48,12 @@ MapPainterUser::~MapPainterUser()
 
 void MapPainterUser::render()
 {
-  const GeoDataLatLonAltBox& curBox = context->viewport->viewLatLonAltBox();
-
   atools::util::PainterContextSaver saver(context->painter);
 
   context->szFont(context->textSizeUserpoint);
 
   // Always call paint to fill cache
-  paintUserpoints(queries->getMapQuery()->getUserdataPoints(curBox, context->userPointTypes, context->userPointTypesAll,
+  paintUserpoints(queries->getMapQuery()->getUserdataPoints(context->viewportBox, *context->userPointTypes, *context->userPointTypesAll,
                                                             context->userPointTypeUnknown, context->distanceNm), context->drawFast);
 }
 
@@ -75,7 +74,7 @@ void MapPainterUser::paintUserpoints(const QList<MapUserpoint>& userpoints, bool
       if(context->objCount())
         return;
 
-      if(icons->hasType(userpoint.type) || context->userPointTypeUnknown)
+      if(icons->hasType(userpoint.userpointType) || context->userPointTypeUnknown)
       {
         // Use navaid sizes as base but allow user to override with userpoint scale
         float size;
@@ -102,7 +101,7 @@ void MapPainterUser::paintUserpoints(const QList<MapUserpoint>& userpoints, bool
         }
 
         icon::TextPlacement textPlacementHint = icon::ICON_LABEL_LEFT;
-        const QPixmap *iconPixmap = icons->getIconPixmap(userpoint.type, atools::roundToInt(size), &textPlacementHint);
+        const QPixmap *iconPixmap = icons->getIconPixmap(userpoint.userpointType, atools::roundToInt(size), &textPlacementHint);
         context->painter->drawPixmap(QPointF(x - size / 2.f, y - size / 2.f), *iconPixmap);
 
         // Do not draw labels for airport add-on marks
@@ -111,9 +110,9 @@ void MapPainterUser::paintUserpoints(const QList<MapUserpoint>& userpoints, bool
           int maxTextLength = context->mapLayerText->getMaxTextLengthUserpoint();
           QStringList texts;
           texts.append(atools::elideTextShort(userpoint.ident, maxTextLength));
-          texts.append(userpoint.name != userpoint.ident ? atools::elideTextShort(userpoint.name, maxTextLength) : QString());
+          texts.append(userpoint.name != userpoint.ident ? atools::elideTextShort(userpoint.name, maxTextLength) : QStringLiteral());
 
-          textatt::TextAttributes textatts = textatt::NONE;
+          text::Attribute textatts = text::NO_ATTRIBUTE;
           float xpos = x, ypos = y;
           float offset = size / 2.f + size / 10.f;
 
@@ -122,25 +121,25 @@ void MapPainterUser::paintUserpoints(const QList<MapUserpoint>& userpoints, bool
           {
             case icon::ICON_LABEL_TOP:
               // NDB - place on top
-              textatts = textatt::ABOVE | textatt::CENTER;
+              textatts = text::PLACE_ABOVE_CENTER;
               ypos = y - offset;
               break;
 
             case icon::ICON_LABEL_RIGHT:
               // VOR - alight left and place right
-              textatts = textatt::RIGHT;
+              textatts = text::RIGHT;
               xpos = x + offset;
               break;
 
             case icon::ICON_LABEL_BOTTOM:
               // Place on bottom
-              textatts = textatt::BELOW | textatt::CENTER;
+              textatts = text::PLACE_BELOW_CENTER;
               ypos = y + offset;
               break;
 
             case icon::ICON_LABEL_LEFT:
               // Airports and waypoints - alight right and place left
-              textatts = textatt::LEFT;
+              textatts = text::LEFT;
               xpos = x - offset;
               break;
           }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -38,14 +38,14 @@ using atools::sql::SqlTransaction;
 using atools::sql::SqlQuery;
 using atools::sql::SqlUtil;
 using atools::sql::SqlRecord;
-using atools::track::TrackVectorType;
+using atools::track::TrackListType;
 using atools::track::TrackType;
 using atools::track::Track;
 
 TrackManager::TrackManager(SqlDatabase *trackDatabase, SqlDatabase *navDatabase)
   : atools::sql::DataManagerBase(trackDatabase, "track", "track_id",
                                  {":/atools/resources/sql/fs/track/create_track_schema.sql"},
-                                 QString(), /* undoSqlScript */
+                                 QStringLiteral(), /* undoSqlScript */
                                  ":/atools/resources/sql/fs/track/drop_track_schema.sql"),
   dbNav(navDatabase)
 {
@@ -95,7 +95,7 @@ void TrackManager::deInitQueries()
   airwayQuery = nullptr;
 }
 
-void TrackManager::loadTracks(const TrackVectorType& tracks, bool onlyValid)
+void TrackManager::loadTracks(const TrackListType& tracks, bool onlyValid)
 {
   errorMessages.clear();
   SqlTransaction transaction(db);
@@ -139,7 +139,7 @@ void TrackManager::loadTracks(const TrackVectorType& tracks, bool onlyValid)
       nameFragmentHash.insert(track.name, 1);
 
     // Read string into a list of references ====================================
-    map::MapObjectRefExtVector refs;
+    map::MapObjectRefExtList refs;
     QString routeStr = track.route.join(" ");
     if(reader.createRouteFromString(routeStr, rs::TRACK_DEFAULTS, nullptr, &refs))
     {
@@ -318,11 +318,11 @@ int TrackManager::addTrackpoint(QHash<int, SqlRecord>& trackpoints, atools::sql:
         rec.setValue("trackpoint_id", ref.id);
         rec.setValue("nav_id", waypointQuery->value("nav_id"));
         rec.setValue("ident", waypointQuery->value("ident"));
-        rec.setValue("name", waypointQuery->value("name", QVariant::String));
+        rec.setValue("name", waypointQuery->value("name", QVariant(QMetaType::fromType<QString>())));
         rec.setValue("region", waypointQuery->value("region"));
-        rec.setValue("artificial", waypointQuery->value("artificial", QVariant::Int));
+        rec.setValue("artificial", waypointQuery->value("artificial", QVariant(QMetaType::fromType<int>())));
         rec.setValue("type", waypointQuery->value("type"));
-        rec.setValue("arinc_type", waypointQuery->value("arinc_type", QVariant::String));
+        rec.setValue("arinc_type", waypointQuery->value("arinc_type", QVariant(QMetaType::fromType<QString>())));
         rec.setValue("num_victor_airway", waypointQuery->value("num_victor_airway"));
         rec.setValue("num_jet_airway", waypointQuery->value("num_jet_airway"));
         rec.setValue("mag_var", waypointQuery->value("mag_var"));
@@ -364,7 +364,7 @@ int TrackManager::addTrackpoint(QHash<int, SqlRecord>& trackpoints, atools::sql:
           rec.setValue("trackpoint_id", trackpointId);
           rec.setValue("nav_id", ref.id);
           rec.setValue("ident", navaidQuery->value("ident"));
-          rec.setValue("name", navaidQuery->value("name", QVariant::String));
+          rec.setValue("name", navaidQuery->value("name", QVariant(QMetaType::fromType<QString>())));
           rec.setValue("region", navaidQuery->value("region"));
           rec.setValue("artificial", 1); // Created for airways
           rec.setValue("type", type);
@@ -447,8 +447,8 @@ QMap<atools::track::TrackType, int> TrackManager::getNumTracks()
     retval.insert(static_cast<atools::track::TrackType>(atools::strToChar(query.valueStr(0))), query.valueInt(1));
 
   // Insert missing values
-  if(!retval.contains(atools::track::PACOTS))
-    retval.insert(atools::track::PACOTS, 0);
+  // if(!retval.contains(atools::track::PACOTS))
+  // retval.insert(atools::track::PACOTS, 0);
 
   if(!retval.contains(atools::track::NAT))
     retval.insert(atools::track::NAT, 0);

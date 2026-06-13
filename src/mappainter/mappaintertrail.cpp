@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include "fs/sc/simconnectuseraircraft.h"
 #include "geo/aircrafttrail.h"
 #include "mapgui/mappaintwidget.h"
+#include "mappainter/paintcontext.h"
 #include "route/route.h"
 #include "util/paintercontextsaver.h"
 
@@ -48,7 +49,7 @@ void MapPainterTrail::render()
     bounding.extend(aircraftPos); // Add aircraft since this is not neccesarily a part of the trail
 
     // Have to do separate check for single point rect which appears right after deleting the trail
-    if(!aircraftTrail.isEmpty() && (resolves(bounding) || (bounding.isPoint() && context->viewportRect.overlaps(bounding))))
+    if(!aircraftTrail.isEmpty() && (resolves(bounding) || (bounding.isPoint() && context->visible(bounding))))
     {
 #ifdef DEBUG_DRAW_TRAIL
       {

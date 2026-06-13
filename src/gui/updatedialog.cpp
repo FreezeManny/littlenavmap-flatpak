@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -34,7 +34,8 @@ static const QDialogButtonBox::ButtonRole COPY_ROLE = QDialogButtonBox::ActionRo
 UpdateDialog::UpdateDialog(QWidget *parent, bool manualCheck)
   : QDialog(parent), ui(new Ui::UpdateDialog), manual(manualCheck)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
   ui->setupUi(this);
   setWindowTitle(tr("%1 - Updates Available").arg(QCoreApplication::applicationName()));
@@ -58,7 +59,11 @@ UpdateDialog::UpdateDialog(QWidget *parent, bool manualCheck)
   connect(ui->textBrowserUpdate, &QTextBrowser::anchorClicked, this, &UpdateDialog::anchorClicked);
 }
 
-/* A button box button was clicked */
+UpdateDialog::~UpdateDialog()
+{
+  delete ui;
+}
+
 void UpdateDialog::buttonBoxClicked(QAbstractButton *button)
 {
   buttonClickedRole = ui->buttonBoxUpdate->buttonRole(button);
@@ -73,11 +78,6 @@ void UpdateDialog::buttonBoxClicked(QAbstractButton *button)
   }
   else
     QDialog::accept();
-}
-
-UpdateDialog::~UpdateDialog()
-{
-  delete ui;
 }
 
 void UpdateDialog::setMessage(const QString& text)

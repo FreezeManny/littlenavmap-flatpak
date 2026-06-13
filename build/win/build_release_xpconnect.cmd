@@ -1,4 +1,4 @@
-@echo off
+REM ~ @echo off
 
 echo ============================================================================================
 echo ======== build_release_xpconnect.cmd =======================================================
@@ -7,6 +7,7 @@ echo ===========================================================================
 setlocal enableextensions
 
 if defined APROJECTS ( echo APROJECTS=%APROJECTS% ) else ( echo APROJECTS not set && exit /b 1 )
+if defined QT_VERSION ( echo QT_VERSION=%QT_VERSION% ) else ( echo QT_VERSION not set && exit /b 1 )
 
 rem =============================================================================
 rem Set the required environment variable APROJECTS to the base directory for
@@ -33,7 +34,10 @@ rem Windows/qmake cannot deal with paths containing spaces/quotes - defines thes
 rem if defined XPSDK_BASE ( echo %XPSDK_BASE% ) else ( set XPSDK_BASE="%APROJECTS%\X-Plane SDK")
 
 rem Defines the used Qt for Xpconnect
-if defined PATH_STATIC ( echo PATH_STATIC=%PATH_STATIC% ) else ( set PATH_STATIC=C:\msys64\mingw64\qt5-static\bin;C:\msys64\mingw64\bin)
+if defined QTDIR_STATIC ( echo QTDIR_STATIC=%QTDIR_STATIC% ) else ( set QTDIR_STATIC=%APROJECTS%\qt-%QT_VERSION%-static)
+if defined PATH_STATIC ( echo PATH_STATIC=%PATH_STATIC% ) else ( set PATH_STATIC=C:\Qt\Tools\mingw1120_64\bin\;%QTDIR_STATIC%\bin)
+
+
 
 rem === Build littlexpconnect =============================
 
@@ -54,7 +58,11 @@ mkdir "%APROJECTS%\build-atools-%CONF_TYPE%"
 pushd "%APROJECTS%\build-atools-%CONF_TYPE%"
 if errorlevel 1 goto :err
 
+set QTDIR=%QTDIR_STATIC%
 set PATH=%PATH%;%PATH_STATIC%
+
+echo QTDIR=%QTDIR%
+echo PATH=%PATH%
 
 set ATOOLS_NO_FS=true
 set ATOOLS_NO_GRIB=true
@@ -68,11 +76,12 @@ set ATOOLS_NO_WEB=true
 set ATOOLS_NO_WMM=true
 set ATOOLS_NO_NAVSERVER=true
 set ATOOLS_NO_CRASHHANDLER=true
+set ATOOLS_NO_QT5COMPAT=true
 
 qmake.exe "%APROJECTS%\atools\atools.pro" -spec win32-g++ CONFIG+=%CONF_TYPE%
 if errorlevel 1 goto :err
 
-mingw32-make.exe -j4
+mingw32-make.exe
 if errorlevel 1 goto :err
 popd
 
@@ -88,7 +97,7 @@ if errorlevel 1 goto :err
 qmake.exe "%APROJECTS%\littlexpconnect\littlexpconnect.pro" -spec win32-g++ CONFIG+=%CONF_TYPE%
 if errorlevel 1 goto :err
 
-mingw32-make.exe -j4
+mingw32-make.exe
 if errorlevel 1 goto :err
 
 

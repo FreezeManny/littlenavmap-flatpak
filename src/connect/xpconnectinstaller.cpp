@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -38,24 +38,7 @@ XpconnectInstaller::XpconnectInstaller(QWidget *parentWidget)
 
 QString XpconnectInstaller::xpconnectName()
 {
-#ifdef Q_OS_MACOS
-
-  if(QSysInfo::productVersion().toFloat() >= 10.14)
-    // "Little Xpconnect arm64":
-    // This is for Apple computers having an Apple Silicon or an Intel CPU.
-    // It supports only newer macOS releases from Mojave 10.14 and later.
-    return "Little Xpconnect arm64";
-  else
-    // "Little Xpconnect x86":
-    // This is for Apple computers having an Intel CPU. This supports
-    // older macOS releases from High Sierra 10.13.
-    return "Little Xpconnect x86";
-
-#else
-  return "Little Xpconnect";
-
-#endif
-
+  return QStringLiteral("Little Xpconnect");
 }
 
 QString XpconnectInstaller::xpconnectPath()
@@ -173,13 +156,13 @@ bool XpconnectInstaller::install()
                                     "<p><ul>%1</ul>(click to show)</p>"
                                       "<p>Check these plugins manually if you are not sure what they are.</p>"
                                         "<p>Move these plugins to the system trash now to avoid issues like X-Plane crashes?</p>").
-                               arg(xpconnectsText.join(QString())));
+                               arg(xpconnectsText.join(QStringLiteral())));
         questionBox.setIcon(QMessageBox::Question);
 
         if(questionBox.exec() == QMessageBox::Yes)
         {
           // Delete all found plugins
-          for(const QString& xpc : qAsConst(xpconnects))
+          for(const QString& xpc : std::as_const(xpconnects))
           {
             fileOperations.removeDirectoryToTrash(xpc);
             if(fileOperations.hasErrors())

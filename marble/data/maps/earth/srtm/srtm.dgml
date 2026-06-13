@@ -105,7 +105,7 @@
                     <pen color="#c173b0" width="1" />
                     <brush color="#c173b0" alpha="0.20" />
                 </geodata>
-                <geodata name="purbanareas" property="urbanareas">
+                <geodata name="urbanareas" property="urbanareas">
                     <sourcefile> naturalearth/ne_50m_urban_areas.pn2 </sourcefile>
                     <pen color="#dfc5af" />
                     <brush color="#dfc5af" alpha="0.60" />
@@ -113,10 +113,6 @@
                 <geodata name="admin1" property="borders">
                     <sourcefile> naturalearth/ne_50m_admin_1_states_provinces_lines.pn2 </sourcefile>
                     <pen color="#f86649" style="dashdotline" />
-                </geodata>
-                <geodata name="international dateline" property="borders">
-                    <sourcefile> mwdbii/DATELINE.PNT </sourcefile>
-                    <pen color="#000000" />
                 </geodata>
                 <geodata name="rivers" property="waterbodies">
                     <sourcefile> naturalearth/ne_50m_rivers_lake_centerlines.pn2 </sourcefile>

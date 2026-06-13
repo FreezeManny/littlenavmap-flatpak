@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -80,31 +80,24 @@ enum MenuActionType
   INFORMATION, /* Show Information */
   PROCEDURE, /* Show airport procedures */
   PROCEDUREADD, /* Add airport procedures into plan */
-  CUSTOMAPPROACH, /* Create custom procedure */
-  CUSTOMDEPARTURE, /* Create custom procedure */
+  DESTINATION, /* Destination or custom procedure */
+  DEPARTURE, /* Departure or custom procedure */
   DIRECT, /* Direct to waypoint or position */
-  MEASURE, /* GC measmurement line */
+  EDIT, /* General edit replacing EDITROUTEUSERPOINT, USERPOINTEDIT, LOGENTRYEDIT */
+  REMOVE, /* General remove replacing DELETEROUTEWAYPOINT, USERPOINTDELETE, REMOVEUSER */
+  RANGERINGS, /* User defined range rings */
   NAVAIDRANGE, /* Show range ring for radio navaid */
   PATTERN, /* Airport traffic pattern */
   HOLDING, /* Holding */
   AIRPORT_MSA, /* Airport MSA sector diagram */
-  DEPARTURE, /* Set departure in flight plan */
-  DESTINATION, /* Set destination in flight plan */
   ALTERNATE, /* Add alternate airport to flight plan */
   ADDROUTE, /* Add airport, navid or position to next flight plan leg */
   APPENDROUTE, /* Append airport, navid or position to end of flight plan */
-  DELETEROUTEWAYPOINT, /* Remove flight plan leg */
-  EDITROUTEUSERPOINT, /* Edit user defined route waypoint or remarks for any flight plan point */
   CONVERTPROCEDURE, /* Convert procedure to waypoints */
   MARKAIRPORTADDON, /* Mark airport as add-on */
   USERPOINTADD, /* Add userpoint (in sub-menu) */
-  USERPOINTEDIT, /* Edit userpoint (in sub-menu) */
-  USERPOINTMOVE, /* Move userpoint on map (in sub-menu) */
-  USERPOINTDELETE, /* Remove userpoint (in sub-menu) */
-  LOGENTRYEDIT, /* Edit logbook entry on preview */
   SHOWINSEARCH, /* Show objects in search window with filter and selection */
   SHOWINROUTE, /* Select legs in flight plan table */
-  REMOVEUSER /* Remove traffic pattern, hold, etc. */
 };
 
 }
@@ -179,18 +172,16 @@ private:
   void insertInformationMenu(QMenu& menu);
   void insertProcedureMenu(QMenu& menu);
   void insertProcedureAddMenu(QMenu& menu);
-  void insertCustomApproachMenu(QMenu& menu);
-  void insertCustomDepartureMenu(QMenu& menu);
   void insertDirectToMenu(QMenu& menu);
 
   // ----
-  void insertMeasureMenu(QMenu& menu);
-  void insertRemoveMarkMenu(QMenu& menu);
+  void insertEditMenu(QMenu& menu);
+  void insertRemoveMenu(QMenu& menu);
 
   // ui->actionMapHideDistanceMarker
 
   // ----
-  // ui->actionMapRangeRings
+  void insertRangeRingsMenu(QMenu& menu);
   void insertNavaidRangeMenu(QMenu& menu);
 
   // ui->actionMapHideOneRangeRing
@@ -206,15 +197,13 @@ private:
   // ui->actionMapHideHold
 
   // ----
-  void insertDepartureMenu(QMenu& menu);
   void insertDestinationMenu(QMenu& menu);
+  void insertDepartureMenu(QMenu& menu);
   void insertAlternateMenu(QMenu& menu);
 
   // ----
   void insertAddRouteMenu(QMenu& menu);
   void insertAppendRouteMenu(QMenu& menu);
-  void insertDeleteRouteWaypointMenu(QMenu& menu);
-  void insertEditRouteUserpointMenu(QMenu& menu);
 
   void insertConvertProcedureMenu(QMenu& menu);
 
@@ -222,12 +211,6 @@ private:
 
   // ---- sub-menu
   void insertUserpointAddMenu(QMenu& menu);
-  void insertUserpointEditMenu(QMenu& menu);
-  void insertUserpointMoveMenu(QMenu& menu);
-  void insertUserpointDeleteMenu(QMenu& menu);
-
-  // ----
-  void insertLogEntryEdit(QMenu& menu);
 
   // ----
   void insertShowInRouteMenu(QMenu& menu);
@@ -247,19 +230,18 @@ private:
    * @param disable Has to be set when passing a callback to insertMenuOrAction. Disables/enables the menu item
    * @param submenu true if the current item is added to a generated sub-menu
    */
-  typedef  std::function<void (const map::MapBase *base, QString& text, QIcon& icon, bool& disable,
-                               bool submenu)> ActionCallback;
+  typedef std::function<void (int index, const map::MapResultIndex& resultIndex, QString& text, QIcon& icon, bool& disable)> ActionCallback;
 
   /* Insert menu for given action and given map objects from index. Adds a sub-menu if needed.
    * tip is added as status tip and as tooltip if menu tooltips are enabled.
    * allowNoMapObject Enables the menu for an empty index (click without map object) and also inserts a coordinates menu.  */
-  void insertMenuOrAction(QMenu& menu, mc::MenuActionType actionType, const map::MapResultIndex& index,
+  void insertMenuOrAction(QMenu& menu, mc::MenuActionType actionType, const map::MapResultIndex& resultIndex,
                           const QString& text, const QString& tip, const QString& key, const QIcon& icon,
                           bool allowNoMapObject = false, const ActionCallback& callback = nullptr);
 
   /* Insert a single action. */
   QAction *insertAction(QMenu& menu, mc::MenuActionType actionType, const QString& text, const QString& tip,
-                        const QString& key, const QIcon& icon, const map::MapBase *base, bool submenu,
+                        const QString& key, const QIcon& icon, int index, const map::MapResultIndex& resultIndex,
                         bool allowNoMapObject, const ActionCallback& callback);
 
   /* Sort callback comparator for a locale-aware sorting of menu items*/
@@ -287,11 +269,11 @@ private:
   struct MenuData;
   // Index mapped to menu data which also contains a pointer to result above
   // Id is stored as action data
-  QVector<MenuData> dataIndex;
+  QList<MenuData> dataIndex;
 
   // Actions have to be generated with parent main window and therefore menu does not take ownership
   // Actions are kept here for later deletion
-  QVector<QObject *> actionsAndMenus;
+  QList<QObject *> actionsAndMenus;
 
   // true if clicked position is within globe
   bool visibleOnMap = false;

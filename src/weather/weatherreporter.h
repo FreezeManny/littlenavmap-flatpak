@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -51,8 +51,6 @@ class NoaaWeatherDownloader;
 }
 }
 
-class MainWindow;
-
 /*
  * Provides a source of metar data for airports. Supports ActiveSkyNext, NOAA and VATSIM weather.
  * The Active Sky (Next and 16) weather files are monitored for changes and the signal
@@ -71,7 +69,7 @@ class WeatherReporter :
 
 public:
   /* @param type flight simulator type needed to find Active Sky weather file. */
-  explicit WeatherReporter(MainWindow *parentWindow, atools::fs::FsPaths::SimulatorType type);
+  explicit WeatherReporter(QWidget *parent, atools::fs::FsPaths::SimulatorType type);
   virtual ~WeatherReporter() override;
 
   WeatherReporter(const WeatherReporter& other) = delete;
@@ -178,6 +176,9 @@ public:
   /* Print the size of all container classes to detect overflow or memory leak conditions */
   void debugDumpContainerSizes() const;
 
+  /* Update IVAO and NOAA timeout periods - timeout is disabled if weather services are not used */
+  void updateTimeouts();
+
 signals:
   /* Emitted when Active Sky or X-Plane weather file changes or a request to weather was fullfilled */
   void weatherUpdated();
@@ -226,10 +227,7 @@ private:
   /* Show warning dialog in main loop to avoid issues when being called from draw handler */
   void showXplaneWarningDialog(const QString& message);
 
-  atools::geo::Pos fetchAirportCoordinates(const QString& airportIdent, AirportQuery *airportQuery, bool xplane);
-
-  /* Update IVAO and NOAA timeout periods - timeout is disable if weather services are not used */
-  void updateTimeouts();
+  static atools::geo::Pos fetchAirportCoordinates(const QByteArray& airportIdent, void *object);
 
   atools::fs::weather::NoaaWeatherDownloader *noaaWeather = nullptr;
   atools::fs::weather::WeatherNetDownload *vatsimWeather = nullptr;
@@ -247,7 +245,7 @@ private:
 
   atools::fs::weather::XpWeatherReader *xpWeatherReader = nullptr;
 
-  MainWindow *mainWindow;
+  QWidget *parentWidget;
 
   ActiveSkyType activeSkyType = NONE;
   QString asSnapshotPath, asFlightplanPath;

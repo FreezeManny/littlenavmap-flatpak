@@ -20,6 +20,7 @@
 
 #include "fs/fspaths.h"
 #include "common/mapflags.h"
+#include "options/optionchangeflags.h"
 
 #include <QMainWindow>
 #include <QFileInfoList>
@@ -28,7 +29,6 @@
 #include <marble/MarbleGlobal.h>
 
 class ConnectClient;
-class DatabaseManager;
 class InfoController;
 class MapThemeHandler;
 class OptionsDialog;
@@ -50,6 +50,8 @@ class WeatherReporter;
 class WindReporter;
 
 class WeatherContextHandler;
+
+class StatusBar;
 namespace Marble {
 class MarbleAboutDialog;
 class RenderState;
@@ -103,6 +105,8 @@ namespace map {
 struct MapAirport;
 }
 
+class MapMarkers;
+
 /*
  * Main window contains all instances of controllers, widgets and managment classes.
  */
@@ -117,11 +121,17 @@ public:
 
   MapWidget *getMapWidget() const
   {
+    if(mapWidget == nullptr)
+      qWarning() << Q_FUNC_INFO << "mapWidget==nullptr";
+
     return mapWidget;
   }
 
   ProfileWidget *getProfileWidget() const
   {
+    if(profileWidget == nullptr)
+      qWarning() << Q_FUNC_INFO << "profileWidget==nullptr";
+
     return profileWidget;
   }
 
@@ -129,6 +139,9 @@ public:
 
   RouteController *getRouteController() const
   {
+    if(routeController == nullptr)
+      qWarning() << Q_FUNC_INFO << "routeController==nullptr";
+
     return routeController;
   }
 
@@ -155,43 +168,17 @@ public:
     return windReporter;
   }
 
+  StatusBar *getStatusBar() const
+  {
+    return statusBar;
+  }
+
   /* Update the window title after switching simulators, flight plan name or change status. */
   /* Updates main window title with simulator type, flight plan name and change status */
   void updateWindowTitle();
 
   /* Update tooltip state in recent menus */
   void setToolTipsEnabledMainMenu(bool enabled);
-
-  /* Update coordinate display in status bar */
-  void updateMapPosLabel(const atools::geo::Pos& pos, int screenX, int screenY);
-
-  /* Sets the text and tooltip of the statusbar label that indicates what objects are shown on the map */
-  /* Updates label and tooltip for objects shown on map */
-  void setMapObjectsShownMessageText(const QString& text = QString(), const QString& tooltipText = QString());
-
-  /* Updates label and tooltip for connection status */
-  void setConnectionStatusMessageText(const QString& text, const QString& tooltipText);
-  void setOnlineConnectionStatusMessageText(const QString& text, const QString& tooltipText);
-
-  /* Sets a general status bar message which is shared with all widgets/actions status text */
-  /* Set a general status message */
-  void setStatusMessage(const QString& message, bool addToLog = false, bool popup = false);
-  void statusMessageChanged(const QString& text);
-
-  void setDetailLabelText(const QString& text);
-
-  /* Render state from marble widget. Get the more detailed state since it updates more often */
-  void renderStatusChanged(const Marble::RenderState& state);
-
-  /* Clear render status if no updates appear */
-  void renderStatusReset();
-
-  /* Update label */
-  void renderStatusUpdateLabel(Marble::RenderStatus status, bool forceUpdate);
-
-  /* Show "Too many objects" label if number of map features was truncated */
-  /* Called after each query */
-  void resultTruncated();
 
   void setDatabaseErased(bool value)
   {
@@ -235,8 +222,11 @@ public:
   /* Open file dialog for saving a LNMPLN flight plan. Filename will be built if empty. */
   QString routeSaveFileDialogLnm(const QString& filename = QString());
 
+  /* Show file dialog for opening all supported formats */
+  QString openAnyFileDialog();
+
   /* Show file dialog for opening a flight plan with all supported formats */
-  QString routeOpenFileDialog();
+  QString openFlightplanFileDialog();
 
   /* Called from the export if LNMPLN was bulk exported */
   void routeSaveLnmExported(const QString& filename);
@@ -245,6 +235,16 @@ public:
   void trailLoadGpx();
   void trailAppendGpx();
   void warnTrailPoints(int numTruncated, bool doNotShowAgain);
+
+  /* Load or append markers (measurment line, range rings, etc.) from XML file */
+  void loadMarkers();
+  void loadMarkersFile(const QString& file, bool forceLoading);
+  void appendMarkers();
+  void saveMarkers();
+
+  /* Show selection dialog and copy or append selected map markers to application features.
+   * sDialog is omitted if forced loading is on */
+  void copyMarkersSelection(const MapMarkers& markers, bool append, bool forceLoading);
 
   /* true if map window is maximized */
   bool isFullScreen() const;
@@ -285,8 +285,8 @@ public:
   }
 
   /* Register and unregister dialogs for autoraise */
-  void addDialogToDockHandler(QDialog *dialogWidget);
-  void removeDialogFromDockHandler(QDialog *dialogWidget);
+  void registerDialogInDockHandler(QDialog *dialogWidget);
+  void unregisterDialogInDockHandler(QDialog *dialogWidget);
 
   /* Get all actions from main menu which have a text and a shortcut */
   QList<QAction *> getMainWindowActions();
@@ -300,11 +300,21 @@ public:
   /* Called by QApplication::fontChanged() */
   void fontChanged(const QFont& font);
 
+  /* called by StyleHandler for style or palette changes */
+  void styleChanged();
+
+  /* Style for toolbar and other buttons */
+  void applyButtonStylesheet();
+
   /* Start installation for Little Xpconnect */
   void installXpconnect();
 
   /* If enabled an aircraft can be moved around the map using Ctr+Shift+Movement, Ctr+Shift+Whell changes altitude */
   bool isDebugMovingAircraft() const;
+  bool isDebugMapPaint() const;
+
+  /* Called from route context menu */
+  void routeSaveCsv();
 
 signals:
   /* Emitted when window is shown the first time */
@@ -327,6 +337,8 @@ private:
   /* Called by window shown event when the main window is visible the first time */
   void mainWindowShown();
   void mainWindowShownDelayed();
+
+  void loadWindowState();
 
   /* Dock window functions */
   void raiseFloatingWindows();
@@ -372,13 +384,8 @@ private:
   void runDirToolManual();
   void runDirTool(bool manual = true);
 
-  /* Update status bar section for online status */
-  void updateConnectionStatusMessageText();
-
   /* Set up own UI elements that cannot be created in designer */
   void setupUi();
-
-  void updateStatusBarStyle();
 
   /* Call other other classes to close queries and clear caches */
   void preDatabaseLoad();
@@ -399,6 +406,9 @@ private:
   /* A button like airport, vor, ndb, etc. was pressed - update the map */
   void updateMapObjectsShown();
 
+  /* Does not update profile */
+  void updateMapObjectsShownMap();
+
   /* Reset drawing settings */
   void resetMapObjectsShown();
 
@@ -407,8 +417,8 @@ private:
 
   /* Selection in approach view has changed */
   void procedureSelected(const proc::MapProcedureRef& ref); /* Single selection */
-  void proceduresSelected(const QVector<proc::MapProcedureRef>& refs); /* Multi preview for all procedures */
-  void proceduresSelectedInternal(const QVector<proc::MapProcedureRef>& refs, bool previewAll);
+  void proceduresSelected(const QList<proc::MapProcedureRef>& refs); /* Multi preview for all procedures */
+  void proceduresSelectedInternal(const QList<proc::MapProcedureRef>& refs, bool previewAll);
 
   /* Selection in flight plan table has changed */
   void routeSelectionChanged(int, int);
@@ -417,8 +427,8 @@ private:
   void routeFromStringCurrent();
 
   /* Called from menu or toolbar by action */
-  void routeOpen();
-  void routeOpenFile(QString filepath);
+  void openAnyFile(); /* actionRouteOpen */
+  void routeOpenFile(QString filepath, bool forceLoading);
 
   /* Called from menu or toolbar by action - append flight plan to current one */
   void routeAppend();
@@ -431,8 +441,11 @@ private:
   void routeOpenRecent(const QString& routeFile);
 
   /* From other instance by shared memory */
-  void routeOpenDescrFromDataExchange(const QString& routeString);
-  void routeOpenFileFromDataExchange(const QString& filepath);
+  void routeOpenDescrFromDataExchange(const QString& routeString, bool forceLoading);
+  void routeOpenFileFromDataExchange(const QString& filepath, bool forceLoading);
+
+  /* Checks for filetype and loads one of the supported file types */
+  void fileOpenAny(const QString& filepath);
 
   /* Flight plan save functions */
   /* Called from menu or toolbar by action */
@@ -447,7 +460,12 @@ private:
 
   /* Reset all "do not show this again" message box status values */
   void resetMessages();
+
+  /* Restart and reset settings */
   void resetAllSettings();
+
+  /* Restart only */
+  void restartApplication(bool resetWindowLayout);
 
   /* Save all and create an issue report */
   void createIssueReport();
@@ -472,7 +490,6 @@ private:
   /* Opens dialog for image resolution and returns pixmap and optionally AviTab JSON */
   bool createMapImage(QPixmap& pixmap, const QString& dialogTitle, const QString& optionPrefx, QString *json, bool dynamicFeatures);
 
-  void distanceChanged();
   void showDonationPage();
   void showManualDownloadPage();
   void showFaqPage();
@@ -497,7 +514,7 @@ private:
   bool layoutOpenInternal(const QString& layoutFile);
   void loadLayoutDelayed(const QString& filename);
 
-  void trailLoadGpxFile(const QString& file);
+  void trailLoadGpxFile(const QString& file, bool forceLoading);
 
   void showOfflineHelp();
   void showOnlineDownloads();
@@ -520,7 +537,6 @@ private:
 
   /* Check manually for updates as triggered by the action */
   void checkForUpdates();
-  void updateClock() const;
 
   /* Actions that define the time source call this*/
   void sunShadingTimeChanged();
@@ -548,8 +564,10 @@ private:
   void toggleWebserver(bool checked);
   void webserverStatusChanged(bool running);
   void openWebserver();
+  void openWebserverQrCode();
   void saveStateNow();
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
+  void optionsChangedInitial();
   void updateXpconnectInstallOptions();
 
   /* Update API keys or tokens in GUI map widget and web API map widget */
@@ -562,11 +580,8 @@ private:
   /* Print the size of all container classes to detect overflow or memory leak conditions */
   void debugDumpContainerSizes() const;
 
-  /* Reduce status bar size if no mouse movement */
-  void shrinkStatusBar();
-
   /* Called by DataExchangeFetcher::dataExchangeDataFetched(). Takes command line options from another instance. */
-  void dataExchangeDataFetched(atools::util::Properties properties);
+  void dataExchangeDataFetched(atools::util::Properties dataExchangeProperties);
 
   void debugActionTriggeredDumpRoute();
   void debugActionTriggeredDumpFlightplan();
@@ -604,22 +619,6 @@ private:
   ProfileWidget *profileWidget = nullptr;
   PrintSupport *printSupport = nullptr;
 
-  /* Status bar labels */
-  QLabel *mapDistanceLabel = nullptr, *mapPositionLabel = nullptr, *mapMagvarLabel = nullptr, *mapRenderStatusLabel = nullptr,
-         *mapDetailLabel = nullptr, *mapVisibleLabel = nullptr, *connectStatusLabel = nullptr, *timeLabel = nullptr;
-
-  /* Connection field and tooltip in statusbar */
-  QString connectionStatus, connectionStatusTooltip, onlineConnectionStatus, onlineConnectionStatusTooltip;
-
-  /* List of status bar messages. First is shown and others are shown in tooltip. */
-  struct StatusMessage
-  {
-    QDateTime timestamp;
-    QString message;
-  };
-
-  QVector<StatusMessage> statusMessages;
-
   /* true if database is currently switched off (i.e. the scenery library loading is open) */
   bool hasDatabaseLoadStatus = false;
 
@@ -640,6 +639,7 @@ private:
   SimBriefHandler *simbriefHandler = nullptr;
   MapThemeHandler *mapThemeHandler = nullptr;
   RouteStringDialog *routeStringDialog = nullptr;
+  StatusBar *statusBar = nullptr;
 
   /* Action  groups for main menu */
   QActionGroup *actionGroupMapProjection = nullptr, *actionGroupMapSunShading = nullptr,
@@ -653,31 +653,33 @@ private:
   WeatherContextHandler *weatherContextHandler;
   QAction *emptyAirportSeparator = nullptr;
 
-  QList<QToolBar *> toolbars;
-
   /* Show database dialog after cleanup of obsolete databases if true */
   bool databasesErased = false;
   QSize defaultToolbarIconSize;
   QString aboutMessage, layoutWarnText;
-  QTimer clockTimer /* MainWindow::updateClock() every second */,
-         renderStatusTimer /* MainWindow::renderStatusReset() if render status is stalled */,
-         shrinkStatusBarTimer /* calls MainWindow::shrinkStatusBar() once map pos and magvar are "-" */;
-  Marble::RenderStatus lastRenderStatus = Marble::Incomplete;
 
-  /* Show hint dialog only once per session */
-  bool backgroundHintRouteStringShown = false;
+  bool delayedShutdownInProgress = false; // Ingnore other close calls while delaying shutdown
+
+  /* Delay shutdown to avoid deadlock in MarbleWidget while it is still loading files */
+  QTimer shutdownDelayTimer;
 
   /* Call debugDumpContainerSizes() every 30 seconds */
   QTimer debugDumpContainerSizesTimer;
 
   bool deInitCalled = false; /* Avoid double call */
 
+  bool fontChangedFromDefault = false; /* Font changed from system in constructor */
+
   QAction *debugActionDumpRoute = nullptr, *debugActionDumpFlightplan = nullptr, *debugActionForceUpdates = nullptr,
           *debugActionReloadPlan = nullptr, *debugActionPlanEdit = nullptr,
           *debugActionPerfEdit = nullptr, *debugActionDumpLayers = nullptr, *debugActionResetUpdate = nullptr,
           *debugActionThrowException = nullptr, *debugActionSegfault = nullptr,
-          *debugActionAssert = nullptr, *debugActionMoveAircraft = nullptr, *debugActionExportPlans = nullptr;
+          *debugActionAssert = nullptr, *debugActionMoveAircraft = nullptr, *debugActionExportPlans = nullptr,
+          *debugActionMapPaint = nullptr;
 
+  /* Widgets that have to adapted on font change */
+  QList<QTabWidget *> tabbarsToResize;
+  QList<QWidget *> widgetsToResize;
 };
 
 #endif // LITTLENAVMAP_MAINWINDOW_H

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -102,8 +102,15 @@ enum RouteExportFormatType : quint16
   EFBR = 27, /* AivlaSoft EFB */
   GPX = 28, /* Garmin exchange format. Not a flight plan format.  */
   HTML = 29, /* Export as HTML page */
+  CSV = 52, /* Export as CSV file */
 
-  // Next = 52
+  // Next = 53
+
+  /* Also update in
+   * RouteExportFormatMap::initCallbacks()
+   * RouteExportFormatMap::init()
+   * RouteExportFormatMap::updateDefaultPaths()
+   */
 };
 
 /* Flags for export format. Some flags are saved to the configuration,
@@ -135,5 +142,7 @@ ATOOLS_DECLARE_FLAGS_16(RouteExportFormatFlags, RouteExportFormatFlag)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(rexp::RouteExportFormatFlags)
 
 } // namespace rexp
+
+Q_DECLARE_TYPEINFO(rexp::RouteExportFormatFlags, Q_PRIMITIVE_TYPE);
 
 #endif // LNM_ROUTEEXPORTFLAGS_H

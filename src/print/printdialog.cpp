@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 
 #include "print/printdialog.h"
 #include "ui_printdialog.h"
-#include "gui/itemviewzoomhandler.h"
+#include "gui/widgetzoomhandler.h"
 #include "gui/widgetstate.h"
 #include "gui/helphandler.h"
 #include "common/constants.h"
@@ -29,7 +29,8 @@
 PrintDialog::PrintDialog(QWidget *parent)
   : QDialog(parent), ui(new Ui::PrintDialog)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -59,15 +60,15 @@ PrintDialog::PrintDialog(QWidget *parent)
   connect(ui->checkBoxPrintFuel, &QCheckBox::toggled, this, &PrintDialog::updateButtonStates);
 
   // Use saved font size for table view
-  zoomHandler = new atools::gui::ItemViewZoomHandler(ui->tableWidgetPrintFlightplanCols);
+  zoomHandler = new atools::gui::WidgetZoomHandler(ui->tableWidgetPrintFlightplanCols);
 }
 
 PrintDialog::~PrintDialog()
 {
   atools::gui::WidgetState(lnm::ROUTE_PRINT_DIALOG).save(this);
 
-  delete ui;
   delete zoomHandler;
+  delete ui;
 }
 
 void PrintDialog::updateButtonStates()

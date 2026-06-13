@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -56,6 +56,11 @@ atools::fs::FsPaths::SimulatorType SimulatorTypeMap::getBest() const
   return FsPaths::NONE;
 }
 
+void SimulatorTypeMap::registerMetaTypes()
+{
+  qRegisterMetaType<SimulatorTypeMap>();
+}
+
 FsPaths::SimulatorType SimulatorTypeMap::getBestInstalled() const
 {
   return getBestInstalled({FsPaths::MSFS_2024, FsPaths::MSFS,
@@ -64,7 +69,7 @@ FsPaths::SimulatorType SimulatorTypeMap::getBestInstalled() const
                            FsPaths::FSX_SE, FsPaths::FSX});
 }
 
-FsPaths::SimulatorType SimulatorTypeMap::getBestInstalled(const FsPaths::SimulatorTypeVector& types) const
+FsPaths::SimulatorType SimulatorTypeMap::getBestInstalled(const FsPaths::SimulatorTypeList& types) const
 {
   for(FsPaths::SimulatorType type : types)
   {

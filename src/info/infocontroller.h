@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,27 +18,32 @@
 #ifndef LITTLENAVMAP_INFOCONTROLLER_H
 #define LITTLENAVMAP_INFOCONTROLLER_H
 
+#include "common/mapflags.h"
 #include "common/tabindexes.h"
+#include "options/optionchangeflags.h"
 
 #include <QObject>
 #include <QSet>
 
-class MainWindow;
-class MapQuery;
-class AirportQuery;
-class InfoQuery;
-class HtmlInfoBuilder;
-class QTextEdit;
 class AircraftProgressConfig;
-
+class AirportQuery;
+class HtmlInfoBuilder;
+class InfoQuery;
+class MapQuery;
 class QTextBrowser;
-
+class QTextEdit;
 class Queries;
+
+class QPushButton;
 namespace map {
 struct MapAirport;
 struct MapResult;
 }
 namespace atools {
+
+namespace sql {
+class SqlRecord;
+}
 
 namespace geo {
 
@@ -52,6 +57,7 @@ class SimConnectData;
 }
 }
 namespace gui {
+class LinkTooltipHandler;
 class TabWidgetHandler;
 }
 namespace util {
@@ -68,7 +74,7 @@ class InfoController :
   Q_OBJECT
 
 public:
-  explicit InfoController(MainWindow *parent);
+  explicit InfoController(QWidget *parent);
   virtual ~InfoController() override;
 
   InfoController(const InfoController& other) = delete;
@@ -89,6 +95,9 @@ public:
 
   /* Update all and do not raise or scroll windows */
   void updateAllInformation();
+
+  /* Update all forced in case userpoints or logbook entries have been changed */
+  void updateAllInformationDataChanged();
 
   /* Update all and do not raise or scroll windows */
   void onlineClientAndAtcUpdated();
@@ -119,8 +128,8 @@ public:
   void disconnectedFromSimulator();
 
   /* Program options have changed */
-  void optionsChanged();
-  void fontChanged(const QFont&);
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
+  void fontChanged(const QFont& font);
 
   /* Get airport information as HTML in the string list. Order is main, runway, com, procedure and weather.
    * List is empty if airport does not exist. Uses own white background color for tables. */
@@ -144,6 +153,10 @@ signals:
   void showPos(const atools::geo::Pos& pos, float zoom, bool doubleClick);
   void showRect(const atools::geo::Rect& rect, bool doubleClick);
   void showProcedures(const map::MapAirport& airport, bool departureFilter, bool arrivalFilter);
+  void showInSearch(map::MapTypes type, const atools::sql::SqlRecord& record, bool select);
+
+  /* Enable or disable actions */
+  void updateHighlightActionStates();
 
 private:
   /* Do not update aircraft progress more than every 0.5 seconds */
@@ -154,9 +167,11 @@ private:
 
   void updateAirportInternal(bool newAirport, bool bearingChange, bool scrollToTop, bool forceWeatherUpdate);
   bool updateNavaidInternal(const map::MapResult& result, bool bearingChanged, bool scrollToTop, bool forceUpdate);
-  bool updateUserpointInternal(const map::MapResult& result, bool bearingChanged, bool scrollToTop);
+  bool updateUserpointInternal(const map::MapResult& result, bool bearingChanged, bool scrollToTop, bool forceUpdate);
+  bool updateLogEntryInternal(const map::MapResult& result, bool bearingChanged, bool scrollToTop, bool forceUpdate);
 
-  void updateTextEditFontSizes();
+  /* Update font size in text browsers if options have changed */
+  void updateTextBrowserFontSizes();
 
   /* User clicked on "Map" link in text browsers */
   void anchorClicked(const QUrl& url);
@@ -179,11 +194,6 @@ private:
 
   /* Push button in progress clicked */
   void progressConfigurationClicked();
-
-  template<typename TYPE>
-  void buildOneNavaid(atools::util::HtmlBuilder& html, bool& bearingChanged, bool& foundNavaid, const QList<TYPE>& list,
-                      QList<TYPE>& currentList, const HtmlInfoBuilder * info,
-                      void (HtmlInfoBuilder::*func)(const TYPE&, atools::util::HtmlBuilder&) const) const;
 
   void showProgressContextMenu(const QPoint& point);
 
@@ -212,13 +222,18 @@ private:
   /* Airport and navaids that are currently shown in the tabs */
   map::MapResult *currentSearchResult, *savedSearchResult;
 
-  MainWindow *mainWindow = nullptr;
+  QWidget *parentWidget = nullptr;
   HtmlInfoBuilder *infoBuilder = nullptr;
   Queries *queries;
+
+  QPushButton *pushButtonConfig = nullptr;
 
   AircraftProgressConfig *aircraftProgressConfig;
 
   atools::gui::TabWidgetHandler *tabHandlerInfo = nullptr, *tabHandlerAirportInfo = nullptr, *tabHandlerAircraft = nullptr;
+
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
 };
 
 #endif // LITTLENAVMAP_INFOCONTROLLER_H

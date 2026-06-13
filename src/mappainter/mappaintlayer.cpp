@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include "common/mapcolors.h"
 #include "geo/calculations.h"
 #include "geo/marbleconverter.h"
+#include "gui/mainwindow.h"
 #include "mapgui/maplayersettings.h"
 #include "mapgui/mapscale.h"
 #include "mapgui/mapwidget.h"
@@ -53,11 +54,13 @@
 using namespace Marble;
 using namespace atools::geo;
 
+/* Render on top of all except overlays */
+QStringList MapPaintLayer::RENDER_POS("ORBIT");
+
 MapPaintLayer::MapPaintLayer(MapPaintWidget *widget)
   : mapPaintWidget(widget)
 {
   verbose = atools::settings::Settings::instance().getAndStoreValue(lnm::OPTIONS_MAP_LAYER_DEBUG, false).toBool();
-  verboseDraw = atools::settings::Settings::instance().getAndStoreValue(lnm::OPTIONS_MAP_LAYER_DEBUG_DRAW, false).toBool();
   debugTileSize = atools::settings::Settings::instance().getAndStoreValue(lnm::OPTIONS_MAP_LAYER_DEBUG_TILE_SIZE, false).toBool();
 
   // Create the layer configuration
@@ -119,6 +122,8 @@ void MapPaintLayer::copySettings(const MapPaintLayer& other)
   airspaceTypes = other.airspaceTypes;
   weatherSource = other.weatherSource;
   sunShading = other.sunShading;
+  minimumRunwayLengthFt = other.minimumRunwayLengthFt;
+  maximumRunwayLengthFt = other.maximumRunwayLengthFt;
 
   // Updates layers too
   setDetailLevel(other.detailLevel, other.detailLevelText);
@@ -269,15 +274,28 @@ void MapPaintLayer::updateLayers()
     mapLayerEffective = mapLayer = mapLayerText = mapLayerRoute = mapLayerRouteText = nullptr;
   else
   {
+    // Adjusted to -0.5 to 0.0 to 1.0 from UI setting 50% to 100% to 200%
+    float scale = (mapPaintWidget->isWeb() ?
+                   OptionData::instance().getDisplayScaleAllWeb() :
+                   OptionData::instance().getDisplayScaleAll()) / 100.f - 1.f;
+
+    // Adjust level of detail depending on overall scale to avoid cluttering up the map
+    // Scale change effect reduced by 1.5
+    int level = detailLevel - scale * 1.5f;
+    int levelText = detailLevelText - scale * 1.5f;
+
     float distKm = static_cast<float>(mapPaintWidget->distance());
-    // Get the uncorrected effective layer - route painting is independent of declutter
+
+    // Get the uncorrected effective layer not considering detail settings
     mapLayerEffective = layers->getLayer(distKm);
 
-    mapLayer = layers->getLayer(distKm, detailLevel);
-    mapLayerText = layers->getLayer(distKm, detailLevelText);
+    // Get layers depending on user detail level settings
+    mapLayer = layers->getLayer(distKm, level);
+    mapLayerText = layers->getLayer(distKm, levelText);
 
-    mapLayerRoute = layers->getLayer(distKm, detailLevel + 1);
-    mapLayerRouteText = layers->getLayer(distKm, detailLevelText + 1);
+    // Get layers for flight plan display using more details than normal and depending on user detail level settings
+    mapLayerRoute = layers->getLayer(distKm, level + 1);
+    mapLayerRouteText = layers->getLayer(distKm, levelText + 1);
   }
 }
 
@@ -335,6 +353,7 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       context.mapLayerEffective = mapLayerEffective;
       context.painter = painter;
       context.viewport = viewport;
+      context.viewportBox = viewport->viewLatLonAltBox();
       context.objectTypes = objectTypes;
       context.objectDisplayTypes = objectDisplayTypes;
       context.airspaceFilterByLayer = getShownAirspacesTypesForLayer();
@@ -346,17 +365,25 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       context.distanceKm = static_cast<float>(mapPaintWidget->distance());
       context.distanceNm = atools::geo::meterToNm(context.distanceKm * 1000.f);
 
-      context.userPointTypes = NavApp::getUserdataController()->getSelectedTypes();
-      context.userPointTypesAll = NavApp::getUserdataController()->getAllTypes();
-      context.userPointTypeUnknown = NavApp::getUserdataController()->isSelectedUnknownType();
+      const UserdataController *userdataController = NavApp::getUserdataController();
+      context.userPointTypes = &userdataController->getSelectedTypesMap();
+      context.userPointTypesAll = &userdataController->getAllTypesMap();
+      context.userPointTypeUnknown = userdataController->isSelectedUnknownType();
+
       context.zoomDistanceMeter = static_cast<float>(mapPaintWidget->distance() * 1000.);
       context.darkMap = NavApp::isDarkMapTheme();
       context.paintCopyright = mapPaintWidget->isPaintCopyright();
+      context.paintNavigation = mapPaintWidget->isPaintNavigation();
       context.paintWindHeader = mapPaintWidget->isPaintWindHeader();
       context.webMap = mapPaintWidget->isWeb();
-      context.currentDistanceMarkerId = NavApp::getMapWidgetGui()->getCurrentDistanceMarkerId();
+
+      const MapWidget *mapWidgetGui = NavApp::getMapWidgetGui();
+      context.currentDistanceMarkerId = mapWidgetGui->getCurrentDistanceMarkerId();
+      context.currentHoldingMarkerId = mapWidgetGui->getCurrentHoldingMarkerId();
+      context.currentRangeMarkerId = mapWidgetGui->getCurrentRangeMarkerId();
 
       context.mimimumRunwayLengthFt = minimumRunwayLengthFt;
+      context.maximumRunwayLengthFt = maximumRunwayLengthFt;
 
       // Copy default font
       context.defaultFont = painter->font();
@@ -368,10 +395,13 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
 
       const OptionData& od = OptionData::instance();
 
+      // Overall scale different for desktop and web
+      context.sizeAll = (mapPaintWidget->isWeb() ? od.getDisplayScaleAllWeb() : od.getDisplayScaleAll()) / 100.f;
+
       context.symbolSizeAircraftAi = od.getDisplaySymbolSizeAircraftAi() / 100.f;
-      context.symbolSizeWeb = od.getWebIconScale() / 100.f;
       context.symbolSizeAircraftUser = od.getDisplaySymbolSizeAircraftUser() / 100.f;
       context.symbolSizeAirport = od.getDisplaySymbolSizeAirport() / 100.f;
+      context.symbolSizeRoute = od.getDisplaySymbolSizeFlightplan() / 100.f;
       context.symbolSizeAirportWeather = od.getDisplaySymbolSizeAirportWeather() / 100.f;
       context.symbolSizeWindBarbs = od.getDisplaySymbolSizeWindBarbs() / 100.f;
       context.symbolSizeNavaid = od.getDisplaySymbolSizeNavaid() / 100.f;
@@ -382,7 +412,7 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       context.textSizeAirport = od.getDisplayTextSizeAirport() / 100.f;
       context.textSizeAirportRunway = od.getDisplayTextSizeAirportRunway() / 100.f;
       context.textSizeAirportTaxiway = od.getDisplayTextSizeAirportTaxiway() / 100.f;
-      context.textSizeFlightplan = od.getDisplayTextSizeFlightplan() / 100.f;
+      context.textSizeRoute = od.getDisplayTextSizeFlightplan() / 100.f;
       context.textSizeNavaid = od.getDisplayTextSizeNavaid() / 100.f;
       context.textSizeAirspace = od.getDisplayTextSizeAirspace() / 100.f;
       context.textSizeUserpoint = od.getDisplayTextSizeUserpoint() / 100.f;
@@ -394,11 +424,11 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       context.transparencyAirportMsa = od.getDisplayTransparencyAirportMsa() / 100.f;
       context.transparencyFlightplan = od.getDisplayTransparencyFlightplan() / 100.f;
       context.transparencyHighlight = od.getDisplayMapHighlightTransparent() / 100.f;
-      context.textSizeRangeUserFeature = od.getDisplayTextSizeUserFeature() / 100.f;
+      context.textSizeRangeMarker = od.getDisplayTextSizeMapMarker() / 100.f;
       context.textSizeRangeMeasurement = od.getDisplayTextSizeMeasurement() / 100.f;
       context.thicknessFlightplan = od.getDisplayThicknessFlightplan() / 100.f;
       context.thicknessTrail = od.getDisplayThicknessTrail() / 100.f;
-      context.thicknessUserFeature = od.getDisplayThicknessUserFeature() / 100.f;
+      context.thicknessMapMarker = od.getDisplayThicknessMapMarker() / 100.f;
       context.thicknessMeasurement = od.getDisplayThicknessMeasurement() / 100.f;
       context.thicknessCompassRose = od.getDisplayThicknessCompassRose() / 100.f;
       context.thicknessAirway = od.getDisplayThicknessAirway() / 100.f;
@@ -411,7 +441,7 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       context.dispOptsRoute = od.getDisplayOptionsRoute();
       context.flags = od.getFlags();
       context.flags2 = od.getFlags2();
-      context.verboseDraw = verboseDraw;
+      context.verboseDraw = NavApp::getMainWindow()->isDebugMapPaint();
 
       context.weatherSource = weatherSource;
       context.visibleWidget = mapPaintWidget->isVisibleWidget();
@@ -460,11 +490,11 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
               // Procedure navaids drawn by route code
               const map::MapResult& navaids = routeLeg.getProcedureLeg().navaids;
               if(navaids.hasWaypoints())
-                context.routeProcIdMap.insert({navaids.waypoints.constFirst().id, map::WAYPOINT});
+                context.routeProcIdMap.insert(map::MapRef(navaids.waypoints.constFirst().id, map::WAYPOINT));
               if(navaids.hasVor())
-                context.routeProcIdMap.insert({navaids.vors.constFirst().id, map::VOR});
+                context.routeProcIdMap.insert(map::MapRef(navaids.vors.constFirst().id, map::VOR));
               if(navaids.hasNdb())
-                context.routeProcIdMap.insert({navaids.ndbs.constFirst().id, map::NDB});
+                context.routeProcIdMap.insert(map::MapRef(navaids.ndbs.constFirst().id, map::NDB));
             }
           }
         } // for(int i = passedRouteLeg -1 ; i < route->size(); i++)
@@ -481,11 +511,11 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
               // Procedure recommended navaids drawn by route code
               const map::MapResult& recNavaids = routeLeg.getProcedureLeg().recNavaids;
               if(recNavaids.hasWaypoints())
-                context.routeProcIdMapRec.insert({recNavaids.waypoints.constFirst().id, map::WAYPOINT});
+                context.routeProcIdMapRec.insert(map::MapRef(recNavaids.waypoints.constFirst().id, map::WAYPOINT));
               if(recNavaids.hasVor())
-                context.routeProcIdMapRec.insert({recNavaids.vors.constFirst().id, map::VOR});
+                context.routeProcIdMapRec.insert(map::MapRef(recNavaids.vors.constFirst().id, map::VOR));
               if(recNavaids.hasNdb())
-                context.routeProcIdMapRec.insert({recNavaids.ndbs.constFirst().id, map::NDB});
+                context.routeProcIdMapRec.insert(map::MapRef(recNavaids.ndbs.constFirst().id, map::NDB));
             }
           }
         } // for(int i = passedRouteLeg; i < route->size(); i++)
@@ -503,11 +533,11 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
           {
             const map::MapResult& navaids = procedure.at(i).navaids;
             if(navaids.hasWaypoints())
-              context.routeProcIdMap.insert({navaids.waypoints.constFirst().id, map::WAYPOINT});
+              context.routeProcIdMap.insert(map::MapRef(navaids.waypoints.constFirst().id, map::WAYPOINT));
             if(navaids.hasVor())
-              context.routeProcIdMap.insert({navaids.vors.constFirst().id, map::VOR});
+              context.routeProcIdMap.insert(map::MapRef(navaids.vors.constFirst().id, map::VOR));
             if(navaids.hasNdb())
-              context.routeProcIdMap.insert({navaids.ndbs.constFirst().id, map::NDB});
+              context.routeProcIdMap.insert(map::MapRef(navaids.ndbs.constFirst().id, map::NDB));
           }
         }
 
@@ -519,11 +549,11 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
           {
             const map::MapResult& navaids = procedure.at(i).navaids;
             if(navaids.hasWaypoints())
-              context.routeProcIdMap.insert({navaids.waypoints.constFirst().id, map::WAYPOINT});
+              context.routeProcIdMap.insert(map::MapRef(navaids.waypoints.constFirst().id, map::WAYPOINT));
             if(navaids.hasVor())
-              context.routeProcIdMap.insert({navaids.vors.constFirst().id, map::VOR});
+              context.routeProcIdMap.insert(map::MapRef(navaids.vors.constFirst().id, map::VOR));
             if(navaids.hasNdb())
-              context.routeProcIdMap.insert({navaids.ndbs.constFirst().id, map::NDB});
+              context.routeProcIdMap.insert(map::MapRef(navaids.ndbs.constFirst().id, map::NDB));
           }
         }
       } // if(context.mapLayerRoute->isApproach())
@@ -534,9 +564,9 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
       for(const map::MapLogbookEntry& entry : highlightResultsSearch.logbookEntries)
       {
         if(entry.departurePos.isValid())
-          context.routeProcIdMap.insert({entry.departure.id, map::AIRPORT});
+          context.routeProcIdMap.insert(map::MapRef(entry.departure.id, map::AIRPORT));
         if(entry.destinationPos.isValid())
-          context.routeProcIdMap.insert({entry.destination.id, map::AIRPORT});
+          context.routeProcIdMap.insert(map::MapRef(entry.destination.id, map::AIRPORT));
       }
 
       // Set render hints depending on context (moving, still) =====================
@@ -618,7 +648,7 @@ bool MapPaintLayer::render(GeoPainter *painter, ViewportParams *viewport, const 
         context.painter->drawLine(mapPaintWidget->geometry().topLeft(), mapPaintWidget->geometry().bottomRight());
         context.painter->drawLine(mapPaintWidget->geometry().topRight(), mapPaintWidget->geometry().bottomLeft());
         context.painter->setFont(context.defaultFont);
-        context.painter->drawText(mapPaintWidget->geometry().center(), QString("%1x%2").
+        context.painter->drawText(mapPaintWidget->geometry().center(), QStringLiteral("%1x%2").
                                   arg(mapPaintWidget->width()).arg(mapPaintWidget->height()));
       }
     } // if(!noRender())

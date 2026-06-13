@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,12 +17,14 @@
 
 #include "mappainter/mappainteraiaircraft.h"
 
+#include "app/navapp.h"
 #include "common/constants.h"
 #include "geo/calculations.h"
 #include "mapgui/mapfunctions.h"
 #include "mapgui/mappaintwidget.h"
-#include "app/navapp.h"
+#include "mappainter/paintcontext.h"
 #include "online/onlinedatacontroller.h"
+#include "options/optiondata.h"
 #include "settings/settings.h"
 #include "util/paintercontextsaver.h"
 
@@ -63,15 +65,14 @@ void MapPainterAiAircraft::render()
       bool overflow = false;
 
       // Merge simulator aircraft and online aircraft
-      QVector<const SimConnectAircraft *> allAircraft;
+      QList<const SimConnectAircraft *> allAircraft;
 
       // Get all pure (slowly updated) online aircraft ======================================
       if(onlineEnabled)
       {
         // Filters duplicates from simulator and user aircraft out - remove shadow aircraft
         const QList<SimConnectAircraft> *onlineAircraft =
-          NavApp::getOnlinedataController()->getAircraft(context->viewport->viewLatLonAltBox(),
-                                                         context->mapLayer, context->lazyUpdate, overflow);
+          NavApp::getOnlinedataController()->getAircraft(context->viewportBox, context->mapLayer, context->lazyUpdate, overflow);
 
         context->setQueryOverflow(overflow);
 
@@ -105,7 +106,7 @@ void MapPainterAiAircraft::render()
         float distanceLateralMeter, distanceVerticalFt;
       };
 
-      QVector<AiDistType> aiSorted;
+      QList<AiDistType> aiSorted;
       bool hidden = false;
       float x, y;
       for(const SimConnectAircraft *ac : allAircraft)

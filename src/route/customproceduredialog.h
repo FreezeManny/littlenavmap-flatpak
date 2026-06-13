@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -30,14 +30,14 @@ namespace Ui {
 class CustomProcedureDialog;
 }
 
-class RunwaySelection;
+class RunwayTable;
 class QAbstractButton;
 class UnitStringTool;
 
 /*
  * Shows airport and runway information and allows to configure a custom approach procedure for a selected runway.
  *
- * Reads state on intiantiation and saves it on destruction
+ * Reads state on intantiation and saves it on destruction
  */
 class CustomProcedureDialog :
   public QDialog
@@ -46,14 +46,14 @@ class CustomProcedureDialog :
 
 public:
   explicit CustomProcedureDialog(QWidget *parent, const map::MapAirport& mapAirport, bool departureParam, const QString& dialogHeader,
-                                 int preselectRunwayEndSim);
+                                 int preselectRunwayEndSim, bool forceShowParam);
   virtual ~CustomProcedureDialog() override;
 
   CustomProcedureDialog(const CustomProcedureDialog& other) = delete;
   CustomProcedureDialog& operator=(const CustomProcedureDialog& other) = delete;
 
   /* Selected runway and end or invalid if none */
-  void getSelected(map::MapRunway& runway, map::MapRunwayEnd& end) const;
+  void getSelected(map::MapRunway& runway, map::MapRunwayEnd& end, bool& airportSelected) const;
 
   /* Distance to runway threshold in NM */
   float getLegDistance() const;
@@ -69,19 +69,23 @@ public:
     return showProceduresSelected;
   }
 
+  virtual int exec() override;
+
 private:
   void restoreState();
   void saveState() const;
 
+  /* A button box button was clicked */
   void buttonBoxClicked(QAbstractButton *button);
   void updateWidgets();
   void doubleClicked();
 
   Ui::CustomProcedureDialog *ui;
-  RunwaySelection *runwaySelection = nullptr;
+  RunwayTable *runwayTable = nullptr;
 
   UnitStringTool *units = nullptr;
-  bool departure = false, showProceduresSelected = false;
+  bool departure = false, showProceduresSelected = false, airportAutoSelected = false, forceShow = false;
+
 };
 
 #endif // LNM_CUSTOMPROCEDUREDIALOG_H

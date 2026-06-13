@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,13 +17,12 @@
 
 #include "track/trackcontroller.h"
 
+#include "app/navapp.h"
 #include "atools.h"
 #include "common/constants.h"
 #include "gui/dialog.h"
 #include "gui/mainwindow.h"
 #include "gui/widgetstate.h"
-#include "app/navapp.h"
-#include "settings/settings.h"
 #include "settings/settings.h"
 #include "track/trackdownloader.h"
 #include "track/trackmanager.h"
@@ -31,9 +30,9 @@
 #include "ui_mainwindow.h"
 
 #include <QDebug>
+#include <QSettings>
 
 using atools::track::TrackDownloader;
-using atools::settings::Settings;
 
 TrackController::TrackController(TrackManager *trackManagerParam, MainWindow *mainWindowParam) :
   QObject(mainWindowParam), mainWindow(mainWindowParam), trackManager(trackManagerParam)
@@ -44,26 +43,33 @@ TrackController::TrackController(TrackManager *trackManagerParam, MainWindow *ma
   downloader = new TrackDownloader(this, verbose);
 #ifdef DEBUG_TRACK_TEST
   downloader->setUrl(atools::track::NAT, "/tmp/NAT.txt");
-  downloader->setUrl(atools::track::PACOTS, "/tmp/PACOTS.txt");
+  // downloader->setUrl(atools::track::PACOTS, "/tmp/PACOTS.txt");
 #else
-  namespace t = atools::track;
-  atools::settings::Settings& settings = Settings::instance();
-  downloader->setUrl(t::NAT,
-                     settings.getAndStoreValue(lnm::OPTIONS_TRACK_NAT_URL, TrackDownloader::URL.value(t::NAT)).toString(),
-                     settings.getAndStoreValue(lnm::OPTIONS_TRACK_NAT_PARAM, TrackDownloader::PARAM.value(t::NAT)).toStringList());
+  QString trackPath = atools::settings::Settings::getOverloadedPath(lnm::TRACK_CONFIG);
+  qInfo() << Q_FUNC_INFO << "Loading track.cfg from" << trackPath;
 
-  downloader->setUrl(t::PACOTS,
-                     settings.getAndStoreValue(lnm::OPTIONS_TRACK_PACOTS_URL, TrackDownloader::URL.value(t::PACOTS)).toString(),
-                     settings.getAndStoreValue(lnm::OPTIONS_TRACK_PACOTS_PARAM, TrackDownloader::PARAM.value(t::PACOTS)).toStringList());
+  QSettings settings(trackPath, QSettings::IniFormat);
+
+  // NatUrl=https://notams.aim.faa.gov/nat.html
+  // NatUrlParam=
+  downloader->setUrl(atools::track::NAT,
+                     settings.value(lnm::OPTIONS_TRACK_NAT_URL, TrackDownloader::URL.value(atools::track::NAT)).toString(),
+                     settings.value(lnm::OPTIONS_TRACK_NAT_PARAM, TrackDownloader::PARAM.value(atools::track::NAT)).toStringList());
+
+  // PacotsUrl=https://www.notams.faa.gov/dinsQueryWeb/advancedNotamMapAction.do
+  // PacotsUrlParam=queryType, pacificTracks, actionType, advancedNOTAMFunctions
+  // downloader->setUrl(atools::track::PACOTS,
+  // settings.value(lnm::OPTIONS_TRACK_PACOTS_URL, TrackDownloader::URL.value(atools::track::PACOTS)).toString(),
+  // settings.value(lnm::OPTIONS_TRACK_PACOTS_PARAM, TrackDownloader::PARAM.value(atools::track::PACOTS)).toStringList());
 #endif
 
   connect(downloader, &TrackDownloader::trackDownloadFinished, this, &TrackController::trackDownloadFinished);
   connect(downloader, &TrackDownloader::trackDownloadFailed, this, &TrackController::trackDownloadFailed);
   connect(downloader, &TrackDownloader::trackDownloadSslErrors, this, &TrackController::trackDownloadSslErrors);
 
-  Ui::MainWindow *ui = NavApp::getMainUi();
-  connect(ui->actionTrackSourcesNat, &QAction::toggled, this, &TrackController::trackSelectionChanged);
-  connect(ui->actionTrackSourcesPacots, &QAction::toggled, this, &TrackController::trackSelectionChanged);
+  // Ui::MainWindow *ui = NavApp::getMainUi();
+  // connect(ui->actionTrackSourcesNat, &QAction::toggled, this, &TrackController::trackSelectionChanged);
+  // connect(ui->actionTrackSourcesPacots, &QAction::toggled, this, &TrackController::trackSelectionChanged);
 }
 
 TrackController::~TrackController()
@@ -72,24 +78,15 @@ TrackController::~TrackController()
 
 void TrackController::restoreState()
 {
-  atools::gui::WidgetState state(lnm::AIRSPACE_CONTROLLER_WIDGETS, false /* visibility */, true /* block signals */);
-
   Ui::MainWindow *ui = NavApp::getMainUi();
-  state.restore({ui->actionTrackSourcesNat, ui->actionTrackSourcesPacots, ui->actionRouteDownloadTracks});
+  atools::gui::WidgetState(lnm::AIRSPACE_CONTROLLER_WIDGETS, false /* visibility */, true /* blockSignals */).
+  restore(QList<QObject *>({ui->actionRouteDownloadTracks}));
 }
 
 void TrackController::saveState() const
 {
   Ui::MainWindow *ui = NavApp::getMainUi();
-
-  atools::gui::WidgetState state(lnm::AIRSPACE_CONTROLLER_WIDGETS);
-
-  state.save(QList<const QObject *>({ui->actionTrackSourcesNat, ui->actionTrackSourcesPacots, ui->actionRouteDownloadTracks}));
-}
-
-void TrackController::optionsChanged()
-{
-
+  atools::gui::WidgetState(lnm::AIRSPACE_CONTROLLER_WIDGETS).save(QList<const QObject *>({ui->actionRouteDownloadTracks}));
 }
 
 void TrackController::preDatabaseLoad()
@@ -125,10 +122,10 @@ void TrackController::startDownloadInternal()
   deleteTracks();
 
   // Append all to queue and start
-  QVector<atools::track::TrackType> trackTypes = enabledTracks();
+  QList<atools::track::TrackType> trackTypes = enabledTracks();
   downloadQueue.append(trackTypes);
 
-  for(atools::track::TrackType trackType : qAsConst(trackTypes))
+  for(atools::track::TrackType trackType : std::as_const(trackTypes))
     downloader->startDownload(trackType);
 
   NavApp::setStatusMessage(tr("Track download started."));
@@ -179,7 +176,7 @@ bool TrackController::hasPacotsTracks()
   return hasTracks() && enabledTracks().contains(atools::track::PACOTS);
 }
 
-void TrackController::trackDownloadFinished(const atools::track::TrackVectorType& tracks, atools::track::TrackType type)
+void TrackController::trackDownloadFinished(const atools::track::TrackListType& tracks, atools::track::TrackType type)
 {
   qDebug() << Q_FUNC_INFO << static_cast<int>(type) << "size" << tracks.size();
 
@@ -301,16 +298,16 @@ void TrackController::tracksLoaded()
   }
 }
 
-QVector<atools::track::TrackType> TrackController::enabledTracks() const
+QList<atools::track::TrackType> TrackController::enabledTracks() const
 {
-  QVector<atools::track::TrackType> retval;
-  Ui::MainWindow *ui = NavApp::getMainUi();
+  QList<atools::track::TrackType> retval;
+  // Ui::MainWindow *ui = NavApp::getMainUi();
 
-  if(ui->actionTrackSourcesNat->isChecked())
-    retval.append(atools::track::NAT);
+  // if(ui->actionTrackSourcesNat->isChecked())
+  retval.append(atools::track::NAT);
 
-  if(ui->actionTrackSourcesPacots->isChecked())
-    retval.append(atools::track::PACOTS);
+  // if(ui->actionTrackSourcesPacots->isChecked())
+  // retval.append(atools::track::PACOTS);
 
   return retval;
 }

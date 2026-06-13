@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,8 @@
 #ifndef LITTLENAVMAP_MAPPAINTERROUTE_H
 #define LITTLENAVMAP_MAPPAINTERROUTE_H
 
+#include "common/mapflagstext.h"
 #include "mappainter/mappainter.h"
-
 #include "geo/line.h"
 
 namespace Marble {
@@ -84,13 +84,13 @@ private:
 
   /* Draw route only legs - not procedures */
   void paintRoute();
-  void paintRouteInternal(QStringList routeTexts, QVector<atools::geo::Line> lines, int passedRouteLeg);
+  void paintRouteInternal(QStringList routeTexts, QList<atools::geo::Line> lines, int passedRouteLeg);
 
   /* Draw recommended navaids */
-  void paintRecommended(int passedRouteLeg, QSet<map::MapRef>& idMap);
+  void paintRecommended(int passedRouteLeg, QSet<map::MapRef>& idMap, bool preview);
 
   /* Draw only enlarged airport icon. The airport diagram is drawn in the MapPainterAirport which also omits the symbol. */
-  void paintAirport(float x, float y, const map::MapAirport& airport);
+  void paintAirport(float x, float y, const map::MapAirport& airport, bool preview);
 
   /* Draw navaid symbols */
   void paintVor(float x, float y, const map::MapVor& vor, bool preview);
@@ -106,7 +106,7 @@ private:
                       const proc::MapProcedureLegs& legs, int legsRouteOffset, const QColor& color, bool preview, bool previewAll);
 
   /* Draw line and collect information for text along lines.  Called from destination to departure/aircraft */
-  void paintProcedureSegment(const proc::MapProcedureLegs& legs, int index, QVector<QLineF>& lastLines, QVector<DrawText> *drawTextLines,
+  void paintProcedureSegment(const proc::MapProcedureLegs& legs, int index, QList<QLineF>& lastLines, QList<DrawText> *drawTextLines,
                              bool noText, bool previewAll, bool draw);
 
   /* Draw procedure position including text label and icon */
@@ -117,27 +117,27 @@ private:
   /* Draw procedure point like manual */
   void paintProcedurePoint(float x, float y, bool preview);
 
-  QLineF paintProcedureTurn(QVector<QLineF>& lastLines, QLineF line, const proc::MapProcedureLeg& leg, QPainter *painter,
+  QLineF paintProcedureTurn(QList<QLineF>& lastLines, QLineF line, const proc::MapProcedureLeg& leg, QPainter *painter,
                             const QPointF& intersectPoint, bool draw);
-  void paintProcedureBow(const proc::MapProcedureLeg *prevLeg, QVector<QLineF>& lastLines, QPainter *painter, QLineF line,
+  void paintProcedureBow(const proc::MapProcedureLeg *prevLeg, QList<QLineF>& lastLines, QPainter *painter, QLineF line,
                          const proc::MapProcedureLeg& leg, const QPointF& intersectPoint, bool draw);
 
   /* Draw navaid labels */
-  void paintWaypointText(float x, float y, const map::MapWaypoint& waypoint, bool drawTextDetails, textatt::TextAttributes atts,
+  void paintWaypointText(float x, float y, const map::MapWaypoint& waypoint, bool drawTextDetails, text::Attribute atts,
                          const QStringList *additionalText);
-  void paintNdbText(float x, float y, const map::MapNdb& ndb, bool drawTextDetails, textatt::TextAttributes atts,
+  void paintNdbText(float x, float y, const map::MapNdb& ndb, bool drawTextDetails, text::Attribute atts,
                     const QStringList *additionalText);
-  void paintVorText(float x, float y, const map::MapVor& vor, bool drawTextDetails, textatt::TextAttributes atts,
+  void paintVorText(float x, float y, const map::MapVor& vor, bool drawTextDetails, text::Attribute atts,
                     const QStringList *additionalText);
-  void paintAirportText(float x, float y, const map::MapAirport& airport, textatt::TextAttributes atts);
+  void paintAirportText(float x, float y, const map::MapAirport& airport, text::Attribute atts);
 
   /* Draw text with light yellow background for flight plan */
-  void paintText(const QColor& color, float x, float y, float size, bool drawTextDetails, QStringList texts, textatt::TextAttributes atts);
+  void paintText(const QColor& color, float x, float y, float size, bool drawTextDetails, QStringList texts, text::Attribute atts);
 
-  void paintProcedurePointText(float x, float y, bool drawTextDetails, textatt::TextAttributes atts, const QStringList& texts);
+  void paintProcedurePointText(float x, float y, bool drawTextDetails, text::Attribute atts, const QStringList& texts);
 
   void drawSymbols(const QBitArray& visibleStartPoints, const QList<QPointF>& startPoints, bool preview);
-  void drawRouteSymbolText(const QBitArray& visibleStartPoints, const QList<QPointF>& startPoints);
+  void drawRouteSymbolText(const QBitArray& visibleStartPoints, const QList<QPointF>& startPoints, bool preview);
 
   /* TOD and TOC rings plus labels */
   void paintTopOfDescentAndClimb();
@@ -145,6 +145,7 @@ private:
   /* Waypoint Underlays */
   void paintProcedureUnderlay(const proc::MapProcedureLeg& leg, float x, float y, float size);
 
+  /* Draw start position or parking circle into the airport diagram */
   void paintStartParking();
 
   /* Draw line to departure runway position */
@@ -154,8 +155,8 @@ private:
   void paintWindBarbAtWaypoint(float windSpeed, float windDir, float x, float y);
 
   /* Leg labels on top of line */
-  QString buildLegText(const RouteLeg& leg);
-  QString buildLegText(float distance, float courseMag, float courseTrue);
+  QString buildLegText(const RouteLeg& leg, int distPrecision, int degPrecision);
+  QString buildLegText(float distance, float courseMag, float courseTrue, int distPrecision, int degPrecision);
 
   /* Active or normal color depending on options setting */
   QColor flightplanActiveColor() const;
@@ -166,7 +167,7 @@ private:
   float sizeForRouteType(const MapLayer *layer, const RouteLeg& leg);
 
   /* Get text placement sector based on inbound and outbound leg courses */
-  textatt::TextAttributes textPlacementAttributes(int routeIndex);
+  text::Attribute textPlacementAtts(int routeIndex);
 
   /* Avoid drawing duplicate navaids from flight plan and preview */
   QSet<map::MapRef> routeProcIdMap;

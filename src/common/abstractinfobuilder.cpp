@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -44,43 +44,44 @@ AbstractInfoBuilder::~AbstractInfoBuilder()
 QByteArray AbstractInfoBuilder::airport(AirportInfoData airportInfoData) const
 {
   Q_UNUSED(airportInfoData);
-    return "not implemented";
+  return "not implemented";
 }
 
 QByteArray AbstractInfoBuilder::siminfo(SimConnectInfoData simConnectInfoData) const
 {
   Q_UNUSED(simConnectInfoData);
-    return "not implemented";
+  return "not implemented";
 }
 
 QByteArray AbstractInfoBuilder::uiinfo(UiInfoData uiInfoData) const
 {
   Q_UNUSED(uiInfoData);
-    return "not implemented";
+  return "not implemented";
 }
 
 QByteArray AbstractInfoBuilder::features(MapFeaturesData mapFeaturesData) const
 {
   Q_UNUSED(mapFeaturesData);
-    return "not implemented";
+  return "not implemented";
 }
 
 QByteArray AbstractInfoBuilder::feature(MapFeaturesData mapFeaturesData) const
 {
   Q_UNUSED(mapFeaturesData);
-    return "not implemented";
+  return "not implemented";
 }
 
+QString AbstractInfoBuilder::getHeadingsStringByMagVar(float heading, float magvar) const
+{
 
-QString AbstractInfoBuilder::getHeadingsStringByMagVar(float heading, float magvar) const {
-
-    return courseTextFromTrue(heading, magvar) +", "+ courseTextFromTrue(opposedCourseDeg(heading), magvar);
+  return courseTextFromTrue(heading, magvar) + ", " + courseTextFromTrue(opposedCourseDeg(heading), magvar);
 
 }
 
-QString AbstractInfoBuilder::formatComFrequency(int frequency) const {
+QString AbstractInfoBuilder::formatComFrequency(int frequency) const
+{
 
-    return locale.toString(roundComFrequency(frequency), 'f', 3) + tr(" MHz");
+  return locale.toString(roundComFrequency(frequency), 'f', 3) + tr(" MHz");
 
 }
 
@@ -88,29 +89,30 @@ QString AbstractInfoBuilder::getCoordinatesString(const atools::sql::SqlRecord *
 {
   if(rec != nullptr && rec->contains("lonx") && rec->contains("laty"))
     return getCoordinatesString(Pos(rec->valueFloat("lonx"), rec->valueFloat("laty"), rec->valueFloat("altitude", 0.f)));
-  return QString();
+  return QStringLiteral();
 }
 
 QString AbstractInfoBuilder::getCoordinatesString(const Pos& pos) const
 {
   if(pos.isValid())
-    return QString::number(pos.getLatY()) +" "+ QString::number(pos.getLonX());
-  return QString();
+    return QString::number(pos.getLatY()) + " " + QString::number(pos.getLonX());
+  return QStringLiteral();
 }
 
-QMap<QString,float> AbstractInfoBuilder::getCoordinates(const atools::sql::SqlRecord *rec) const
+QMap<QString, float> AbstractInfoBuilder::getCoordinates(const atools::sql::SqlRecord *rec) const
 {
   if(rec != nullptr && rec->contains("lonx") && rec->contains("laty"))
     return getCoordinates(Pos(rec->valueFloat("lonx"), rec->valueFloat("laty"), rec->valueFloat("altitude", 0.f)));
-  return QMap<QString,float>();
+  return QMap<QString, float>();
 }
 
-QMap<QString,float> AbstractInfoBuilder::getCoordinates(const Pos& pos) const
+QMap<QString, float> AbstractInfoBuilder::getCoordinates(const Pos& pos) const
 {
-  QMap<QString,float> map = QMap<QString,float>();
-  if(pos.isValid()){
-      map.insert("lat",pos.getLatY());
-      map.insert("lon",pos.getLonX());
+  QMap<QString, float> map = QMap<QString, float>();
+  if(pos.isValid())
+  {
+    map.insert("lat", pos.getLatY());
+    map.insert("lon", pos.getLonX());
   }
   return map;
 }
@@ -119,5 +121,5 @@ QString AbstractInfoBuilder::getLocalizedCoordinatesString(const Pos& pos) const
 {
   if(pos.isValid())
     return Unit::coords(pos);
-  return QString();
+  return QStringLiteral();
 }

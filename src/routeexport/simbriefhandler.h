@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2022 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ public:
 
 private:
   QUrl sendRouteUrl(const QString& departure, const QString& destination, const QString& alternate, const QString& route,
-                    const QString& aircraftType, float cruisingAltitudeFeet);
+                    const QString& aircraftType, float cruisingAltitudeFeet, const QString& airline, const QString& flightNumber);
 
   MainWindow *mainWindow;
   QString dispatchUrl; /* URL can be overridden in settings */

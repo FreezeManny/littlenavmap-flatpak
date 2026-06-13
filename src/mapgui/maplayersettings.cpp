@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
 #include "exception.h"
 #include "settings/settings.h"
 #include "util/filesystemwatcher.h"
-#include "util/xmlstream.h"
+#include "util/xmlstreamreader.h"
 
 #include <algorithm>
 #include <functional>
@@ -106,7 +106,7 @@ void MapLayerSettings::reloadFromFile()
 
   if(xmlFile.open(QIODevice::ReadOnly))
   {
-    atools::util::XmlStream xmlStream(&xmlFile, filename);
+    atools::util::XmlStreamReader xmlStream(&xmlFile, filename);
     loadXmlInternal(xmlStream);
     xmlFile.close();
   }
@@ -128,10 +128,8 @@ void MapLayerSettings::loadFromFile()
     fileWatcher->setFilenameAndStart(filename);
 }
 
-void MapLayerSettings::loadXmlInternal(atools::util::XmlStream& xmlStream)
+void MapLayerSettings::loadXmlInternal(atools::util::XmlStreamReader& xmlStream)
 {
-  QXmlStreamReader& reader = xmlStream.getReader();
-
   layers.clear();
   xmlStream.readUntilElement("LittleNavmap");
   xmlStream.readUntilElement("MapLayerSettings");
@@ -141,11 +139,11 @@ void MapLayerSettings::loadXmlInternal(atools::util::XmlStream& xmlStream)
   while(xmlStream.readNextStartElement())
   {
     // Read data from header =========================================
-    if(reader.name() == "Layers")
+    if(xmlStream.name() == QStringLiteral("Layers"))
     {
       while(xmlStream.readNextStartElement())
       {
-        if(reader.name() == "Layer")
+        if(xmlStream.name() == QStringLiteral("Layer"))
         {
           if(xmlStream.readAttributeBool("Base"))
           {
@@ -184,15 +182,15 @@ QDebug operator<<(QDebug out, const MapLayerSettings& record)
 {
   QDebugStateSaver saver(out);
 
-  out.nospace().noquote() << "LayerSettings[" << endl;
+  out.nospace().noquote() << "LayerSettings[" << Qt::endl;
 
-  out << "DEFAULT ------------------------------" << endl;
-  out << MapLayer(0) << endl;
+  out << "DEFAULT ------------------------------" << Qt::endl;
+  out << MapLayer(0) << Qt::endl;
 
   for(const MapLayer& layer : record.layers)
   {
-    out << "------------------------------" << endl;
-    out << layer << endl;
+    out << "------------------------------" << Qt::endl;
+    out << layer << Qt::endl;
   }
 
   out << "]";

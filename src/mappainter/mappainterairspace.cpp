@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,8 @@
 #include "common/textplacement.h"
 #include "mapgui/maplayer.h"
 #include "mapgui/mapscale.h"
+#include "mappainter/paintcontext.h"
+#include "options/optiondata.h"
 #include "query/airspacequeries.h"
 #include "query/querymanager.h"
 #include "route/route.h"
@@ -38,6 +40,18 @@
 using namespace Marble;
 using namespace atools::geo;
 using namespace map;
+
+// Collect visible airspaces ==================================================================================
+struct DrawAirspace
+{
+  explicit DrawAirspace(const MapAirspace *airspaceParam, const QList<QPolygonF *> polygonsParam)
+    : airspace(airspaceParam), polygons(polygonsParam)
+  {
+  }
+
+  const MapAirspace *airspace;
+  QList<QPolygonF *> polygons;
+};
 
 MapPainterAirspace::MapPainterAirspace(MapPaintWidget *mapWidget, MapScale *mapScale, PaintContext *paintContext)
   : MapPainter(mapWidget, mapScale, paintContext)
@@ -60,11 +74,10 @@ void MapPainterAirspace::render()
   context->startTimer("Airspace");
 
   // Get online and offline airspace and merge then into one list =============
-  const GeoDataLatLonAltBox& curBox = context->viewport->viewLatLonAltBox();
-  AirspaceVector airspaces;
+  AirspaceList airspaces;
 
   bool overflow = false;
-  queries->getAirspaceQueries()->getAirspaces(airspaces, curBox, context->mapLayer, context->airspaceFilterByLayer,
+  queries->getAirspaceQueries()->getAirspaces(airspaces, context->viewportBox, context->mapLayer, context->airspaceFilterByLayer,
                                               context->route->getCruiseAltitudeFt(),
                                               context->viewContext == Marble::Animation, map::AIRSPACE_SRC_ALL, overflow);
   context->setQueryOverflow(overflow);
@@ -73,19 +86,7 @@ void MapPainterAirspace::render()
   int displayThicknessAirspace = optionData.getDisplayThicknessAirspace();
   int displayTransparencyAirspace = optionData.getDisplayTransparencyAirspace();
 
-  // Collect visible airspaces ==================================================================================
-  struct DrawAirspace
-  {
-    explicit DrawAirspace(const MapAirspace *airspaceParam, const QVector<QPolygonF *> polygonsParam)
-      : airspace(airspaceParam), polygons(polygonsParam)
-    {
-    }
-
-    const MapAirspace *airspace;
-    const QVector<QPolygonF *> polygons;
-  };
-
-  QVector<DrawAirspace> visibleAirspaces;
+  QList<DrawAirspace> visibleAirspaces;
   if(!airspaces.isEmpty())
   {
     Marble::GeoPainter *painter = context->painter;
@@ -93,9 +94,9 @@ void MapPainterAirspace::render()
     painter->setBackgroundMode(Qt::TransparentMode);
 
     // Draw airspace polygons ==================================================================================
-    for(const MapAirspace *airspace : qAsConst(airspaces))
+    for(const MapAirspace *airspace : std::as_const(airspaces))
     {
-      if(!(airspace->type & context->airspaceFilterByLayer.types))
+      if(!(airspace->airspaceType & context->airspaceFilterByLayer.types))
         continue;
 
       if(!airspace->hasValidGeometry())
@@ -105,7 +106,7 @@ void MapPainterAirspace::render()
       QPen pen = airspacePen; // Modified for online airspaces
 
       // Check if coordinates overlap with viewport
-      if(context->viewportRect.overlaps(airspace->bounding))
+      if(context->visible(airspace->bounding))
       {
         if(context->objCount())
           return;
@@ -125,7 +126,7 @@ void MapPainterAirspace::render()
             painter->setBrush(mapcolors::colorForAirspaceFill(*airspace, displayTransparencyAirspace));
 
           // Convert to screen polygons probably cutting them and removing duplicate points =====================
-          const QVector<QPolygonF *> polygons = createPolygons(*lineString, context->screenRect);
+          const QList<QPolygonF *> polygons = createPolygons(*lineString, context->screenRect);
 
           // Add for text placement later
           visibleAirspaces.append(DrawAirspace(airspace, polygons));
@@ -144,7 +145,7 @@ void MapPainterAirspace::render()
               debug.append("\nQPolygonF polygon({\n");
               for(const QPointF& pt : *poly)
                 /// * 13 */ {0, 3}, /* -> 3 */
-                debug.append(QString("/* %1 */ {%2, %3}, /* ->  */\n").arg(i++).arg(pt.x(), 0, 'f', 1).arg(pt.y(), 0, 'f', 1));
+                debug.append(QStringLiteral("/* %1 */ {%2, %3}, /* ->  */\n").arg(i++).arg(pt.x(), 0, 'f', 1).arg(pt.y(), 0, 'f', 1));
               debug.append("});\n");
             }
             qDebug().noquote().nospace() << Q_FUNC_INFO << debug;
@@ -196,7 +197,7 @@ void MapPainterAirspace::render()
         // Draw circle with 1 NM and at least 3 pixel radius
         drawCircle(painter, airspace->position, std::max(scale->getPixelForNm(0.5f), 3.f));
       }
-    } // for(const MapAirspace *airspace : qAsConst(airspaces))
+    } // for(const MapAirspace *airspace : std::as_const(airspaces))
 
     // Draw airspace labels ==================================================================================
     // Collection from options dialog
@@ -216,8 +217,8 @@ void MapPainterAirspace::render()
       // Prepare text placement without arrows
       TextPlacement textPlacement(painter, this, context->screenRect);
       textPlacement.setArrowForEmpty(false);
-      textPlacement.setArrowLeft(QString());
-      textPlacement.setArrowRight(QString());
+      textPlacement.setArrowLeft(QStringLiteral());
+      textPlacement.setArrowRight(QStringLiteral());
       textPlacement.setTextOnTopOfLine(false);
 
       // Look at all visible airspaces collected earlier ===============================
@@ -225,12 +226,12 @@ void MapPainterAirspace::render()
       painter->setBackground(mapcolors::textBoxColorAirspace);
       painter->setBackgroundMode(Qt::OpaqueMode);
 
-      for(const DrawAirspace& visibleAirspace : qAsConst(visibleAirspaces))
+      for(const DrawAirspace& visibleAirspace : std::as_const(visibleAirspaces))
       {
         const map::MapAirspace *airspace = visibleAirspace.airspace;
 
         // Check if layer option enables text display for this airspace type
-        if(airspace->type & context->airspaceTextsByLayer && !visibleAirspace.polygons.isEmpty())
+        if(airspace->airspaceType & context->airspaceTextsByLayer && !visibleAirspace.polygons.isEmpty())
         {
           // Build text depending on options
           QString airspaceText =
@@ -324,7 +325,7 @@ void MapPainterAirspace::render()
 #endif
 
 #ifdef DEBUG_INFORMATION_PAINT_POLYGON_PX
-                      airspaceText.prepend(QString("[%1px]").arg(dx, 0, 'f', 0));
+                      airspaceText.prepend(QStringLiteral("[%1px]").arg(dx, 0, 'f', 0));
 #endif
 
                       // Rotate text to show at the inside of the polygon ==================
@@ -350,7 +351,7 @@ void MapPainterAirspace::render()
     } // if(context->viewContext == Marble::Still && (name || restrictiveName || type || altitude || com))
 
     // Delete airspace polygons ====================================================
-    for(const DrawAirspace& drawAirspace : qAsConst(visibleAirspaces))
+    for(DrawAirspace& drawAirspace : visibleAirspaces)
       releasePolygons(drawAirspace.polygons);
 
   } // if(!airspaces.isEmpty())

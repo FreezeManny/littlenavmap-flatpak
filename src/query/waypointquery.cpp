@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ map::MapWaypoint WaypointQuery::getWaypointById(int id)
   if(!query::valid(Q_FUNC_INFO, waypointByIdQuery))
     return wp;
 
-  waypointByIdQuery->bindValue(":id", id);
+  waypointByIdQuery->bindValue(QStringLiteral(":id"), id);
   waypointByIdQuery->exec();
   if(waypointByIdQuery->next())
     mapTypesFactory->fillWaypoint(waypointByIdQuery->record(), wp, trackDatabase);
@@ -75,14 +75,14 @@ MapWaypoint WaypointQuery::getWaypointByNavId(int navId, map::MapType type)
   if(!query::valid(Q_FUNC_INFO, waypointByNavIdQuery))
     return wp;
 
-  waypointByNavIdQuery->bindValue(":id", navId);
+  waypointByNavIdQuery->bindValue(QStringLiteral(":id"), navId);
 
   if(type == map::VOR)
-    waypointByNavIdQuery->bindValue(":type", "V");
+    waypointByNavIdQuery->bindValue(QStringLiteral(":type"), QStringLiteral("V"));
   else if(type == map::NDB)
-    waypointByNavIdQuery->bindValue(":type", "N");
+    waypointByNavIdQuery->bindValue(QStringLiteral(":type"), QStringLiteral("N"));
   else
-    waypointByNavIdQuery->bindValue(":type", "%");
+    waypointByNavIdQuery->bindValue(QStringLiteral(":type"), QStringLiteral("%"));
 
   waypointByNavIdQuery->exec();
   if(waypointByNavIdQuery->next())
@@ -101,11 +101,11 @@ void WaypointQuery::getWaypointByByIdent(QList<map::MapWaypoint>& waypoints, con
   if(!query::valid(Q_FUNC_INFO, query))
     return;
 
-  query->bindValue(":ident", ident);
-  query->bindValue(":region", region.isEmpty() ? "%" : region);
+  query->bindValue(QStringLiteral(":ident"), ident);
+  query->bindValue(QStringLiteral(":region"), region.isEmpty() ? QStringLiteral("%") : region);
 
   if(queryAirport)
-    query->bindValue(":airport", airport);
+    query->bindValue(QStringLiteral(":airport"), airport);
 
   query->exec();
   while(query->next())
@@ -121,15 +121,15 @@ void WaypointQuery::getWaypointNearest(map::MapWaypoint& waypoint, const Pos& po
   if(!query::valid(Q_FUNC_INFO, waypointNearestQuery))
     return;
 
-  waypointNearestQuery->bindValue(":lonx", pos.getLonX());
-  waypointNearestQuery->bindValue(":laty", pos.getLatY());
+  waypointNearestQuery->bindValue(QStringLiteral(":lonx"), pos.getLonX());
+  waypointNearestQuery->bindValue(QStringLiteral(":laty"), pos.getLatY());
   waypointNearestQuery->exec();
   if(waypointNearestQuery->next())
     mapTypesFactory->fillWaypoint(waypointNearestQuery->record(), waypoint, trackDatabase);
   waypointNearestQuery->finish();
 }
 
-void WaypointQuery::getWaypointsRect(QVector<map::MapWaypoint>& waypoints, const Pos& pos, float distanceNm)
+void WaypointQuery::getWaypointsRect(QList<map::MapWaypoint>& waypoints, const Pos& pos, float distanceNm)
 {
   if(!query::valid(Q_FUNC_INFO, waypointRectQuery))
     return;
@@ -151,7 +151,7 @@ void WaypointQuery::getWaypointsRect(QVector<map::MapWaypoint>& waypoints, const
 
 void WaypointQuery::getWaypointRectNearest(map::MapWaypoint& waypoint, const Pos& pos, float distanceNm)
 {
-  QVector<map::MapWaypoint> waypoints;
+  QList<map::MapWaypoint> waypoints;
   getWaypointsRect(waypoints, pos, distanceNm);
   if(!waypoints.isEmpty())
     waypoint = waypoints.constFirst();
@@ -260,14 +260,14 @@ const atools::sql::SqlRecord *WaypointQuery::getWaypointInformation(int waypoint
   if(!query::valid(Q_FUNC_INFO, waypointInfoQuery))
     return nullptr;
 
-  waypointInfoQuery->bindValue(":id", waypointId);
+  waypointInfoQuery->bindValue(QStringLiteral(":id"), waypointId);
   return query::cachedRecord(waypointInfoCache, waypointInfoQuery, waypointId);
 }
 
 void WaypointQuery::initQueries()
 {
-  QString table = trackDatabase ? "trackpoint" : "waypoint";
-  QString id = trackDatabase ? "trackpoint_id" : "waypoint_id";
+  QString table = trackDatabase ? QStringLiteral("trackpoint") : QStringLiteral("waypoint");
+  QString id = trackDatabase ? QStringLiteral("trackpoint_id") : QStringLiteral("waypoint_id");
 
   // Common where clauses
   static const QString whereRect("lonx between :leftx and :rightx and laty between :bottomy and :topy");
@@ -324,7 +324,7 @@ void WaypointQuery::initQueries()
   waypointsByRectQuery = new SqlQuery(dbNav);
   waypointsByRectQuery->prepare("select " % waypointQueryBase % " from " % table % " where " % whereRect % " " % whereLimit);
 
-  QString airwayCond = trackDatabase ? QString() : "num_victor_airway + num_jet_airway > 0 and";
+  QString airwayCond = trackDatabase ? QStringLiteral() : "num_victor_airway + num_jet_airway > 0 and";
   waypointsAirwayByRectQuery = new SqlQuery(dbNav);
   waypointsAirwayByRectQuery->prepare("select " % waypointQueryBase % " from " % table %
                                       " where " % airwayCond % " " % whereRect % " " % whereLimit);

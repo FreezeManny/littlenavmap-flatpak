@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,6 +16,8 @@
 *****************************************************************************/
 
 #include "perf/aircraftperfdialog.h"
+#include "gui/linktooltiphandler.h"
+#include "options/optiondata.h"
 #include "ui_aircraftperfdialog.h"
 
 #include "atools.h"
@@ -39,7 +41,8 @@ AircraftPerfDialog::AircraftPerfDialog(QWidget *parent, const atools::fs::perf::
                                        const QString& modeText, bool newPerfParam)
   : QDialog(parent), ui(new Ui::AircraftPerfDialog), newPerf(newPerfParam)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -51,6 +54,10 @@ AircraftPerfDialog::AircraftPerfDialog(QWidget *parent, const atools::fs::perf::
   // Copy performance object
   perf = new AircraftPerf;
   *perf = aircraftPerformance;
+
+  linkTooltipHandler = new atools::gui::LinkTooltipHandler(this);
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
+  linkTooltipHandler->addWidgets({ui->labelTypeLink, ui->label});
 
   ui->doubleSpinBoxClimbVertSpeed->setSuffix(tr(" %vspeed% %1").arg(TextPointer::getPointerUp()));
   ui->doubleSpinBoxDescentVertSpeed->setSuffix(tr(" %vspeed% %1").arg(TextPointer::getPointerDown()));
@@ -148,6 +155,7 @@ AircraftPerfDialog::~AircraftPerfDialog()
   delete perfBackup;
 
   delete units;
+  delete linkTooltipHandler;
   delete ui;
 }
 
@@ -356,7 +364,7 @@ void AircraftPerfDialog::fromDialogToPerf(atools::fs::perf::AircraftPerf *aircra
 
   if(ui->comboBoxSimulator->currentIndex() == 0)
     // First index is always "all"
-    aircraftPerf->setSimulator(QString());
+    aircraftPerf->setSimulator(QStringLiteral());
   else
     aircraftPerf->setSimulator(ui->comboBoxSimulator->currentText());
 

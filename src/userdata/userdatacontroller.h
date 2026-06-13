@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,8 @@
 #define USERDATACONTROLLER_H
 
 #include <QObject>
-#include <QVector>
+#include <QList>
+#include <QMap>
 
 namespace atools {
 namespace sql {
@@ -56,7 +57,6 @@ struct MapUserpoint;
 
 }
 
-class MainWindow;
 class UserdataIcons;
 class QToolButton;
 class QAction;
@@ -70,7 +70,7 @@ class UserdataController :
   Q_OBJECT
 
 public:
-  explicit UserdataController(atools::fs::userdata::UserdataManager *userdataManager, MainWindow *parent);
+  explicit UserdataController(atools::fs::userdata::UserdataManager *userdataManager, QWidget *parent);
   virtual ~UserdataController() override;
 
   UserdataController(const UserdataController& other) = delete;
@@ -80,10 +80,10 @@ public:
   void addUserpoint(int id, const atools::geo::Pos& pos);
 
   /* Show edit dialog and save changes to the database if accepted for the given ids*/
-  void editUserpoints(const QVector<int>& ids);
+  void editUserpoints(const QList<int>& ids);
 
   /* Show message box and delete entries with the given ids */
-  void deleteUserpoints(const QVector<int>& ids);
+  void deleteUserpoints(const QList<int>& ids);
 
   /* Import and export from a predefined CSV format */
   void importCsv();
@@ -121,14 +121,15 @@ public:
   /* Reset display settings to show all */
   void resetSettingsToDefault();
 
-  /* Get currently in menu selected types for display */
-  const QStringList& getSelectedTypes() const
+  /* Get currently in menu selected types for display.   Key is type like "Add-on" as value is empty. */
+  const QMap<QString, QString>& getSelectedTypesMap() const
   {
-    return selectedTypes;
+    return selectedTypesMap;
   }
 
-  /* Get all registered types as found by icon manager */
-  QStringList getAllTypes() const;
+  /* Get all registered types as found by icon manager
+   * Key is type like "Add-on" as value is empty. */
+  const QMap<QString, QString>& getAllTypesMap() const;
 
   /* Show unknown types*/
   bool isSelectedUnknownType() const
@@ -138,7 +139,7 @@ public:
 
   /* Add userpoint from map and prefill with result data */
   void addUserpointFromMap(const map::MapResult& result, atools::geo::Pos pos, bool airportAddon);
-  void editUserpointFromMap(const map::MapResult& result);
+  void editUserpointFromMap(int id);
   void deleteUserpointFromMap(int id);
   void moveUserpointFromMap(const map::MapUserpoint& userpoint);
 
@@ -154,6 +155,9 @@ public:
   /* Show choice dialog with options to remove empty or duplicate userpoints */
   void cleanupUserdata();
 
+  /* true if any entries are present */
+  bool hasUserdata() const;
+
 signals:
   /* Sent after database modification to update the search result table */
   void refreshUserdataSearch(bool loadAll, bool keepSelection, bool force);
@@ -161,9 +165,14 @@ signals:
   /* Issue a redraw of the map */
   void userdataChanged();
 
+  /* Show and raise window after loading or creating new files */
+  void showUserpointSearch();
+
 private:
   /* Called by any action */
   void toolbarActionTriggered(QAction *);
+  void toolbarActionAllTriggered(QAction *);
+  void toolbarActionNoneTriggered(QAction *);
 
   /* Copy class state to actions and vice versa */
   void typesToActions();
@@ -185,19 +194,19 @@ private:
   void enableCategoryOnMap(const QString& category);
 
   /* Currently in actions selected types */
-  QStringList selectedTypes,
-              allLastFoundTypes; /* All types found when saving last time */
+  QMap<QString, QString> selectedTypesMap,
+                         allLastFoundTypesMap; /* All types found when saving last time */
   bool selectedUnknownType = false;
 
   atools::fs::userdata::UserdataManager *manager;
   atools::gui::Dialog *dialog;
-  MainWindow *mainWindow;
+  QWidget *parentWidget;
   UserdataIcons *icons;
 
   // Buttons and actions for toolbar and menu
   QToolButton *userdataToolButton = nullptr;
   QAction *actionAll = nullptr, *actionNone = nullptr, *actionUnknown = nullptr;
-  QVector<QAction *> actions;
+  QList<QAction *> actions;
   atools::sql::SqlRecord *lastAddedRecord = nullptr;
 
   /* Takes care about all action logic like toggling of all/selected and none/selected */

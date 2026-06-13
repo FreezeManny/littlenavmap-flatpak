@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include "app/navapp.h"
 #include "atools.h"
 #include "common/mapcolors.h"
+#include "options/optiondata.h"
 #include "profile/profileoptions.h"
 #include "profile/profilescrollarea.h"
 #include "profile/profilewidget.h"
@@ -74,7 +75,7 @@ void ProfileLabelWidgetHoriz::paintEvent(QPaintEvent *)
   painter.setRenderHint(QPainter::TextAntialiasing);
   painter.setRenderHint(QPainter::SmoothPixmapTransform);
 
-  const QVector<int>& waypointX = profileWidget->getWaypointX();
+  const QList<int>& waypointX = profileWidget->getWaypointX();
 
   // Fill background white
   painter.fillRect(rect(), QApplication::palette().color(QPalette::Base));
@@ -83,25 +84,23 @@ void ProfileLabelWidgetHoriz::paintEvent(QPaintEvent *)
   if(profileWidget->hasValidRouteForDisplay() && (opts & optsp::PROFILE_TOP_ANY))
   {
     setVisible(true);
+    const QString sep = tr(" / ");
 
     // Prepare bold font sligthly smaller ============
-    const QString sep = tr(" / ");
-    QFont fontBold = QApplication::font();
-    fontBold.setPointSizeF(fontBold.pointSizeF() * 0.85);
+    const OptionData& optionData = OptionData::instance();
+    QFont mapFont = optionData.getProfileFont();
+    mapcolors::scaleFont(&painter, optionData.getDisplayTextSizeFlightplanProfile() / 100.f * 0.85, &mapFont);
+    mapFont = painter.font();
+
+    QFont fontBold = mapFont;
     fontBold.setBold(true);
     QFontMetrics metricsBold(fontBold);
 
     // Prepare normal font sligthly smaller ============
-    QFont fontNormal = QApplication::font();
-    fontNormal.setPointSizeF(fontNormal.pointSizeF() * 0.85);
-    fontNormal.setBold(QApplication::font().bold());
-    QFontMetrics metricsNormal(fontNormal);
-
+    QFontMetrics metricsNormal(mapFont);
     QPoint offset = scrollArea->getOffset();
     const Route& route = profileWidget->getRoute();
-
     int vpWidth = scrollArea->getViewport()->width();
-
     int lines = 0;
 
     // Get display options
@@ -140,8 +139,8 @@ void ProfileLabelWidgetHoriz::paintEvent(QPaintEvent *)
           int pos = x0 + legWidth / 2;
 
           // Build up text depending on space ==============================================
-          QString text = atools::elidedText(metricsBold, leg.buildLegText(distOpt, magCrsOpt, trueCrsOpt, false).join(sep), Qt::ElideRight,
-                                            legWidth - 4);
+          QString text = atools::elidedText(metricsBold, leg.buildLegText(distOpt, magCrsOpt, trueCrsOpt, false).join(sep),
+                                            Qt::ElideRight, legWidth - 4);
 
           if(!text.isEmpty())
           {
@@ -165,13 +164,13 @@ void ProfileLabelWidgetHoriz::paintEvent(QPaintEvent *)
             // Avoid extra empty line by single dot
             if(related.size() > 1)
             {
-              painter.setFont(fontNormal);
+              painter.setFont(mapFont);
 
               int textWidthRelated = metricsNormal.horizontalAdvance(related);
 
               if(textWidthRelated < legWidth)
               {
-                painter.setFont(fontNormal);
+                painter.setFont(mapFont);
                 painter.drawText(pos - offset.x() - textWidthRelated / 2 + 1, metricsNormal.ascent() + metricsNormal.height(), related);
 
                 // Adjust lines for widget size

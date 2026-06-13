@@ -41,11 +41,14 @@ QDateTime readDateTime(QString str);
 /* Checks if the lat long coordinate string is valid and returns an error message or a message for validity checking
  * Position is returned in pos if not null. */
 bool checkCoordinates(QString& message, const QString& text, atools::geo::Pos *pos = nullptr);
+bool checkCoordinates(const QString& text, atools::geo::Pos *pos = nullptr);
 
 /* All formatters are locale aware */
 
 /* Format a decimal time in hours to h:mm format */
 QString formatMinutesHours(double timeHours);
+
+QString formatTimeZoneOffset(int seconds);
 
 /* Format a decimal time in hours to X h Y m format */
 QString formatMinutesHoursLong(double timeHours);

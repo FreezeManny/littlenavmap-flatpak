@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -24,8 +24,9 @@
 #include "common/unitstringtool.h"
 #include "gui/clicktooltiphandler.h"
 #include "gui/helphandler.h"
+#include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
+#include "gui/widgetzoomhandler.h"
 #include "route/route.h"
 #include "route/routecontroller.h"
 #include "ui_routecalcdialog.h"
@@ -33,16 +34,16 @@
 
 // Factor to put on costs for direct connections. Airways <-> Waypoints
 // Sync withAIRWAY_WAYPOINT_PREF_MIN and AIRWAY_WAYPOINT_PREF_MAX
-static const QVector<float> DIRECT_COST_FACTORS({10.00f, 09.00f, 08.00f, 07.00f, 06.00f, 04.00f, 03.00f,
-                                                 02.00f, // Center/both
-                                                 01.50f, 01.30f, 01.20f, 01.15f, 01.10f, 01.05f, 01.00f});
+static const QList<float> DIRECT_COST_FACTORS({10.00f, 09.00f, 08.00f, 07.00f, 06.00f, 04.00f, 03.00f,
+                                               02.00f, // Center/both
+                                               01.50f, 01.30f, 01.20f, 01.15f, 01.10f, 01.05f, 01.00f});
 
 using atools::util::HtmlBuilder;
 
 RouteCalcDialog::RouteCalcDialog(QWidget *parent)
   : QDialog(parent), ui(new Ui::RouteCalcDialog)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
   setWindowModality(Qt::NonModal);
 
   ui->setupUi(this);
@@ -101,6 +102,7 @@ RouteCalcDialog::RouteCalcDialog(QWidget *parent)
 RouteCalcDialog::~RouteCalcDialog()
 {
   delete units;
+  delete ui;
 }
 
 void RouteCalcDialog::buttonBoxClicked(QAbstractButton *button)
@@ -109,7 +111,7 @@ void RouteCalcDialog::buttonBoxClicked(QAbstractButton *button)
   {
     calculating = true;
     updateWidgets();
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    atools::gui::Application::processEventsExtended();
     emit calculateClicked();
     calculating = false;
     updateWidgets();
@@ -195,7 +197,7 @@ void RouteCalcDialog::updateWidgets()
     ui->pushButtonRouteCalcDirect->setEnabled(canCalcRoute && route.hasEntries());
     ui->pushButtonRouteCalcReverse->setEnabled(canCalcRoute);
 
-    QString msg = tr("Use downloaded NAT or PACOTS tracks.\n"
+    QString msg = tr("Use downloaded NAT tracks.\n"
                      "Best track will be selected automatically.\n"
                      "Ensure to use the correct flight level.\n"
                      "Otherwise, tracks will not be used.");
@@ -316,12 +318,7 @@ void RouteCalcDialog::resetWindowLayout()
   state.clear(this);
   state.syncSettings();
 
-  atools::gui::util::centerWidgetOnScreen(this, defaultSize);
-}
-
-void RouteCalcDialog::preDatabaseLoad()
-{
-
+  atools::gui::centerWidgetOnScreen(this, defaultSize);
 }
 
 void RouteCalcDialog::postDatabaseLoad()
@@ -329,9 +326,16 @@ void RouteCalcDialog::postDatabaseLoad()
   updateWidgets();
 }
 
-void RouteCalcDialog::optionsChanged()
+void RouteCalcDialog::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
-  units->init({ui->spinBoxRouteCalcCruiseAltitude});
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_UNITS))
+    units->init({ui->spinBoxRouteCalcCruiseAltitude});
+}
+
+void RouteCalcDialog::fontChanged(const QFont& font)
+{
+  atools::gui::updateAllFonts(this, font, atools::gui::WidgetZoomHandler::getRegisteredWidgets());
+  atools::gui::setWidgetAndIconSize({ui->pushButtonRouteCalcTrackDownload}, NavApp::getMinButtonSize());
 }
 
 rd::RoutingType RouteCalcDialog::getRoutingType() const

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,8 @@
 #include "atools.h"
 #include "common/constants.h"
 #include "common/elevationprovider.h"
+#include "common/filecheck.h"
+#include "common/mapmarkers.h"
 #include "common/updatehandler.h"
 #include "common/vehicleicons.h"
 #include "connect/connectclient.h"
@@ -35,6 +37,7 @@
 #include "gui/dataexchange.h"
 #include "gui/errorhandler.h"
 #include "gui/mainwindow.h"
+#include "gui/statusbar.h"
 #include "gui/stylehandler.h"
 #include "logbook/logdatacontroller.h"
 #include "logging/logginghandler.h"
@@ -53,6 +56,7 @@
 #include "routestring/routestringwriter.h"
 #include "search/searchcontroller.h"
 #include "settings/settings.h"
+#include "timezone/timezonemanager.h"
 #include "track/trackcontroller.h"
 #include "userdata/userdatacontroller.h"
 #include "weather/weatherreporter.h"
@@ -64,6 +68,7 @@
 #include <marble/MarbleModel.h>
 
 #include <QIcon>
+#include <QProcess>
 
 ConnectClient *NavApp::connectClient = nullptr;
 DatabaseManager *NavApp::databaseManager = nullptr;
@@ -71,7 +76,6 @@ MainWindow *NavApp::mainWindow = nullptr;
 ElevationProvider *NavApp::elevationProvider = nullptr;
 atools::fs::db::DatabaseMeta *NavApp::databaseMetaSim = nullptr;
 atools::fs::db::DatabaseMeta *NavApp::databaseMetaNav = nullptr;
-
 atools::fs::common::MagDecReader *NavApp::magDecReader = nullptr;
 atools::fs::common::MoraReader *NavApp::moraReader = nullptr;
 UpdateHandler *NavApp::updateHandler = nullptr;
@@ -86,10 +90,10 @@ AircraftPerfController *NavApp::aircraftPerfController = nullptr;
 AirspaceController *NavApp::airspaceController = nullptr;
 VehicleIcons *NavApp::vehicleIcons = nullptr;
 StyleHandler *NavApp::styleHandler = nullptr;
-
 WebController *NavApp::webController = nullptr;
-
 atools::gui::DataExchange *NavApp::dataExchange = nullptr;
+atools::timezone::TimeZoneManager *NavApp::timeZone = nullptr;
+FileCheck *NavApp::fileCheck = nullptr;
 
 bool NavApp::closeCalled = false;
 bool NavApp::loadingDatabase = false;
@@ -130,7 +134,7 @@ void NavApp::init(MainWindow *mainWindowParam)
 
   elevationProvider = new ElevationProvider(mainWindow);
 
-  databaseManager = new DatabaseManager(mainWindow);
+  databaseManager = new DatabaseManager(mainWindow, true /* Verbose - log database parameters */);
   databaseManager->openAllDatabases(); // Only readonly databases
   databaseManager->loadLanguageIndex(); // MSFS translations from table "translation"
   databaseManager->loadAircraftIndex(); // MSFS aircraft.cfg properties
@@ -150,6 +154,9 @@ void NavApp::init(MainWindow *mainWindowParam)
 
   moraReader = new atools::fs::common::MoraReader(getDatabaseNav(), getDatabaseSim());
   moraReader->readFromTable();
+
+  timeZone = new atools::timezone::TimeZoneManager;
+  timeZone->readFile(Settings::getOverloadedPath(lnm::TIMEZONE_DATABASE));
 
   // Cache for aircraft and other icons
   vehicleIcons = new VehicleIcons();
@@ -221,7 +228,9 @@ void NavApp::deInit()
   ATOOLS_DELETE_LOG(databaseMetaNav);
   ATOOLS_DELETE_LOG(magDecReader);
   ATOOLS_DELETE_LOG(moraReader);
+  ATOOLS_DELETE_LOG(timeZone);
   ATOOLS_DELETE_LOG(vehicleIcons);
+  ATOOLS_DELETE_LOG(fileCheck);
 }
 
 const atools::gui::DataExchange *NavApp::getDataExchangeConst()
@@ -237,8 +246,9 @@ atools::gui::DataExchange *NavApp::getDataExchange()
 bool NavApp::initDataExchange()
 {
   if(dataExchange == nullptr)
-    dataExchange = new atools::gui::DataExchange(
-      Settings::instance().getAndStoreValue(lnm::OPTIONS_DATAEXCHANGE_DEBUG, false).toBool(), lnm::PROGRAM_GUID);
+    dataExchange = new atools::gui::DataExchange(lnm::PROGRAM_GUID,
+                                                 getStartupOptions().contains(lnm::STARTUP_NO_DATA_EXCHANGE),
+                                                 Settings::instance().getAndStoreValue(lnm::OPTIONS_DATAEXCHANGE_DEBUG, false).toBool());
 
   // Check for commands from other instances in shared memory segment
   // Not connected to main window yet - so messages will be ignored
@@ -253,6 +263,16 @@ void NavApp::deInitDataExchange()
   ATOOLS_DELETE_LOG(dataExchange);
 }
 
+void NavApp::initStartupProperties()
+{
+  fileCheck = new FileCheck(getStartupOptions());
+}
+
+const FileCheck *NavApp::getCommandLineFiles()
+{
+  return fileCheck;
+}
+
 void NavApp::checkForUpdates(int channelOpts, bool manual, bool startup, bool forceDebug)
 {
   UpdateHandler::UpdateReason reason = UpdateHandler::UPDATE_REASON_UNKNOWN;
@@ -263,18 +283,8 @@ void NavApp::checkForUpdates(int channelOpts, bool manual, bool startup, bool fo
   else if(forceDebug)
     reason = UpdateHandler::UPDATE_REASON_FORCE;
 
-  updateChannels(channelOpts);
-  updateHandler->checkForUpdates(reason);
-}
-
-void NavApp::updateChannels(int channelOpts)
-{
   updateHandler->setChannelOpts(static_cast<opts::UpdateChannels>(channelOpts));
-}
-
-void NavApp::optionsChanged()
-{
-  qDebug() << Q_FUNC_INFO;
+  updateHandler->checkForUpdates(reason);
 }
 
 void NavApp::readMagDecFromDatabase()
@@ -474,7 +484,7 @@ void NavApp::updateAllMaps()
     mainWindow->getProfileWidget()->update();
 }
 
-const QVector<atools::fs::sc::SimConnectAircraft>& NavApp::getAiAircraft()
+const QList<atools::fs::sc::SimConnectAircraft>& NavApp::getAiAircraft()
 {
   return mainWindow->getMapWidget()->getAiAircraft();
 }
@@ -572,12 +582,12 @@ QString NavApp::getSimulatorBasePath(atools::fs::FsPaths::SimulatorType type)
   return databaseManager->getSimulatorBasePath(type);
 }
 
-QString NavApp::getSimulatorFilesPathBest(const QVector<atools::fs::FsPaths::SimulatorType>& types, const QString& defaultPath)
+QString NavApp::getSimulatorFilesPathBest(const QList<atools::fs::FsPaths::SimulatorType>& types, const QString& defaultPath)
 {
   return databaseManager->getSimulatorFilesPathBest(types, defaultPath);
 }
 
-QString NavApp::getSimulatorBasePathBest(const QVector<atools::fs::FsPaths::SimulatorType>& types)
+QString NavApp::getSimulatorBasePathBest(const QList<atools::fs::FsPaths::SimulatorType>& types)
 {
   return databaseManager->getSimulatorBasePathBest(types);
 }
@@ -748,6 +758,11 @@ MapDetailHandler *NavApp::getMapDetailHandler()
   return mapDetailHandler;
 }
 
+MapMarkers *NavApp::getMapMarkers()
+{
+  return getMapWidgetGui()->getMapMarkers();
+}
+
 void NavApp::showFlightplan()
 {
   mainWindow->showFlightplan();
@@ -790,7 +805,7 @@ void NavApp::getReportFiles(QStringList& crashReportFiles, QString& reportFilena
     if(!filename.isEmpty() && !QFile::exists(filename))
       filename.clear();
   }
-  crashReportFiles.removeAll(QString());
+  crashReportFiles.removeAll(QStringLiteral());
 }
 
 void NavApp::recordStartNavApp()
@@ -805,6 +820,48 @@ void NavApp::recordStartNavApp()
                                          lnm::helpOnlineUrl, "CRASHREPORT.html", lnm::helpLanguageOnline());
 #endif
   // Keep command line options to avoid using the wrong configuration folder
+}
+
+void NavApp::restartApplication(bool noDataExchange, bool resetLayout)
+{
+  qDebug() << Q_FUNC_INFO << QCoreApplication::applicationFilePath();
+
+  dataExchange->disable();
+  atools::gui::Application::processEventsExtended();
+
+  setRestartApplication(false /* restartApplicationParam */, false /* resetSettingsParam */, false /* resetWindowLayoutParam */);
+
+  QStringList arguments = QCoreApplication::arguments();
+
+  // Remove program name
+  if(!arguments.isEmpty())
+    arguments.removeFirst();
+
+  // Ensure only one option
+  if(noDataExchange)
+  {
+    const QString noDataExchangeOpt = QStringLiteral("--") % lnm::STARTUP_NO_DATA_EXCHANGE;
+    arguments.removeAll(noDataExchangeOpt);
+    arguments.append(noDataExchangeOpt);
+  }
+
+  if(resetLayout)
+  {
+    const QString resetLayoutOpt = QStringLiteral("--") % lnm::STARTUP_RESET_LAYOUT;
+    arguments.removeAll(resetLayoutOpt);
+    arguments.append(resetLayoutOpt);
+  }
+
+  QProcess process;
+  process.setArguments(arguments);
+  process.setProgram(QCoreApplication::applicationFilePath());
+  process.setWorkingDirectory(QCoreApplication::applicationDirPath());
+  bool result = process.startDetached();
+
+  if(result)
+    qInfo() << Q_FUNC_INFO << "Success.";
+  else
+    qWarning() << Q_FUNC_INFO << "FAILED.";
 }
 
 void NavApp::createIssueReport(const QStringList& additionalFiles)
@@ -824,8 +881,7 @@ void NavApp::setToolTipsEnabledMainMenu(bool enabled)
 {
   // Enable tooltips for all menus
   // The state is set programmatically in context menus from first file menu
-  QList<QAction *> stack;
-  stack.append(NavApp::getMainUi()->menuBar->actions());
+  QList<QAction *> stack(NavApp::getMainUi()->menuBar->actions());
   while(!stack.isEmpty())
   {
     QMenu *menu = stack.takeLast()->menu();
@@ -926,6 +982,11 @@ bool NavApp::isGuiStyleDark()
   return styleHandler->isGuiStyleDark();
 }
 
+bool NavApp::isGuiStyleAnyFusion()
+{
+  return styleHandler->isGuiStyleAnyFusion();
+}
+
 StyleHandler *NavApp::getStyleHandler()
 {
   return styleHandler;
@@ -934,6 +995,22 @@ StyleHandler *NavApp::getStyleHandler()
 atools::fs::common::MoraReader *NavApp::getMoraReader()
 {
   return moraReader;
+}
+
+const atools::timezone::TimeZoneManager *NavApp::getTimeZoneManager()
+{
+  return timeZone;
+}
+
+QTimeZone NavApp::getTimeZone(const atools::geo::Pos& position)
+{
+  return timeZone->getTimezone(position);
+}
+
+QDateTime NavApp::getUtcDateTimeSimOrCurrent()
+{
+  return NavApp::isConnectedAndAircraft() && getUserAircraft().getZuluTime().isValid() ?
+         getUserAircraft().getZuluTime() : QDateTime::currentDateTimeUtc();
 }
 
 atools::sql::SqlDatabase *NavApp::getDatabaseUser()
@@ -1003,7 +1080,7 @@ void NavApp::updateErrorLabel()
 
 void NavApp::setStatusMessage(const QString& message, bool addToLog, bool popup)
 {
-  mainWindow->setStatusMessage(message, addToLog, popup);
+  mainWindow->getStatusBar()->setStatusMessage(message, addToLog, popup);
 }
 
 QWidget *NavApp::getQMainWidget()
@@ -1021,19 +1098,24 @@ MainWindow *NavApp::getMainWindow()
   return mainWindow;
 }
 
-void NavApp::addDialogToDockHandler(QDialog *dialog)
+void NavApp::registerDialogInDockHandler(QDialog *dialog)
 {
-  mainWindow->addDialogToDockHandler(dialog);
+  mainWindow->registerDialogInDockHandler(dialog);
 }
 
-void NavApp::removeDialogFromDockHandler(QDialog *dialog)
+void NavApp::unregisterDialogInDockHandler(QDialog *dialog)
 {
-  mainWindow->removeDialogFromDockHandler(dialog);
+  mainWindow->unregisterDialogInDockHandler(dialog);
 }
 
 QList<QAction *> NavApp::getMainWindowActions()
 {
   return mainWindow->getMainWindowActions();
+}
+
+StatusBar *NavApp::getStatusBar()
+{
+  return mainWindow->getStatusBar();
 }
 
 bool NavApp::isMenuToolTipsVisible()
@@ -1089,6 +1171,17 @@ QFont NavApp::getTextBrowserInfoFont()
 MapThemeHandler *NavApp::getMapThemeHandler()
 {
   return mainWindow->getMapThemeHandler();
+}
+
+QSize NavApp::getMinButtonSize()
+{
+  if(mainWindow != nullptr)
+  {
+    int height = mainWindow->getUi()->comboBoxRouteType->height();
+    return QSize(height, height);
+  }
+  else
+    return QSize();
 }
 
 bool NavApp::isDarkMapTheme()
@@ -1156,12 +1249,12 @@ ConnectClient *NavApp::getConnectClient()
 
 QString NavApp::getDatabaseAiracCycleSim()
 {
-  return databaseMetaSim != nullptr ? databaseMetaSim->getAiracCycle() : QString();
+  return databaseMetaSim != nullptr ? databaseMetaSim->getAiracCycle() : QStringLiteral();
 }
 
 QString NavApp::getDatabaseAiracCycleNav()
 {
-  return databaseMetaNav != nullptr ? databaseMetaNav->getAiracCycle() : QString();
+  return databaseMetaNav != nullptr ? databaseMetaNav->getAiracCycle() : QStringLiteral();
 }
 
 bool NavApp::hasOnlineData()
@@ -1192,6 +1285,11 @@ const atools::fs::db::DatabaseMeta *NavApp::getDatabaseMetaNav()
 const AircraftTrail& NavApp::getAircraftTrail()
 {
   return getMapWidgetGui()->getAircraftTrail();
+}
+
+int NavApp::getMaxStoredTrailEntries()
+{
+  return getMapWidgetGui() != nullptr ? getMapWidgetGui()->getMaxStoredTrailEntries() : 0;
 }
 
 const AircraftTrail& NavApp::getAircraftTrailLogbook()

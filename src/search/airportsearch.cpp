@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -29,10 +29,12 @@
 #include "common/unitstringtool.h"
 #include "fs/util/fsutil.h"
 #include "gui/choicedialog.h"
+#include "gui/comboboxhandler.h"
 #include "gui/dialog.h"
 #include "gui/mainwindow.h"
+#include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
+#include "options/optiondata.h"
 #include "query/airportquery.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
@@ -58,9 +60,11 @@ const static QSet<QString> AIRPORT_NUMBER_COLUMNS({"num_approach", "num_runway_h
                                                    "num_parking_ga_ramp", "num_parking_cargo", "num_parking_mil_cargo",
                                                    "num_parking_mil_combat", "num_helipad"});
 
-AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+AirportSearch::AirportSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("airport", "airport_id"), tabWidgetIndex)
 {
+  setObjectName("AirportSearch");
+
   // Have to convert units for these two spin boxes here since they are not registered in the base
   unitStringTool = new UnitStringTool;
   unitStringTool->init({ui->spinBoxAirportFlightplanMinSearch, ui->spinBoxAirportFlightplanMaxSearch});
@@ -144,19 +148,19 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
 
   // Show/hide all search options menu action
   connect(ui->actionAirportSearchShowAllOptions, &QAction::toggled, this, [this](bool state) {
-    for(QAction *a: qAsConst(airportSearchMenuActions))
+    for(QAction *a: std::as_const(airportSearchMenuActions))
       a->setChecked(state);
   });
 
   // Build SQL query conditions
   QStringList gateCondMap;
-  gateCondMap << QString()
+  gateCondMap << QStringLiteral()
               << "like 'G%'"
               << "in ('GM', 'GH')"
               << "= 'GH'";
 
   QStringList ratingCondMap;
-  ratingCondMap << QString()
+  ratingCondMap << QStringLiteral()
                 << "rating >= 1"
                 << "rating >= 2"
                 << "rating >= 3"
@@ -165,7 +169,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
                 << "is_3d > 0 /*is_3d*/"; // Add required column for this query as comment - will be checked if available
 
   QStringList rampCondMap;
-  rampCondMap << QString()
+  rampCondMap << QStringLiteral()
               << "largest_parking_ramp like 'RGA%'"
               << "largest_parking_ramp in ('RGAM', 'RGAL')"
               << "largest_parking_ramp = 'RGAL'"
@@ -174,7 +178,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
               << "num_parking_mil_combat > 0";
 
   QStringList rwSurface;
-  rwSurface << QString()
+  rwSurface << QStringLiteral()
             << "num_runway_hard > 0"
             << "num_runway_soft > 0"
             << "num_runway_water > 0"
@@ -184,7 +188,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
             << "num_runway_water = 0 and num_runway_hard = 0 and num_runway_soft = 0";
 
   QStringList helipadCondMap;
-  helipadCondMap << QString()
+  helipadCondMap << QStringLiteral()
                  << "num_helipad > 0"
                  << "num_helipad > 0 and num_runway_hard = 0  and "
      "num_runway_soft = 0 and num_runway_water = 0";
@@ -194,8 +198,8 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
   // Columns that are hidden are also needed to fill MapAirport object and for the icon delegate
   columns->
   append(Column("airport_id").hidden()).
-  append(Column("distance", tr("Distance\n%dist%")).distanceCol()).
-  append(Column("heading", tr("Heading\n°T")).distanceCol()).
+  append(Column("distance", tr("Distance\n%dist%")).distanceHeadingCol()).
+  append(Column("heading", tr("Heading\n°T")).distanceHeadingCol()).
 
   append(Column("ident", tr("Ident")).defaultSort().filterByBuilder()).
   append(Column("icao", tr("ICAO")).filterByBuilder()).
@@ -210,7 +214,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
 
   append(Column("rating", ui->comboBoxAirportRatingSearch, tr("Rating")).includesName().indexCondMap(ratingCondMap)).
 
-  append(Column("altitude", tr("Elev.\n%alt%")).convertFunc(Unit::altFeetF)).
+  append(Column("altitude", tr("Elev.\n%alt%")).convertFunction(Unit::altFeetF)).
   append(Column("mag_var", tr("Mag.\nDecl.°"))).
   append(Column("has_avgas", ui->checkBoxAirportAvgasSearch, tr("Avgas")).hidden()).
   append(Column("has_jetfuel", ui->checkBoxAirportJetASearch, tr("Jetfuel")).hidden()).
@@ -246,7 +250,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
   append(Column("num_parking_mil_cargo", tr("Ramps\nMil Cargo")).hidden()).
   append(Column("num_parking_mil_combat", tr("Ramps\nMil Combat")).hidden()).
 
-  append(Column("longest_runway_length", tr("Longest\nRunway Length %distshort%")).convertFunc(Unit::distShortFeetF)).
+  append(Column("longest_runway_length", tr("Longest\nRunway Length %distshort%")).convertFunction(Unit::distShortFeetF)).
   append(Column("longest_runway_width", tr("Longest\nRunway Width %distshort%")).hidden()).
   append(Column("longest_runway_surface", tr("Longest\nRunway Surface")).hidden()).
   append(Column("longest_runway_heading").hidden()).
@@ -280,10 +284,13 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
   iconDelegate = new AirportIconDelegate(columns);
   view->setItemDelegateForColumn(columns->getColumn("ident")->getIndex(), iconDelegate);
 
+  comboBoxHandler = new atools::gui::ComboBoxHandler(ui->comboBoxAirportTextSearch, nullptr, lnm::SEARCHTAB_AIRPORT_IDENT_COMBOBOX_HISTORY);
+  comboBoxHandler->setMenuTooltipsVisible(NavApp::isMenuToolTipsVisible());
+
   // Assign the callback which builds a part of the where clause for the airport search ======================
   // First query builder having matching columns in the list is used
   columns->setQueryBuilder(QueryBuilder(std::bind(&SearchBaseTable::queryBuilderFunc, this, std::placeholders::_1), {
-    QueryWidget(ui->lineEditAirportTextSearch,
+    QueryWidget(ui->comboBoxAirportTextSearch,
                 {"ident", "icao", "iata", "faa", "local", "name", "city", "state", "country"},
                 false /* allowOverride */, false /* allowExclude */),
     QueryWidget(ui->lineEditAirportIcaoSearch,
@@ -298,6 +305,7 @@ AirportSearch::AirportSearch(QMainWindow *parent, QTableView *tableView, si::Tab
 
 AirportSearch::~AirportSearch()
 {
+  delete comboBoxHandler;
   delete iconDelegate;
   delete unitStringTool;
 }
@@ -332,7 +340,7 @@ void AirportSearch::connectSearchSlots()
   connect(ui->spinBoxAirportFlightplanMaxSearch, QOverload<int>::of(&QSpinBox::valueChanged),
           this, &AirportSearch::keepRandomFlightRangeSane);
 
-  installEventFilterForWidget(ui->lineEditAirportTextSearch);
+  installEventFilterForWidget(ui->comboBoxAirportTextSearch);
   installEventFilterForWidget(ui->lineEditAirportIcaoSearch);
   installEventFilterForWidget(ui->lineEditAirportCitySearch);
   installEventFilterForWidget(ui->lineEditAirportCountrySearch);
@@ -358,6 +366,7 @@ void AirportSearch::connectSearchSlots()
   SearchBaseTable::connectSearchWidgets();
 
   QMenu *menu = new QMenu(ui->toolButtonAirportSearch);
+  menu->setToolTipsVisible(true);
   ui->toolButtonAirportSearch->setMenu(menu);
   menu->addAction(airportSearchMenuActions.first());
   menu->addSeparator();
@@ -404,6 +413,7 @@ void AirportSearch::saveState()
   atools::gui::WidgetState widgetState(lnm::SEARCHTAB_AIRPORT_WIDGET);
   widgetState.save(airportSearchWidgets);
   saveViewState(viewStateDistSearch);
+  comboBoxHandler->saveState();
 }
 
 void AirportSearch::restoreState()
@@ -448,6 +458,8 @@ void AirportSearch::restoreState()
   // Adapt min/max in spin boxes for random plan search
   keepRandomFlightRangeSane();
 
+  comboBoxHandler->restoreState();
+
   finishRestore();
 }
 
@@ -469,10 +481,9 @@ void AirportSearch::restoreViewState(bool distanceSearchState)
   qDebug() << Q_FUNC_INFO << "distSearchActive" << distanceSearchState;
 #endif
 
-  atools::gui::WidgetState(
-    distanceSearchState ?
-    lnm::SEARCHTAB_AIRPORT_VIEW_DIST_WIDGET :
-    lnm::SEARCHTAB_AIRPORT_VIEW_WIDGET).restore(ui->tableViewAirportSearch);
+  atools::gui::WidgetState(distanceSearchState ?
+                           lnm::SEARCHTAB_AIRPORT_VIEW_DIST_WIDGET :
+                           lnm::SEARCHTAB_AIRPORT_VIEW_WIDGET).restore(ui->tableViewAirportSearch);
 }
 
 /* Callback for the controller. Is called for each table cell and should return a formatted value. */
@@ -486,13 +497,14 @@ QVariant AirportSearch::modelDataHandler(int colIndex, int rowIndex, const Colum
       return formatModelData(col, displayRoleValue);
 
     case Qt::TextAlignmentRole:
-      if(col->getColumnName() == "rating")
+      if(col->getColumnName() == QStringLiteral("rating"))
         return Qt::AlignLeft;
-      else if(col->getColumnName() == "ident" ||
-              displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt ||
-              displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() ==
-              QVariant::ULongLong ||
-              displayRoleValue.type() == QVariant::Double)
+      else if(col->getColumnName() == QStringLiteral("ident") ||
+              displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+              displayRoleValue.metaType() == QMetaType::fromType<unsigned int>() ||
+              displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+              displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>() ||
+              displayRoleValue.metaType() == QMetaType::fromType<double>())
         // Align all numeric columns right
         return Qt::AlignRight;
 
@@ -514,36 +526,38 @@ QVariant AirportSearch::modelDataHandler(int colIndex, int rowIndex, const Colum
 QString AirportSearch::formatModelData(const Column *col, const QVariant& displayRoleValue) const
 {
   // Called directly by the model for export functions
-  if(col->getColumnName() == "tower_frequency" || col->getColumnName() == "atis_frequency" ||
-     col->getColumnName() == "awos_frequency" || col->getColumnName() == "asos_frequency" ||
-     col->getColumnName() == "unicom_frequency")
+  if(col->getColumnName() == QStringLiteral("tower_frequency") || col->getColumnName() == QStringLiteral("atis_frequency") ||
+     col->getColumnName() == QStringLiteral("awos_frequency") || col->getColumnName() == QStringLiteral("asos_frequency") ||
+     col->getColumnName() == QStringLiteral("unicom_frequency"))
   {
     if(displayRoleValue.isNull())
-      return QString();
+      return QStringLiteral();
     else
       return QLocale().toString(atools::fs::util::roundComFrequency(displayRoleValue.toInt()), 'f', 3);
   }
-  else if(col->getColumnName() == "altitude")
+  else if(col->getColumnName() == QStringLiteral("altitude"))
     return Unit::altFeet(displayRoleValue.toFloat(), false);
-  else if(col->getColumnName() == "longest_runway_length")
+  else if(col->getColumnName() == QStringLiteral("longest_runway_length"))
     return Unit::distShortFeet(displayRoleValue.toFloat(), false);
-  else if(col->getColumnName() == "mag_var")
+  else if(col->getColumnName() == QStringLiteral("mag_var"))
     return map::magvarText(displayRoleValue.toFloat(), true /* shortText */, false /* degSign */);
   else if(AIRPORT_NUMBER_COLUMNS.contains(col->getColumnName()))
-    return displayRoleValue.toInt() > 0 ? displayRoleValue.toString() : QString();
-  else if(col->getColumnName() == "longest_runway_surface")
+    return displayRoleValue.toInt() > 0 ? displayRoleValue.toString() : QStringLiteral();
+  else if(col->getColumnName() == QStringLiteral("longest_runway_surface"))
     return map::surfaceName(displayRoleValue.toString());
-  else if(col->getColumnName() == "largest_parking_ramp")
+  else if(col->getColumnName() == QStringLiteral("largest_parking_ramp"))
     return map::parkingRampName(displayRoleValue.toString());
-  else if(col->getColumnName() == "largest_parking_gate")
+  else if(col->getColumnName() == QStringLiteral("largest_parking_gate"))
     return map::parkingGateName(displayRoleValue.toString());
-  else if(col->getColumnName() == "rating")
+  else if(col->getColumnName() == QStringLiteral("rating"))
     return atools::ratingString(displayRoleValue.toInt(), 5);
-  else if(displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned int>())
     return QLocale().toString(displayRoleValue.toInt());
-  else if(displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() == QVariant::ULongLong)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>())
     return QLocale().toString(displayRoleValue.toLongLong());
-  else if(displayRoleValue.type() == QVariant::Double)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<double>())
     return QLocale().toString(displayRoleValue.toDouble());
 
   return displayRoleValue.toString();
@@ -609,38 +623,38 @@ void AirportSearch::updateButtonMenu()
 
   // Change state of show all action
   ui->actionAirportSearchShowAllOptions->blockSignals(true);
-  if(atools::gui::util::allChecked(menus))
+  if(atools::gui::allChecked(menus))
     ui->actionAirportSearchShowAllOptions->setChecked(true);
-  else if(atools::gui::util::noneChecked(menus))
+  else if(atools::gui::noneChecked(menus))
     ui->actionAirportSearchShowAllOptions->setChecked(false);
   else
     ui->actionAirportSearchShowAllOptions->setChecked(false);
   ui->actionAirportSearchShowAllOptions->blockSignals(false);
 
   // Show star in action for all widgets that are not in default state
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowAdminOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->verticalLayoutAirportAdminSearch}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowAdminOptions,
+                                atools::gui::anyWidgetChanged({ui->verticalLayoutAirportAdminSearch}));
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowExtOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->gridLayoutAirportExtSearch}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowExtOptions,
+                                atools::gui::anyWidgetChanged({ui->gridLayoutAirportExtSearch}));
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowFuelParkOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->gridLayoutAirportSearchParking}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowFuelParkOptions,
+                                atools::gui::anyWidgetChanged({ui->gridLayoutAirportSearchParking}));
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowRunwayOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->gridLayoutAirportSearchRunway}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowRunwayOptions,
+                                atools::gui::anyWidgetChanged({ui->gridLayoutAirportSearchRunway}));
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowAltOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->horizontalLayoutAirportAltitudeSearch}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowAltOptions,
+                                atools::gui::anyWidgetChanged({ui->horizontalLayoutAirportAltitudeSearch}));
 
   bool distSearchChanged = false;
   if(columns->isDistanceCheckBoxChecked())
-    distSearchChanged = atools::gui::util::anyWidgetChanged({ui->horizontalLayoutAirportDistanceSearch});
+    distSearchChanged = atools::gui::anyWidgetChanged({ui->horizontalLayoutAirportDistanceSearch});
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowDistOptions, distSearchChanged);
+  atools::gui::changeIndication(ui->actionAirportSearchShowDistOptions, distSearchChanged);
 
-  atools::gui::util::changeIndication(ui->actionAirportSearchShowSceneryOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->horizontalLayoutAirportScenerySearch}));
+  atools::gui::changeIndication(ui->actionAirportSearchShowSceneryOptions,
+                                atools::gui::anyWidgetChanged({ui->horizontalLayoutAirportScenerySearch}));
 }
 
 void AirportSearch::updatePushButtons()
@@ -657,11 +671,14 @@ QAction *AirportSearch::followModeAction()
   return ui->actionSearchAirportFollowSelection;
 }
 
-void AirportSearch::optionsChanged()
+void AirportSearch::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
   // Update units in this object
-  unitStringTool->update();
-  SearchBaseTable::optionsChanged();
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_UNITS))
+    unitStringTool->update();
+
+  SearchBaseTable::optionsChanged(changeFlags);
+  comboBoxHandler->setMenuTooltipsVisible(NavApp::isMenuToolTipsVisible());
 }
 
 void AirportSearch::resetSearch()
@@ -716,8 +733,8 @@ void AirportSearch::randomFlightClicked(bool showDialog)
 
     // Adjust label if plan is empty or not valid
     if(!departureAirport.isValid() && !destinationAirport.isValid())
-      label +=
-        tr("\n\nAdd a departure or destination airport to your current flight plan if you wish to have that fixed instead of random.");
+      label += tr("\n\nAdd a departure or destination airport to your current flight plan "
+                  "if you wish to have that fixed instead of random.");
 
     // Build selection dialog ===========================================================
     atools::gui::ChoiceDialog choiceDialog(mainWindow, QCoreApplication::applicationName() % tr(" - Random Flight"), label,
@@ -725,24 +742,31 @@ void AirportSearch::randomFlightClicked(bool showDialog)
     choiceDialog.setHelpOnlineUrl(lnm::helpOnlineUrl);
     choiceDialog.setHelpLanguageOnline(lnm::helpLanguageOnline());
 
+    QColor lineColor = QApplication::palette().color(NavApp::isGuiStyleDark() ? QPalette::Light : QPalette::Mid);
+
     // Departure and destination random ================================
-    choiceDialog.addRadioButton(RANDOM_ALL, RANDOM_BUTTON_GROUP, tr("Let select departure and destination airport\n"
-                                                                    "from airport search result table at random."), QString(),
-                                true /* checked */);
+    choiceDialog.addRadioButton(RANDOM_ALL, RANDOM_BUTTON_GROUP,
+                                tr("&Let select departure and destination airport\n"
+                                   "from airport search result table at random."),
+                                QStringLiteral(), true /* checked */);
+
+    choiceDialog.addLine(QFrame::Plain, 1, lineColor);
 
     if(route.getSizeWithoutAlternates() == 1 && departureAirport.isValid())
     {
       // Current flight plan has only one airport - use as fixed departure or destination ================================
       choiceDialog.addRadioButton(RANDOM_FIXED_DEPARTURE, RANDOM_BUTTON_GROUP,
-                                  tr("Use current flight plan's departure airport"
+                                  tr("&Use current flight plan's departure airport"
                                      "\n%1\n"
                                      "as fixed departure airport and let select a\n"
                                      "destination airport from airport search result\n"
                                      "table at random.").
                                   arg(map::airportTextShort(departureAirport)));
 
+      choiceDialog.addLine(QFrame::Plain, 1, lineColor);
+
       choiceDialog.addRadioButton(RANDOM_FIXED_DESTINATION, RANDOM_BUTTON_GROUP,
-                                  tr("Use current flight plan's departure airport"
+                                  tr("Use &current flight plan's departure airport"
                                      "\n%1\n"
                                      "as fixed destination airport and let select a\n"
                                      "departure airport from airport search result\n"
@@ -753,15 +777,17 @@ void AirportSearch::randomFlightClicked(bool showDialog)
     {
       // Current flight plan has valid departure and destination - use either one as fixed ================================
       choiceDialog.addRadioButton(RANDOM_FIXED_DEPARTURE, RANDOM_BUTTON_GROUP,
-                                  tr("Keep current flight plan's departure airport"
+                                  tr("&Keep current flight plan's departure airport"
                                      "\n%1\n"
                                      "as fixed departure airport and let select a\n"
                                      "destination airport from airport search result\n"
                                      "table at random.").
                                   arg(map::airportTextShort(departureAirport)));
 
+      choiceDialog.addLine(QFrame::Plain, 1, lineColor);
+
       choiceDialog.addRadioButton(RANDOM_FIXED_DESTINATION, RANDOM_BUTTON_GROUP,
-                                  tr("Keep current flight plan's destination airport"
+                                  tr("Keep &current flight plan's destination airport"
                                      "\n%1\n"
                                      "as fixed destination airport and let select a\n"
                                      "departure airport from airport search result\n"
@@ -772,11 +798,13 @@ void AirportSearch::randomFlightClicked(bool showDialog)
     {
       // Current flight plan has neither valid departure nor destination use all random and disable radio buttons =======
       choiceDialog.addRadioButton(RANDOM_FIXED_DEPARTURE, RANDOM_BUTTON_GROUP,
-                                  tr("Let select only a destination airport from\n"
+                                  tr("&Let select only a destination airport from\n"
                                      "airport search result table at random."));
 
+      choiceDialog.addLine(QFrame::Plain, 1, lineColor);
+
       choiceDialog.addRadioButton(RANDOM_FIXED_DESTINATION, RANDOM_BUTTON_GROUP,
-                                  tr("Let select only a departure airport from\n"
+                                  tr("Let &select only a departure airport from\n"
                                      "airport search result table at random."));
 
       choiceDialog.disableWidget(RANDOM_ALL);
@@ -878,7 +906,7 @@ void AirportSearch::randomFlightSearchProgressing()
 }
 
 void AirportSearch::dataRandomAirportsReceived(bool isSuccess, int indexDeparture, int indexDestination,
-                                               QVector<std::pair<int, atools::geo::Pos> > *data)
+                                               QList<std::pair<int, atools::geo::Pos> > *data)
 {
   randomFlightSearchProgress->hide();
 
@@ -929,8 +957,11 @@ void AirportSearch::dataRandomAirportsReceived(bool isSuccess, int indexDepartur
                       QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, NavApp::getQMainWidget());
 
       // Rename yes and no buttons
-      box.setButtonText(QMessageBox::Yes, tr("&Use as Flight Plan"));
-      box.setButtonText(QMessageBox::No, tr("&Search again"));
+      if(box.button(QMessageBox::Yes) != nullptr)
+        box.button(QMessageBox::Yes)->setText(tr("&Use as Flight Plan"));
+      if(box.button(QMessageBox::No) != nullptr)
+        box.button(QMessageBox::No)->setText(tr("&Search again"));
+
       box.setWindowFlag(Qt::WindowContextHelpButtonHint, false);
       box.setWindowModality(Qt::ApplicationModal);
       box.setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -942,7 +973,7 @@ void AirportSearch::dataRandomAirportsReceived(bool isSuccess, int indexDepartur
         if(result == QMessageBox::Yes)
           // Use data
           // Does not show a question dialog if flight plan has changes since this is save to the undo/redo stack
-          NavApp::getMainWindow()->routeNewFromAirports(airportDeparture, airportDestination);
+          mainWindow->routeNewFromAirports(airportDeparture, airportDestination);
         else if(result == QMessageBox::No)
           // Start again in main event loop after leaving this method
           tryAgain = true;
@@ -951,7 +982,7 @@ void AirportSearch::dataRandomAirportsReceived(bool isSuccess, int indexDepartur
       }
     }
     else
-      atools::gui::Dialog::information(NavApp::getMainWindow(),
+      atools::gui::Dialog::information(mainWindow,
                                        tr("No (further) airports satisfying your criteria\nfound in the airport search result table."));
 
     // we can delete, due to dialog giving signalling thread
@@ -992,4 +1023,18 @@ void AirportSearch::dataRandomAirportsReceived(bool isSuccess, int indexDepartur
     // when this enabling would occur prior
     ui->pushButtonAirportFlightplanSearch->setDisabled(false);
   }
+}
+
+void AirportSearch::fontChanged(const QFont& font)
+{
+  ui->pushButtonAirportFlightplanSearch->setMinimumHeight(NavApp::getMinButtonSize().height());
+  ui->pushButtonAirportFlightplanSearch->setIconSize(NavApp::getMinButtonSize() * 0.8);
+  AbstractSearch::fontChanged(font);
+}
+
+void AirportSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_AIRPORT_VIEW_WIDGET).clear(ui->tableViewAirportSearch);
+  SearchBaseTable::resetView();
 }

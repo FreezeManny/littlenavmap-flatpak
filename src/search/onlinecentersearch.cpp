@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 #include "fs/online/onlinetypes.h"
 #include "gui/widgetstate.h"
 #include "app/navapp.h"
+#include "options/optiondata.h"
 #include "search/column.h"
 #include "search/columnlist.h"
 #include "search/sqlcontroller.h"
@@ -34,9 +35,11 @@
 
 #include <QDateTime>
 
-OnlineCenterSearch::OnlineCenterSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+OnlineCenterSearch::OnlineCenterSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("atc", "atc_id"), tabWidgetIndex)
 {
+  setObjectName("OnlineCenterSearch");
+
   /* *INDENT-OFF* */
   ui->pushButtonOnlineCenterHelpSearch->setToolTip(
     tr("<p>All set search conditions have to match.</p>"
@@ -50,7 +53,7 @@ OnlineCenterSearch::OnlineCenterSearch(QMainWindow *parent, QTableView *tableVie
   /* *INDENT-ON* */
 
   QStringList facilityType;
-  facilityType << QString()
+  facilityType << QStringLiteral()
                << " > 0"    // No OBSERVER,
                << " = 0"    // OBSERVER = 0,
                << " = 1"    // FLIGHT_INFORMATION = 1,
@@ -133,7 +136,7 @@ void OnlineCenterSearch::saveState()
 
 void OnlineCenterSearch::restoreState()
 {
-  if(OptionData::instance().getFlags() & opts::STARTUP_LOAD_SEARCH)
+  if(OptionData::instance().getFlags().testFlag(opts::STARTUP_LOAD_SEARCH))
   {
     atools::gui::WidgetState widgetState(lnm::SEARCHTAB_ONLINE_CENTER_VIEW_WIDGET);
     widgetState.restore(onlineCenterSearchWidgets);
@@ -164,15 +167,15 @@ QVariant OnlineCenterSearch::modelDataHandler(int colIndex, int rowIndex, const 
       return formatModelData(col, displayRoleValue);
 
     case Qt::ToolTipRole:
-      if(col->getColumnName() == "atis")
+      if(col->getColumnName() == QStringLiteral("atis"))
         return atools::elideTextLinesShort(displayRoleValue.toString(), 40);
 
       break;
 
     case Qt::TextAlignmentRole:
-      if(col->getColumnName() == "frequency")
+      if(col->getColumnName() == QStringLiteral("frequency"))
         return Qt::AlignRight;
-      else if(col->getColumnName() == "facility_type")
+      else if(col->getColumnName() == QStringLiteral("facility_type"))
         return Qt::AlignLeft;
 
       break;
@@ -189,7 +192,7 @@ QString OnlineCenterSearch::formatModelData(const Column *col, const QVariant& d
   if(!displayRoleValue.isNull())
   {
     // Called directly by the model for export functions
-    if(col->getColumnName() == "frequency")
+    if(col->getColumnName() == QStringLiteral("frequency"))
     {
       QStringList freqs;
       const QStringList dispRoles = displayRoleValue.toString().split('&');
@@ -197,17 +200,17 @@ QString OnlineCenterSearch::formatModelData(const Column *col, const QVariant& d
         freqs.append(QLocale().toString(str.toDouble() / 1000., 'f', 3));
       return freqs.join(tr(", "));
     }
-    else if(col->getColumnName() == "visual_range")
+    else if(col->getColumnName() == QStringLiteral("visual_range"))
       return !displayRoleValue.isNull() &&
              displayRoleValue.toFloat() < map::INVALID_ALTITUDE_VALUE &&
              displayRoleValue.toFloat() > 0.f ?
-             Unit::distNm(displayRoleValue.toFloat(), false) : QString();
-    else if(col->getColumnName() == "facility_type")
+             Unit::distNm(displayRoleValue.toFloat(), false) : QStringLiteral();
+    else if(col->getColumnName() == QStringLiteral("facility_type"))
       return atools::fs::online::facilityTypeText(
         static_cast<atools::fs::online::fac::FacilityType>(displayRoleValue.toInt()));
-    else if(col->getColumnName() == "atis")
+    else if(col->getColumnName() == QStringLiteral("atis"))
       return displayRoleValue.toString().simplified();
-    else if(col->getColumnName() == "atis_time" || col->getColumnName() == "connection_time")
+    else if(col->getColumnName() == QStringLiteral("atis_time") || col->getColumnName() == QStringLiteral("connection_time"))
       return QLocale().toString(displayRoleValue.toDateTime(), QLocale::NarrowFormat);
 
     return SearchBaseTable::formatModelData(col, displayRoleValue);
@@ -268,6 +271,13 @@ void OnlineCenterSearch::updatePushButtons()
 {
   QItemSelectionModel *sm = view->selectionModel();
   ui->pushButtonOnlineCenterSearchClearSelection->setEnabled(sm != nullptr && sm->hasSelection());
+}
+
+void OnlineCenterSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_ONLINE_CENTER_VIEW_WIDGET).clear(ui->tableViewOnlineCenterSearch);
+  SearchBaseTable::resetView();
 }
 
 QAction *OnlineCenterSearch::followModeAction()

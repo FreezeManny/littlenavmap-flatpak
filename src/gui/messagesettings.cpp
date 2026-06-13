@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -37,14 +37,14 @@
 // logbook/logdatacontroller.cpp:showQuestionMsgBox(lnm::ACTIONS_SHOW_LOGBOOK_CONVERSION
 // online/onlinedatacontroller.cpp:showQuestionMsgBox(lnm::ACTIONS_SHOW_SSL_WARNING_ONLINE
 // db/databasemanager.cpp:showQuestionMsgBox(lnm::ACTIONS_SHOW_NAVDATA_WARNING
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_MSFS_HAS_NAVIGRAPH
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_MSFS_NO_NAVIGRAPH
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_MSFS_NO_NAVIGRAPH
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_XP_CYCLE_NAV_EQUAL
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_XP_CYCLE_NAV_SMALLER
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_FSX_P3D_OUTDATED
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_CORRECT_FSX_P3D_UPDATED
-// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QString() : lnm::ACTIONS_SHOW_DATABASE_MSFS_NAVIGRAPH_ALL
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_MSFS_HAS_NAVIGRAPH
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_MSFS_NO_NAVIGRAPH
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_MSFS_NO_NAVIGRAPH
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_XP_CYCLE_NAV_EQUAL
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_XP_CYCLE_NAV_SMALLER
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_FSX_P3D_OUTDATED
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_CORRECT_FSX_P3D_UPDATED
+// db/databasemanager.cpp:showQuestionMsgBox(manualCheck ? QStringLiteral() : lnm::ACTIONS_SHOW_DATABASE_MSFS_NAVIGRAPH_ALL
 // db/databasemanager.cpp:showInfoMsgBox(lnm::ACTIONS_SHOW_DATABASE_SIMCONNECT
 // db/databasemanager.cpp:showInfoMsgBox(lnm::ACTIONS_SHOW_DATABASE_BACKGROUND_HINT
 // db/databasemanager.cpp:showQuestionMsgBox(lnm::ACTIONS_SHOW_DATABASE_OLD
@@ -86,6 +86,12 @@ void messages::resetAllMessages()
   // Show all message dialogs again
   settings.setValue(lnm::ACTIONS_SHOW_CRUISE_ZERO_WARNING, true);
   settings.setValue(lnm::ACTIONS_SHOW_DELETE_MARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_MARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_RANGEMARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_DISTANCEMARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_HOLDINGMARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_PATTERNMARKS, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_MSAMARKS, true);
   settings.setValue(lnm::ACTIONS_SHOW_DELETE_TRAIL, true);
   settings.setValue(lnm::ACTIONS_SHOW_DISCONNECT_INFO, true);
   settings.setValue(lnm::ACTIONS_SHOW_INSTALL_DIRS, true);
@@ -112,6 +118,7 @@ void messages::resetAllMessages()
   settings.setValue(lnm::ACTIONS_SHOW_ROUTE_PARKING_WARNING, true);
   settings.setValue(lnm::ACTIONS_SHOW_ROUTE_START_CHANGED, true);
   settings.setValue(lnm::ACTIONS_SHOW_ROUTE_AIRPORT_WARNING, true);
+  settings.setValue(lnm::ACTIONS_SHOW_ROUTE_ZERO_CRUISE_WARNING, true);
   settings.setValue(lnm::ACTIONS_SHOW_ROUTE_VFR_WARNING, true);
 
   settings.setValue(lnm::ACTIONS_SHOW_SSL_FAILED, true);
@@ -127,6 +134,9 @@ void messages::resetAllMessages()
 
   settings.setValue(lnm::ACTIONS_SHOW_INSTALL_XPCONNECT_WARN_XPL, true);
   settings.setValue(lnm::ACTIONS_SHOW_INSTALL_XPCONNECT_INFO, true);
+
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_USERPOINT, true);
+  settings.setValue(lnm::ACTIONS_SHOW_DELETE_LOGBOOKENTRY, true);
 }
 
 void messages::resetEssentialMessages()
@@ -162,4 +172,7 @@ void messages::resetEssentialMessages()
   settings.setValue(lnm::ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_FSXP3D, true);
   settings.setValue(lnm::ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_HINT, true);
   settings.setValue(lnm::ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_HINT_NO_DB, true);
+  settings.setValue(lnm::ACTIONS_SHOW_APPLE_TRANSLOCATION, true);
+  settings.setValue(lnm::ACTIONS_SHOW_OPTIONS_RELOAD_SCENERY_LIBRARY, true);
+  settings.setValue(lnm::ACTIONS_SHOW_CUSTOM_PROCEDURE_DIALOG, true);
 }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "routestring/routestringtypes.h"
 
 #include <QDialog>
+#include <QSyntaxHighlighter>
 #include <QTimer>
 
 class QMenu;
@@ -44,7 +45,7 @@ class RouteController;
 class RouteStringWriter;
 class RouteStringReader;
 class SyntaxHighlighter;
-class TextEditEventFilter;
+class RouteStringTextEditEventFilter;
 
 class RouteStringDialog :
   public QDialog
@@ -171,10 +172,64 @@ private:
   /* Makes first section bold and other (scratchpad) gray */
   SyntaxHighlighter *sytaxHighlighter;
 
-  TextEditEventFilter *eventFilter = nullptr;
+  RouteStringTextEditEventFilter *eventFilter = nullptr;
 
   /* Size as given in UI */
   QSize defaultSize;
+};
+
+// =================================================================================================
+/* Makes first block bold and rest gray to indicate active description text. */
+class SyntaxHighlighter :
+  public QSyntaxHighlighter
+{
+  Q_OBJECT
+
+public:
+  SyntaxHighlighter(QObject *parent);
+
+  virtual ~SyntaxHighlighter() override
+  {
+
+  }
+
+  void styleChanged();
+
+private:
+  virtual void highlightBlock(const QString& text) override;
+
+  QTextCharFormat formatHighlight, formatNormal;
+
+  enum
+  {
+    BEFORE_START = -1, // First line or empty lines before any text
+    IN_HIGHLIGHT_BLOCK = 0, // Currently non-empty lines
+    AFTER_HIGHLIGHT_BLOCK = 1 // After one filled block now coloring gray
+  };
+
+};
+
+// =================================================================================================
+class RouteStringTextEditEventFilter :
+  public QObject
+{
+  Q_OBJECT
+
+public:
+  RouteStringTextEditEventFilter(RouteStringDialog *parent)
+    : QObject(parent), dialog(parent)
+  {
+  }
+
+  virtual ~RouteStringTextEditEventFilter() override
+  {
+
+  }
+
+private:
+  virtual bool eventFilter(QObject *object, QEvent *event) override;
+
+  RouteStringDialog *dialog;
 };
 
 #endif // LITTLENAVMAP_ROUTESTRINGDIALOG_H

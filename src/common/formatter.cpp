@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include "fs/util/fsutil.h"
 #include "geo/calculations.h"
 #include "geo/pos.h"
+#include "options/optiondata.h"
 #include "textpointer.h"
 #include "unit.h"
 #include "util/htmlbuilder.h"
@@ -48,6 +49,23 @@ QString formatMinutesHours(double timeHours)
     minutes = 0;
   }
   return QObject::tr("%L1:%L2").arg(hours).arg(minutes, 2, 10, QChar('0'));
+}
+
+QString formatTimeZoneOffset(int seconds)
+{
+  int minutes = seconds / 60;
+  int hours = seconds / 3600;
+  minutes -= hours * 60;
+  if(minutes == 60)
+  {
+    hours++;
+    minutes = 0;
+  }
+
+  return QObject::tr("%1%L2:%L3").
+         arg(hours < 0 ? QObject::tr("-") : QObject::tr("+")).
+         arg(std::abs(hours), 2, 10, QChar('0')).
+         arg(std::abs(minutes), 2, 10, QChar('0'));
 }
 
 QString formatMinutesHoursLong(double timeHours)
@@ -112,7 +130,7 @@ QString formatElapsed(const QElapsedTimer& timer)
   }
 }
 
-bool checkCoordinates(QString& message, const QString& text, atools::geo::Pos *pos)
+bool checkCoords(QString *message, const QString& text, atools::geo::Pos *pos)
 {
   bool hemisphere = false;
   atools::geo::Pos readPos = atools::fs::util::fromAnyFormat(text, &hemisphere);
@@ -126,32 +144,47 @@ bool checkCoordinates(QString& message, const QString& text, atools::geo::Pos *p
 
   if(readPos.isValidRange())
   {
-    QString coords = Unit::coords(readPos);
-    if(coords.simplified() != text.simplified())
+    if(message != nullptr)
     {
-      if(Unit::getUnitCoords() == opts::COORDS_LATY_LONX || Unit::getUnitCoords() == opts::COORDS_LONX_LATY)
-        message = QObject::tr("Coordinates are valid: %1 (%2)").arg(coords).arg(Unit::coords(readPos, opts::COORDS_DMS));
+      QString coords = Unit::coords(readPos);
+      if(coords.simplified() != text.simplified())
+      {
+        if(Unit::getUnitCoords() == opts::COORDS_LATY_LONX || Unit::getUnitCoords() == opts::COORDS_LONX_LATY)
+          *message = QObject::tr("Coordinates are valid: %1 (%2)").arg(coords).arg(Unit::coords(readPos, opts::COORDS_DMS));
+        else
+          *message = QObject::tr("Coordinates are valid: %1").arg(coords);
+      }
       else
-        message = QObject::tr("Coordinates are valid: %1").arg(coords);
+        // Same as in line edit. No need to show again
+        *message = QObject::tr("Coordinates are valid.");
     }
-    else
-      // Same as in line edit. No need to show again
-      message = QObject::tr("Coordinates are valid.");
+
     return true;
   }
-  else
+  else if(message != nullptr)
     // Show red warning
-    message = atools::util::HtmlBuilder::errorMessage(QObject::tr("Coordinates are not valid."));
+    *message = atools::util::HtmlBuilder::errorMessage(QObject::tr("Coordinates are not valid."));
+
   return false;
+}
+
+bool checkCoordinates(const QString& text, atools::geo::Pos *pos)
+{
+  return checkCoords(nullptr, text, pos);
+}
+
+bool checkCoordinates(QString& message, const QString& text, atools::geo::Pos *pos)
+{
+  return checkCoords(&message, text, pos);
 }
 
 QString yearVariant(QString dateTimeFormat)
 {
-  const static QRegularExpression YEAR_REGEXP("\\byy\\b");
-  if(dateTimeFormat.contains("yyyy"))
-    return dateTimeFormat.replace("yyyy", "yy");
+  const static QRegularExpression YEAR_REGEXP(QStringLiteral("\\byy\\b"));
+  if(dateTimeFormat.contains(QStringLiteral("yyyy")))
+    return dateTimeFormat.replace(QStringLiteral("yyyy"), QStringLiteral("yy"));
   else if(dateTimeFormat.contains(YEAR_REGEXP))
-    return dateTimeFormat.replace("yy", "yyyy");
+    return dateTimeFormat.replace(QStringLiteral("yy"), QStringLiteral("yyyy"));
 
   return dateTimeFormat;
 }
@@ -189,10 +222,10 @@ void initTranslateableTexts()
   const QStringList temp(dateTimeFormats);
   for(const QString& t : temp)
   {
-    if(!t.endsWith("t"))
+    if(!t.endsWith(QStringLiteral("t")))
     {
-      dateTimeFormats.append(t + " t");
-      dateTimeFormats.append(t + "t");
+      dateTimeFormats.append(t + QStringLiteral(" t"));
+      dateTimeFormats.append(t + QStringLiteral("t"));
     }
   }
 #ifdef DEBUG_INFORMATION
@@ -212,7 +245,7 @@ QDateTime readDateTime(QString str)
 
   str = str.simplified();
 
-  for(const QString& format : qAsConst(dateTimeFormats))
+  for(const QString& format : std::as_const(dateTimeFormats))
   {
     retval = locale.toDateTime(str, format);
     if(retval.isValid())
@@ -234,7 +267,7 @@ QString windInformationTailHead(float headWindKts, bool addUnit)
       windPtr += TextPointer::getWindPointerSouth(); // Headwind
     return QObject::tr(" %1").arg(windPtr);
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString windInformationCross(float crossWindKts, bool addUnit)
@@ -305,19 +338,19 @@ QString courseText(float magCourse, float trueCourse, bool magBold, bool magBig,
   // Formatting for magnetic course
   QString style, styleEnd;
   if(magBold)
-    style.append("<b>");
+    style.append(QStringLiteral("<b>"));
   if(magBig)
-    style.append("<big>");
+    style.append(QStringLiteral("<big>"));
 
   if(magBig)
-    styleEnd.append("</big>");
+    styleEnd.append(QStringLiteral("</big>"));
   if(magBold)
-    styleEnd.append("</b>");
+    styleEnd.append(QStringLiteral("</b>"));
 
   if(atools::almostEqual(magCourse, trueCourse, 1.5f))
   {
     if(magStr.isEmpty())
-      return QString();
+      return QStringLiteral();
 
     // Values are close - display only magnetic
     return QObject::tr("%1%2°M%3").arg(style).arg(magStr).arg(styleEnd);
@@ -333,7 +366,7 @@ QString courseText(float magCourse, float trueCourse, bool magBold, bool magBig,
       // Values differ and both are valid - display magnetic and true
       return QObject::tr("%1%2°M%3,%4%5%6°T%7").
              arg(style).arg(magStr).arg(styleEnd).
-             arg(narrow ? QString() : QObject::tr(" ", "Separator for mag/true course text")).
+             arg(narrow ? QStringLiteral() : QObject::tr(" ", "Separator for mag/true course text")).
              arg(small).arg(trueStr).arg(smallEnd);
     }
     else if(!magStr.isEmpty())
@@ -343,7 +376,7 @@ QString courseText(float magCourse, float trueCourse, bool magBold, bool magBig,
       // Only true value is valid
       return QObject::tr("%1%2°T%3").arg(style).arg(trueStr).arg(styleEnd);
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString courseTextNarrow(float magCourse, float trueCourse)
@@ -375,7 +408,7 @@ QString courseTextNarrow(float magCourse, float trueCourse)
 QString formatDateTimeSeconds(const QDateTime& datetime, bool overrideLocale)
 {
   QString dateTimeStr = overrideLocale ?
-                        "MM/dd/yy h:mm:ss AP" :
+                        QStringLiteral("MM/dd/yy h:mm:ss AP") :
                         QObject::tr("dd.MM.yy hh:mm:ss", "Translate to short date and time format in your language with seconds."
                                                          "See https://doc.qt.io/qt-5/qtime.html#toString and "
                                                          "https://doc.qt.io/qt-5/qdate.html#toString-2 "

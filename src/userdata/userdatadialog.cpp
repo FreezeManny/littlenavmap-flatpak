@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -46,7 +46,8 @@ const QLatin1String UserdataDialog::DEFAULT_TYPE("Bookmark");
 UserdataDialog::UserdataDialog(QWidget *parent, ud::UserdataDialogMode mode, UserdataIcons *userdataIcons) :
   QDialog(parent), editMode(mode), ui(new Ui::UserdataDialog), icons(userdataIcons)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -128,7 +129,7 @@ UserdataDialog::UserdataDialog(QWidget *parent, ud::UserdataDialogMode mode, Use
   connect(ui->buttonBoxUserdata->button(QDialogButtonBox::Reset), &QPushButton::clicked, this, &UserdataDialog::resetClicked);
   connect(ui->buttonBoxUserdata, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-  atools::gui::WidgetState(lnm::TRAFFIC_PATTERN_DIALOG).restore(this);
+  atools::gui::WidgetState(lnm::PATTERN_MARKER_DIALOG).restore(this);
 
   updateWidgets();
 }
@@ -138,8 +139,8 @@ UserdataDialog::~UserdataDialog()
   atools::gui::WidgetState(lnm::USERDATA_EDIT_ADD_DIALOG).save(this);
 
   delete units;
-  delete ui;
   delete record;
+  delete ui;
 }
 
 void UserdataDialog::coordsEdited(const QString& text)
@@ -301,7 +302,7 @@ void UserdataDialog::recordToDialog()
 
   if(!record->isNull("lonx") && !record->isNull("laty"))
     ui->lineEditUserdataLatLon->setText(Unit::coords(atools::geo::Pos(record->valueFloat("lonx"), record->valueFloat("laty"))));
-  coordsEdited(QString());
+  coordsEdited(QStringLiteral());
   updateWidgets();
 }
 
@@ -371,8 +372,9 @@ void UserdataDialog::fillTypeComboBox(const QString& type)
   // Fill default types and icons
   ui->comboBoxUserdataType->clear();
   int size = ui->comboBoxUserdataType->iconSize().height();
-  for(const QString& t : icons->getAllTypes())
-    ui->comboBoxUserdataType->addItem(QIcon(*icons->getIconPixmap(t, size)), t);
+
+  for(auto it = icons->getAllTypesMap().constBegin(); it != icons->getAllTypesMap().constEnd(); ++it)
+    ui->comboBoxUserdataType->addItem(QIcon(*icons->getIconPixmap(it.key(), size)), it.key());
 
   int index = ui->comboBoxUserdataType->findText(type);
   if(index != -1)

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #include "common/unit.h"
 #include "geo/calculations.h"
 #include "fs/perf/aircraftperf.h"
+#include "options/optiondata.h"
 
 FuelTool::FuelTool(const atools::fs::perf::AircraftPerf *aircraftPerf)
   : jetfuel(aircraftPerf->isJetFuel()), fuelAsVolume(aircraftPerf->useFuelAsVolume())
@@ -82,7 +83,7 @@ QString FuelTool::fuelWeightVol(opts::UnitFuelAndWeight unitFuelAndWeight, float
                // liter
                arg(gallonToLiter(fromLbsToGal(jetfuel, valueLbsGal)), 0, 'f', 0).arg(Unit::getSuffixFuelVolLiter());
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString FuelTool::weightVolLocal(float valueLbsGal) const
@@ -105,7 +106,7 @@ QString FuelTool::weightVolOther(float valueLbsGal) const
         return fuelWeightVol(opts::FUEL_WEIGHT_GAL_LBS, valueLbsGal);
     }
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString FuelTool::flowWeightVolLocal(float valueLbsGal) const

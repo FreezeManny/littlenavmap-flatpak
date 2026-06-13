@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "search/abstractsearch.h"
 
 #include "common/mapflags.h"
+#include "geo/pos.h"
 
 class QTableView;
 class SqlController;
@@ -33,7 +34,7 @@ class QTimer;
 class CsvExporter;
 class Column;
 class SearchViewEventFilter;
-class SearchWidgetEventFilter;
+class SearchWidgetKeyEventFilter;
 class QLineEdit;
 class QAction;
 class QComboBox;
@@ -49,12 +50,13 @@ class SqlRecord;
 }
 
 namespace geo {
-class Pos;
 class Rect;
 }
 }
 
 namespace map {
+struct MapHelipad;
+struct MapParking;
 struct MapAirport;
 struct MapAirportMsa;
 struct MapResult;
@@ -71,7 +73,7 @@ class SearchBaseTable :
 
 public:
   /* Class will take ownership of columnList */
-  SearchBaseTable(QMainWindow *parent, QTableView *tableView, ColumnList *columnList,
+  SearchBaseTable(MainWindow *parent, QTableView *tableView, ColumnList *columnList,
                   si::TabSearchId tabWidgetIndex);
   virtual ~SearchBaseTable() override;
 
@@ -94,7 +96,7 @@ public:
   void showInSearch(const atools::sql::SqlRecord& record, bool ignoreQueryBuilder = false);
 
   /* Options dialog has changed some options */
-  virtual void optionsChanged() override;
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) override;
 
   /* GUI style has changed */
   virtual void styleChanged() override;
@@ -131,13 +133,15 @@ public:
   int getSelectedRowCount() const;
 
   /* Get ids of all selected objects */
-  QVector<int> getSelectedIds() const;
+  QList<int> getSelectedIds() const;
 
   /* Get selected rows in order from bottom to top */
-  QVector<int> getSelectedRows() const;
+  QList<int> getSelectedRows() const;
 
   /* Default handler */
-  QVariant modelDataHandler(int colIndex, int rowIndex, const Column *col, const QVariant&,
+  /* Callback for the controller. Will be called for each table cell and should return a formatted value */
+  QVariant modelDataHandler(int colIndex, int rowIndex, const Column *col, /* Formats the QVariant to a QString depending on column name */
+                            const QVariant&,
                             const QVariant& displayRoleValue, Qt::ItemDataRole role) const;
   QString formatModelData(const Column *, const QVariant& displayRoleValue) const;
 
@@ -165,14 +169,14 @@ signals:
 
   /* Show approaches in context menu selected */
   void showProcedures(const map::MapAirport& airport, bool departureFilter, bool arrivalFilter);
-  void showCustomApproach(const map::MapAirport& airport, const QString& suffix);
-  void showCustomDeparture(const map::MapAirport& airport, const QString& suffix);
+  void showCustomApproach(const map::MapAirport& airport);
+  void showCustomDeparture(const map::MapAirport& airport, const map::MapParking& parking, const map::MapHelipad& helipad);
 
   /* Set airport as flight plan departure (from context menu) */
-  void routeSetDeparture(const map::MapAirport& airport);
+  void routeSetDeparture(const map::MapAirport& airport, bool undo = true);
 
   /* Set airport as flight plan destination (from context menu) */
-  void routeSetDestination(const map::MapAirport& airport);
+  void routeSetDestination(const map::MapAirport& airport, bool undo = true);
 
   /* Add an alternate airport */
   void routeAddAlternate(const map::MapAirport& airport);
@@ -190,10 +194,25 @@ signals:
 
   void addUserpointFromMap(const map::MapResult& result, const atools::geo::Pos& pos, bool airportAddon);
 
+  /* Add general range ring or navaid ranges. From context menu or addNavRangeMark() */
+  void addRangeMark(const atools::geo::Pos& pos, const map::MapResult& result, bool showDialog);
+
+  /* Opens a dialog for configuration of a traffic pattern display object */
+  void addPatternMark(const map::MapAirport& airport);
+
+  /* Opens a dialog for configuration and adds a hold */
+  void addHold(const map::MapResult& result, const atools::geo::Pos& position);
+
+  /* Add radio navaid range ring. Falls back to normal range rings if range is 0. */
+  void addNavRangeMark(const map::MapResult& result, const atools::geo::Pos& position);
+
 protected:
   /* Update the hamburger menu button. Add * for change and check/uncheck actions */
   virtual void updateButtonMenu() = 0;
   virtual void updatePushButtons() = 0;
+
+  /* Reset view sort order, column width and column order back to default values */
+  virtual void resetView() override;
 
   /* Return the action that defines follow mode */
   virtual QAction *followModeAction() = 0;
@@ -235,23 +254,49 @@ private:
   virtual void tabDeactivated() override;
 
   void tableSelectionChangedInternal(bool noFollow);
-  void resetView();
+
+  /* Search criteria editing has started. Start or restart the timer for a
+   * delayed update if distance search is used */
   void editStartTimer();
+
+  /* Double click into table view */
   void doubleClick(const QModelIndex& index);
+
+  /* Slot for table selection changed */
   void tableSelectionChanged(const QItemSelection&, const QItemSelection&);
+
+  /* Delayed update timeout. Update result if distance search is active */
+  /* Connect selection model again after a SQL model reset */
   void reconnectSelectionModel();
   void getNavTypeAndId(int row, map::MapTypes& navType, int& id);
-  void getNavTypeAndId(int row, map::MapTypes& navType, map::MapAirspaceSources& airspaceSource, int& id);
+  void getNavTypeAndId(int row, /* Loads all rows into the table view */
+                       map::MapTypes& navType, map::MapAirspaceSources& airspaceSource, int& id);
   void editTimeout();
 
   void loadAllRowsIntoView();
+
+  /* Copy the selected rows of the table view as CSV into clipboard */
   void tableCopyClipboard();
   void showInformationTriggered();
+
+  /* Question dialog for CSV export features */
+  bool exportSelectedQuestion(bool& selected, bool& append, bool& header, const QString& feature);
+
+  /* Export selection or all results from table view to CSV */
+  void tableExportCsv();
+
+  /* Triggered by show approaches action in context menu. Populates map search result and emits show information */
   void showApproachesTriggered();
   void showApproachesCustomTriggered();
   void showDeparturesCustomTriggered();
+
+  /* Show on map action in context menu */
   void showOnMapTriggered();
-  void contextMenu(const QPoint& pos);
+
+  /* Context menu in table view selected */
+  void contextMenu(const QPoint& point);
+
+  /* Update highlights if dock is hidden or shown (does not change for dock tab stacks) */
   void dockVisibilityChanged(bool);
   void distanceSearchStateChanged(int);
   void updateDistanceSearch();
@@ -259,7 +304,6 @@ private:
   void updateFromMinSpinBox(int value, const Column *col);
   void updateFromMaxSpinBox(int value, const Column *col);
   void showRow(int row, bool showInfo);
-  void fontChanged();
   void showApproaches(bool customApproach, bool customDeparture);
   void fetchedMore();
 
@@ -274,15 +318,11 @@ private:
 
   QString joinQuery(const QStringList& texts, bool concatAnd);
 
-  /* CSV export to clipboard */
-  CsvExporter *csvExporter = nullptr;
-
   /* Used to delay search when using the time intensive distance search */
   QTimer *updateTimer;
 
   SearchViewEventFilter *viewEventFilter = nullptr;
-  SearchWidgetEventFilter *widgetEventFilter = nullptr;
-
+  SearchWidgetKeyEventFilter *widgetKeyEventFilter = nullptr;
 };
 
 #endif // LITTLENAVMAP_SEARCHBASE_H

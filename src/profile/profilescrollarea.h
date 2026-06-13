@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -123,7 +123,7 @@ public:
   }
 
   /* Show or hide tooltip. Windows will be positioned on the left or right side depending on global mouse position */
-  void showTooltip(const QPoint& globalPos, const QString& text);
+  void showTooltip(const QPointF& globalPos, const QString& text);
   void hideTooltip();
   bool isTooltipVisible() const;
 
@@ -157,7 +157,8 @@ private:
   /* Event filter on scroll area and viewport -passes events to methods below */
   virtual bool eventFilter(QObject *object, QEvent *event) override;
 
-  /* All event methods return true if event should not be propagated */
+  /* All event methods return true if event should not be propagated.
+   * All are called from eventFilter() */
   bool wheelEvent(QWheelEvent *event);
   bool mousePressEvent(QMouseEvent *event);
   bool mouseReleaseEvent(QMouseEvent *event);

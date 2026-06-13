@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,8 @@
 
 #include "route/routelabelflags.h"
 
+#include "options/optionchangeflags.h"
+
 #include <QObject>
 
 class QString;
@@ -31,6 +33,11 @@ struct MapRunwayEnd;
 struct MapRunway;
 }
 namespace atools {
+
+namespace gui {
+class WidgetZoomHandler;
+class LinkTooltipHandler;
+}
 namespace util {
 class HtmlBuilder;
 }
@@ -46,6 +53,7 @@ class RouteLabel
 
 public:
   explicit RouteLabel(QWidget *parent, const Route& routeParam);
+  virtual ~RouteLabel() override;
 
   /* Update the header label according to current configuration options */
   void updateHeaderLabel();
@@ -67,8 +75,9 @@ public:
   void restoreState();
 
   void styleChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
-  void optionsChanged();
+  void fontChanged(const QFont&);
 
   /* Set and read display configuration */
   void setFlag(routelabel::LabelFlag flag, bool on = true)
@@ -87,7 +96,7 @@ signals:
 
 private:
   void buildHeaderAirports(atools::util::HtmlBuilder& html, bool widget);
-  void buildHeaderDistTime(atools::util::HtmlBuilder& html, bool widget);
+  void buildHeaderDistTime(atools::util::HtmlBuilder& html, bool);
 
   void buildHeaderRunwayTakeoff(atools::util::HtmlBuilder& html, const map::MapRunway& runway, const map::MapRunwayEnd& runwayEnd);
   void buildHeaderRunwayTakeoffWind(atools::util::HtmlBuilder& html, const map::MapRunwayEnd& runwayEnd);
@@ -104,13 +113,21 @@ private:
   void buildErrorLabel(QString& toolTipText, QStringList errors, const QString& header);
 
   void updateAll();
-  void updateFont();
 
   void fetchTakeoffRunway(map::MapRunway& runway, map::MapRunwayEnd& runwayEnd);
   void fetchLandingRunway(map::MapRunway& runway, map::MapRunwayEnd& runwayEnd);
 
+  /* Callback to show tooltips for airport links */
+  QString tooltipFunction(const QString& key);
+
   const Route& route;
   routelabel::LabelFlags flags = routelabel::LABEL_ALL;
+
+  /* Used to make the table rows smaller and also used to adjust font size */
+  atools::gui::WidgetZoomHandler *zoomHandler = nullptr;
+
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
 };
 
 #endif // LNM_ROUTELABEL_H

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 #include "common/constants.h"
 #include "gui/messagesettings.h"
-#include "options/optiondata.h"
+#include "options/optionflags.h"
 #include "settings/settings.h"
 #include "util/version.h"
 #include "io/fileroller.h"
@@ -168,7 +168,7 @@ void checkAndMigrateSettings()
 
         // and vatsim URL,
         settings.setValue("OptionsDialog/Widget_lineEditOptionsWeatherVatsimUrl",
-                          QString("https://metar.vatsim.net/metar.php?id=ALL"));
+                          QStringLiteral("https://metar.vatsim.net/metar.php?id=ALL"));
 
         // clear allow undock map?
 
@@ -314,7 +314,7 @@ void checkAndMigrateSettings()
         QSettings registrySettings("HKEY_CURRENT_USER\\SOFTWARE\\ABarthel", QSettings::NativeFormat);
         if(registrySettings.contains("Little Navmap/cleanupInterval"))
         {
-          registrySettings.remove(QString());
+          registrySettings.remove(QStringLiteral());
           registrySettings.clear();
           registrySettings.sync();
         }
@@ -329,22 +329,35 @@ void checkAndMigrateSettings()
 
       if(optionsVersion <= Version("3.0.11"))
       {
-        removeAndLog("Widget_checkBoxDisplayOnlineApproachRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineAreaRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineClearanceRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineDepartureRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineFirRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineGroundRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineObserverRange");
-        removeAndLog("Widget_checkBoxDisplayOnlineTowerRange");
-        removeAndLog("Widget_spinBoxDisplayOnlineApproach");
-        removeAndLog("Widget_spinBoxDisplayOnlineArea");
-        removeAndLog("Widget_spinBoxDisplayOnlineClearance");
-        removeAndLog("Widget_spinBoxDisplayOnlineDeparture");
-        removeAndLog("Widget_spinBoxDisplayOnlineFir");
-        removeAndLog("Widget_spinBoxDisplayOnlineGround");
-        removeAndLog("Widget_spinBoxDisplayOnlineObserver");
-        removeAndLog("Widget_spinBoxDisplayOnlineTower");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineApproachRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineAreaRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineClearanceRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineDepartureRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineFirRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineGroundRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineObserverRange");
+        removeAndLog("OptionsDialog/Widget_checkBoxDisplayOnlineTowerRange");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineApproach");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineArea");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineClearance");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineDeparture");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineFir");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineGround");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineObserver");
+        removeAndLog("OptionsDialog/Widget_spinBoxDisplayOnlineTower");
+      }
+
+      if(optionsVersion <= Version("3.0.17"))
+      {
+        removeAndLog("AirspaceController/Widget_actionTrackSourcesNat");
+        removeAndLog("AirspaceController/Widget_actionTrackSourcesPacots");
+        removeAndLog("AirspaceController/Widget_actionTrackSourcesAusots");
+        removeAndLog("Track/AusotsUrl");
+        removeAndLog("Track/AusotsUrlParam");
+        removeAndLog("Track/NatUrl");
+        removeAndLog("Track/NatUrlParam");
+        removeAndLog("Track/PacotsUrl");
+        removeAndLog("Track/PacotsUrlParam");
       }
 
       qInfo() << Q_FUNC_INFO << "Clearing all essential messages since version differs";
@@ -362,17 +375,6 @@ void checkAndMigrateSettings()
   {
     qWarning() << Q_FUNC_INFO << "No version information found in settings file. Setting to" << programVersion;
     settings.setValue(lnm::OPTIONS_VERSION, programVersion.getVersionString());
-    Settings::syncSettings();
-  }
-
-  // Always correct map font if missing
-  if(!settings.contains(lnm::OPTIONS_DIALOG_MAP_FONT))
-  {
-    qInfo() << Q_FUNC_INFO << "Adjusting map font";
-    // Make map font a bold copy of system font if no setting present
-    QFont font(QGuiApplication::font());
-    font.setBold(true);
-    settings.setValueVar(lnm::OPTIONS_DIALOG_MAP_FONT, font);
     Settings::syncSettings();
   }
 }

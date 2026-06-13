@@ -102,15 +102,15 @@ struct MapSpeedRestriction
  * Hashable and compareable */
 struct MapProcedureRef
 {
-  MapProcedureRef(int airportIdParam, int runwayEndIdParam, int procIdParam, int transIdParam, int legIdParam,
-                  proc::MapProcedureTypes type)
-    : airportId(airportIdParam), runwayEndId(runwayEndIdParam), procedureId(procIdParam), transitionId(transIdParam), legId(legIdParam),
-      mapType(type)
+  MapProcedureRef()
+    : airportId(-1), runwayEndId(-1), procedureId(-1), transitionId(-1), legId(-1), mapType(PROCEDURE_NONE)
   {
   }
 
-  MapProcedureRef()
-    : airportId(-1), runwayEndId(-1), procedureId(-1), transitionId(-1), legId(-1), mapType(PROCEDURE_NONE)
+  explicit MapProcedureRef(int airportIdParam, int runwayEndIdParam, int procIdParam, int transIdParam, int legIdParam,
+                           proc::MapProcedureTypes type)
+    : airportId(airportIdParam), runwayEndId(runwayEndIdParam), procedureId(procIdParam), transitionId(transIdParam), legId(legIdParam),
+      mapType(type)
   {
   }
 
@@ -169,11 +169,9 @@ struct MapProcedureRef
 
 QDebug operator<<(QDebug out, const proc::MapProcedureRef& ref);
 
-inline uint qHash(const proc::MapProcedureRef& ref)
+inline uint qHash(const proc::MapProcedureRef& ref, size_t seed)
 {
-  return static_cast<unsigned int>(ref.airportId) ^ static_cast<unsigned int>(ref.procedureId) ^
-         static_cast<unsigned int>(ref.runwayEndId) ^
-         static_cast<unsigned int>(ref.transitionId) ^ static_cast<unsigned int>(ref.legId) ^ qHash(ref.mapType);
+  return qHashMulti(seed, ref.airportId, ref.procedureId, ref.runwayEndId, ref.transitionId, ref.legId, ref.mapType);
 }
 
 // =====================================================================
@@ -280,7 +278,7 @@ struct MapProcedureLeg
 
   bool isAnyDeparture() const
   {
-    return mapType & proc::PROCEDURE_DEPARTURE;
+    return mapType & proc::PROCEDURE_SID_ALL;
   }
 
   bool isAnyTransition() const
@@ -412,11 +410,11 @@ QDebug operator<<(QDebug out, const proc::MapProcedureLeg& leg);
  * SID contains all legs in approach and transition fields. Flying order in procedureLegs and then transitionLegs.
  * STAR contains all legs in approach and transition fields. Flying order in transitionLegs and then procedureLegs */
 
-typedef QVector<MapProcedureLeg> MapProcedureLegVector;
+typedef QList<MapProcedureLeg> MapProcedureLegList;
 
 struct MapProcedureLegs
 {
-  MapProcedureLegVector transitionLegs, procedureLegs;
+  MapProcedureLegList transitionLegs, procedureLegs;
 
   /* Reference with all database ids. For all navdata except custom procedures. */
   MapProcedureRef ref;
@@ -524,13 +522,13 @@ struct MapProcedureLegs
 
   static bool hasFrequency(const QString& approachType)
   {
-    return approachType == "ILS" || approachType == "LOC" || approachType == "LOCB" || approachType == "LDA" ||
-           approachType == "IGS" || approachType == "SDF";
+    return approachType == QLatin1String("ILS") || approachType == QLatin1String("LOC") || approachType == QLatin1String("LOCB") ||
+           approachType == QLatin1String("LDA") || approachType == QLatin1String("IGS") || approachType == QLatin1String("SDF");
   }
 
   static bool hasChannel(const QString& approachType)
   {
-    return approachType == "GNSS" || approachType == "GLS";
+    return approachType == QLatin1String("GNSS") || approachType == QLatin1String("GLS");
   }
 
   bool isAnyCustom() const
@@ -550,22 +548,22 @@ struct MapProcedureLegs
 
   bool isRnavGps() const
   {
-    return type == "RNAV" || type == "GPS";
+    return type == QLatin1String("RNAV") || type == QLatin1String("GPS");
   }
 
   bool isPrecision() const
   {
-    return type == "ILS" || type == "GNSS" /* GLS */;
+    return type == QLatin1String("ILS") || type == QLatin1String("GNSS") /* GLS */;
   }
 
   bool isGls() const
   {
-    return type == "GNSS" /* GLS */;
+    return type == QLatin1String("GNSS") /* GLS */;
   }
 
   bool isIls() const
   {
-    return type == "ILS";
+    return type == QLatin1String("ILS");
   }
 
   bool isNonPrecision() const
@@ -675,7 +673,7 @@ private:
 
   bool isDeparture() const
   {
-    return mapType & proc::PROCEDURE_DEPARTURE;
+    return mapType & proc::PROCEDURE_SID_ALL;
   }
 
 };
@@ -756,7 +754,7 @@ QString speedRestrictionText(const proc::MapSpeedRestriction& speedRestriction);
 QString speedRestrictionTextShort(const proc::MapSpeedRestriction& speedRestriction);
 
 /* VOR radial text like "R090" */
-QString radialText(float radial);
+QString radialText(float radial, int precision = 0);
 
 /* Determine various route and procedure related states for the given map object.
  * Queries are omitted if the respective parameters are null */
@@ -769,16 +767,16 @@ void procedureFlags(const Route& route, const map::MapBase *base, bool *departur
  * information if menu items should be disabled. disable is set to true if needed but left alone otherwise.
  * Returns suffix string for menu items. */
 QString  procedureTextSuffixDepartDest(const Route& route, const map::MapAirport& airport, bool *disable = nullptr);
-QString  procedureTextSuffixAlternate(const Route& route, const map::MapAirport& airport, bool *disable = nullptr);
+void procedureAlternateFlags(const Route& route, const map::MapAirport& airport, bool& disable);
 QString  procedureTextSuffixDirectTo(const Route& route, int legIndex, const map::MapAirport *airport, bool *disable = nullptr);
 
 QString aircraftCategoryText(const QString& cat);
 
 } // namespace types
 
-Q_DECLARE_TYPEINFO(proc::MapProcedureRef, Q_PRIMITIVE_TYPE);
-Q_DECLARE_TYPEINFO(proc::MapProcedureLeg, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(proc::MapAltRestriction, Q_PRIMITIVE_TYPE);
-Q_DECLARE_TYPEINFO(proc::MapProcedureLegs, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(proc::MapProcedureRef, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(proc::MapProcedureLeg, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(proc::MapAltRestriction, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(proc::MapProcedureLegs, Q_RELOCATABLE_TYPE);
 
 #endif // LITTLENAVMAP_PROCTYPES_H

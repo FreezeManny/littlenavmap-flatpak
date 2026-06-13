@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 #include "ui_runwayselectiondialog.h"
 #include "common/constants.h"
-#include "gui/runwayselection.h"
+#include "gui/runwaytable.h"
 #include "gui/helphandler.h"
 #include "gui/widgetstate.h"
 
@@ -30,7 +30,8 @@ RunwaySelectionDialog::RunwaySelectionDialog(QWidget *parent, const map::MapAirp
                                              const QString& header, bool navdata, int preselectRunwayEndNav)
   : QDialog(parent), ui(new Ui::RunwaySelectionDialog)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -39,13 +40,13 @@ RunwaySelectionDialog::RunwaySelectionDialog(QWidget *parent, const map::MapAirp
   ui->labelRunwaySelectionHeader->setText(header);
 
   // Create runway table handler
-  runwaySelection = new RunwaySelection(parent, mapAirport, ui->tableWidgetRunwaySelection, navdata);
-  runwaySelection->setAirportLabel(ui->labelRunwaySelectionAirport);
-  runwaySelection->setRunwayNameFilter(runwayNameFilter);
-  runwaySelection->setPreSelectedRunwayEnd(preselectRunwayEndNav);
+  runwayTable = new RunwayTable(parent, mapAirport, ui->tableWidgetRunwaySelection, navdata, false /* addAirportParam */);
+  runwayTable->setAirportLabel(ui->labelRunwaySelectionAirport);
+  runwayTable->setRunwayNameFilter(runwayNameFilter);
+  runwayTable->setPreSelectedRunwayEnd(preselectRunwayEndNav);
 
-  connect(runwaySelection, &RunwaySelection::doubleClicked, this, &RunwaySelectionDialog::doubleClicked);
-  connect(runwaySelection, &RunwaySelection::itemSelectionChanged, this, &RunwaySelectionDialog::updateWidgets);
+  connect(runwayTable, &RunwayTable::doubleClicked, this, &RunwaySelectionDialog::doubleClicked);
+  connect(runwayTable, &RunwayTable::itemSelectionChanged, this, &RunwaySelectionDialog::updateWidgets);
   connect(ui->buttonBoxRunwaySelection, &QDialogButtonBox::clicked, this, &RunwaySelectionDialog::buttonBoxClicked);
 
   restoreState();
@@ -57,7 +58,7 @@ RunwaySelectionDialog::~RunwaySelectionDialog()
 {
   atools::gui::WidgetState(lnm::RUNWAY_SELECTION_DIALOG).save(this);
 
-  delete runwaySelection;
+  delete runwayTable;
   delete ui;
 }
 
@@ -69,11 +70,11 @@ void RunwaySelectionDialog::doubleClicked()
 
 void RunwaySelectionDialog::restoreState()
 {
-  atools::gui::WidgetState widgetState(lnm::RUNWAY_SELECTION_DIALOG, false);
+  atools::gui::WidgetState widgetState(lnm::RUNWAY_SELECTION_DIALOG);
   // Angle not saved on purpose
   widgetState.restore(this);
 
-  runwaySelection->restoreState();
+  runwayTable->init();
   updateWidgets();
 
   ui->tableWidgetRunwaySelection->setFocus();
@@ -81,13 +82,13 @@ void RunwaySelectionDialog::restoreState()
 
 void RunwaySelectionDialog::saveState() const
 {
-  atools::gui::WidgetState widgetState(lnm::RUNWAY_SELECTION_DIALOG, false);
+  atools::gui::WidgetState widgetState(lnm::RUNWAY_SELECTION_DIALOG);
   widgetState.save(this);
 }
 
 QString RunwaySelectionDialog::getSelectedName() const
 {
-  return runwaySelection->getCurrentSelectedName();
+  return runwayTable->getCurrentSelectedName();
 }
 
 /* A button box button was clicked */
@@ -106,5 +107,5 @@ void RunwaySelectionDialog::buttonBoxClicked(QAbstractButton *button)
 
 void RunwaySelectionDialog::updateWidgets()
 {
-  ui->buttonBoxRunwaySelection->button(QDialogButtonBox::Ok)->setEnabled(runwaySelection->hasRunways());
+  ui->buttonBoxRunwaySelection->button(QDialogButtonBox::Ok)->setEnabled(runwayTable->hasRunways());
 }

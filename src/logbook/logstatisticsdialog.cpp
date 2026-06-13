@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,21 +16,20 @@
 *****************************************************************************/
 
 #include "logbook/logstatisticsdialog.h"
-#include "gui/tools.h"
-#include "ui_logstatisticsdialog.h"
 
 #include "app/navapp.h"
 #include "common/constants.h"
 #include "common/formatter.h"
 #include "common/unit.h"
-#include "export/csvexporter.h"
 #include "geo/calculations.h"
 #include "gui/helphandler.h"
-#include "gui/itemviewzoomhandler.h"
+#include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
+#include "gui/widgetzoomhandler.h"
 #include "logdatacontroller.h"
 #include "sql/sqldatabase.h"
+#include "ui_logstatisticsdialog.h"
+#include "util/csvexporter.h"
 #include "util/htmlbuilder.h"
 
 #include <QSqlError>
@@ -45,7 +44,7 @@
 class Query
 {
 public:
-  Query(const QString& labelParam, const QStringList& headerParam, const QVector<Qt::Alignment>& alignParam,
+  Query(const QString& labelParam, const QStringList& headerParam, const QList<Qt::Alignment>& alignParam,
         const QStringList& colParam, int sortColumnParam, Qt::SortOrder sortCrderParam, const QString& queryParam)
     : label(labelParam), query(queryParam), cols(colParam), header(headerParam), align(alignParam),
     defaultSortColumn(sortColumnParam), defaultSortCrder(sortCrderParam)
@@ -57,25 +56,13 @@ public:
 
   QString label, /* Combo box label */ query; /* SQL query */
   QStringList cols, header; /* SQL columns and Result table headers - must be equal to query columns */
-  QVector<Qt::Alignment> align; /* Column alignment - must be equal to query columns */
+  QList<Qt::Alignment> align; /* Column alignment - must be equal to query columns */
 
   int defaultSortColumn; /* Index into list cols */
   Qt::SortOrder defaultSortCrder;
 };
 
 // ============================================================================================
-
-/* Delegate to change table column data alignment */
-class LogStatsDelegate
-  : public QStyledItemDelegate
-{
-public:
-  QVector<Qt::Alignment> align;
-
-private:
-  virtual void paint(QPainter *painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
-
-};
 
 void LogStatsDelegate::paint(QPainter *painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
@@ -88,77 +75,57 @@ void LogStatsDelegate::paint(QPainter *painter, const QStyleOptionViewItem& opti
 
 // ============================================================================================
 
-/* Overrides data method for local sensitive number formatting and sorting by SQL query */
-class LogStatsSqlModel :
-  public QSqlQueryModel
+QString LogStatsSqlModel::buildQuery()
 {
-public:
-  LogStatsSqlModel(QObject *parent, const QSqlDatabase *db)
-    : QSqlQueryModel(parent), database(db)
+  // Build query with current ordering, unit placeholders and conversion factor
+  QString str = query->query;
+  if(str.contains("%1"))
+    str = str.arg(nmToUnitFactor);
+  return str % " order by " % query->cols.at(sortColumn) %
+         (sortOrder == Qt::DescendingOrder ? " desc" : " asc");
+}
+
+void LogStatsSqlModel::sort(int column, Qt::SortOrder order)
+{
+  if(query != nullptr)
   {
-
-  }
-
-  void setLogStatQuery(const Query *queryParam)
-  {
-    if(queryParam != query)
-    {
-      // Update all to defaults if different
-      query = queryParam;
-      sortColumn = query->defaultSortColumn;
-      sortOrder = query->defaultSortCrder;
-    }
-
-    // Calculate the conversion factor for distances which will be set into the SQL query
-    nmToUnitFactor = 1.f;
-    switch(Unit::getUnitDist())
-    {
-      case opts::DIST_NM:
-        nmToUnitFactor = 1.f;
-        break;
-
-      case opts::DIST_KM:
-        nmToUnitFactor = atools::geo::nmToKm(1.f);
-        break;
-
-      case opts::DIST_MILES:
-        nmToUnitFactor = atools::geo::nmToMi(1.f);
-        break;
-    }
-
+    // Reset with new non default sort order and update query
+    sortColumn = column;
+    sortOrder = order;
     setQuery(buildQuery(), *database);
   }
+}
 
-private:
-  virtual QVariant data(const QModelIndex& index, int role) const override;
-
-  virtual void sort(int column, Qt::SortOrder order) override
+void LogStatsSqlModel::setLogStatQuery(const Query *queryParam)
+{
+  if(queryParam != query)
   {
-    if(query != nullptr)
-    {
-      // Reset with new non default sort order and update query
-      sortColumn = column;
-      sortOrder = order;
-      setQuery(buildQuery(), *database);
-    }
+    // Update all to defaults if different
+    query = queryParam;
+    sortColumn = query->defaultSortColumn;
+    sortOrder = query->defaultSortCrder;
   }
 
-  QString buildQuery()
+  // Calculate the conversion factor for distances which will be set into the
+  // SQL query
+  nmToUnitFactor = 1.f;
+  switch(Unit::getUnitDist())
   {
-    // Build query with current ordering, unit placeholders and conversion factor
-    QString str = query->query;
-    if(str.contains("%1"))
-      str = str.arg(nmToUnitFactor);
-    return str % " order by " % query->cols.at(sortColumn) % (sortOrder == Qt::DescendingOrder ? " desc" : " asc");
+    case opts::DIST_NM:
+      nmToUnitFactor = 1.f;
+      break;
+
+    case opts::DIST_KM:
+      nmToUnitFactor = atools::geo::nmToKm(1.f);
+      break;
+
+    case opts::DIST_MILES:
+      nmToUnitFactor = atools::geo::nmToMi(1.f);
+      break;
   }
 
-  QLocale locale;
-  float nmToUnitFactor = 1.f;
-  const QSqlDatabase *database = nullptr;
-  const Query *query = nullptr;
-  int sortColumn = 0;
-  Qt::SortOrder sortOrder = Qt::DescendingOrder;
-};
+  setQuery(buildQuery(), *database);
+}
 
 QVariant LogStatsSqlModel::data(const QModelIndex& index, int role) const
 {
@@ -166,19 +133,19 @@ QVariant LogStatsSqlModel::data(const QModelIndex& index, int role) const
   {
     // Apply locale formatting for numeric values
     QVariant dataValue = QSqlQueryModel::data(index, Qt::DisplayRole);
-    QVariant::Type type = dataValue.type();
+    QMetaType type = dataValue.metaType();
 
-    if(type == QVariant::Int)
+    if(type == QMetaType::fromType<int>())
       return locale.toString(dataValue.toInt());
-    else if(type == QVariant::UInt)
+    else if(type == QMetaType::fromType<unsigned int>())
       return locale.toString(dataValue.toUInt());
-    else if(type == QVariant::LongLong)
+    else if(type == QMetaType::fromType<long long>())
       return locale.toString(dataValue.toLongLong());
-    else if(type == QVariant::ULongLong)
+    else if(type == QMetaType::fromType<unsigned long long>())
       return locale.toString(dataValue.toULongLong());
-    else if(type == QVariant::Double)
+    else if(type == QMetaType::fromType<double>())
       return locale.toString(dataValue.toDouble(), 'f', 1);
-    else if(type == QVariant::DateTime)
+    else if(type == QMetaType::fromType<QDateTime>())
       return locale.toString(dataValue.toDateTime());
   }
 
@@ -190,7 +157,8 @@ QVariant LogStatsSqlModel::data(const QModelIndex& index, int role) const
 LogStatisticsDialog::LogStatisticsDialog(QWidget *parent, LogdataController *logdataControllerParam)
   : QDialog(parent), ui(new Ui::LogStatisticsDialog), logdataController(logdataControllerParam)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::NonModal);
 
   // Prefill query vector
@@ -205,11 +173,11 @@ LogStatisticsDialog::LogStatisticsDialog(QWidget *parent, LogdataController *log
   addActions(NavApp::getMainWindowActions());
 
   // Copy to clipboard button in button bar ============================
-  QPushButton *button = ui->buttonBoxLogStats->addButton(tr("&Copy to Clipboard"), QDialogButtonBox::NoRole);
+  QPushButton *button = ui->buttonBoxLogStats->addButton(tr("&Copy as CSV to Clipboard"), QDialogButtonBox::NoRole);
   button->setToolTip(tr("Copies overview as formatted text or table as CSV to clipboard"));
 
   // Fill query labels into combo box ==============================
-  for(const Query& q : qAsConst(queries))
+  for(const Query& q : std::as_const(queries))
     ui->comboBoxLogStatsGrouped->addItem(q.label, q.query);
 
   // Create and set delegate ==============================
@@ -218,7 +186,7 @@ LogStatisticsDialog::LogStatisticsDialog(QWidget *parent, LogdataController *log
   ui->tableViewLogStatsGrouped->setSortingEnabled(true);
 
   // Resize widget to get rid of the too large default margins
-  zoomHandler = new atools::gui::ItemViewZoomHandler(ui->tableViewLogStatsGrouped);
+  zoomHandler = new atools::gui::WidgetZoomHandler(ui->tableViewLogStatsGrouped);
 
   connect(ui->comboBoxLogStatsGrouped, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &LogStatisticsDialog::groupChanged);
   connect(ui->buttonBoxLogStats, &QDialogButtonBox::clicked, this, &LogStatisticsDialog::buttonBoxClicked);
@@ -262,11 +230,12 @@ void LogStatisticsDialog::optionsChanged()
 void LogStatisticsDialog::styleChanged()
 {
   atools::gui::adjustSelectionColors(ui->tableViewLogStatsGrouped);
+  atools::gui::updateAllPalette(this, QApplication::palette());
 }
 
 void LogStatisticsDialog::fontChanged(const QFont& font)
 {
-  atools::gui::updateAllFonts(this, font);
+  atools::gui::updateAllFonts(this, font, atools::gui::WidgetZoomHandler::getRegisteredWidgets());
   zoomHandler->zoomPercent();
 }
 
@@ -291,7 +260,7 @@ void LogStatisticsDialog::buttonBoxClicked(QAbstractButton *button)
       data->setHtml(ui->textBrowserLogStatsOverview->toHtml());
       data->setText(ui->textBrowserLogStatsOverview->toPlainText());
       QGuiApplication::clipboard()->setMimeData(data);
-      NavApp::setStatusMessage(QString(tr("Copied text to clipboard.")));
+      NavApp::setStatusMessage(tr("Copied text to clipboard."));
     }
     else
     {
@@ -300,11 +269,12 @@ void LogStatisticsDialog::buttonBoxClicked(QAbstractButton *button)
         model->fetchMore(QModelIndex());
 
       // Copy CSV from table to clipboard
-      QString csv;
-      int exported = CsvExporter::tableAsCsv(ui->tableViewLogStatsGrouped, true /* header */, csv);
-      if(!csv.isEmpty())
-        QApplication::clipboard()->setText(csv);
-      NavApp::setStatusMessage(QString(tr("Copied %1 rows from table as CSV to clipboard.").arg(exported)));
+      atools::util::CsvExporter csvExporter(ui->tableViewLogStatsGrouped);
+      const QString csvString = csvExporter.exportTable();
+
+      if(!csvString.isEmpty())
+        QApplication::clipboard()->setText(csvString);
+      NavApp::setStatusMessage(tr("Copied %1 rows from table as CSV to clipboard.").arg(csvExporter.getNumRowsExported()));
     }
   }
   else if(buttonType == QDialogButtonBox::Help)
@@ -343,7 +313,7 @@ void LogStatisticsDialog::saveState() const
 
 void LogStatisticsDialog::restoreState()
 {
-  atools::gui::WidgetState state(lnm::LOGDATA_STATS_DIALOG, true, true);
+  atools::gui::WidgetState state(lnm::LOGDATA_STATS_DIALOG, false /* visibility */, true /* blockSignals */);
   state.setDialogOptions(true /* position */, true /* size */);
   state.restore({this, ui->tabWidget, ui->comboBoxLogStatsGrouped});
 }
@@ -354,7 +324,7 @@ void LogStatisticsDialog::resetWindowLayout()
   state.clear(this);
   state.syncSettings();
 
-  atools::gui::util::centerWidgetOnScreen(this, defaultSize);
+  atools::gui::centerWidgetOnScreen(this, defaultSize);
 }
 
 void LogStatisticsDialog::groupChanged(int index)
@@ -386,11 +356,12 @@ void LogStatisticsDialog::groupChanged(int index)
 
 void LogStatisticsDialog::updateStatisticsText()
 {
-  atools::util::HtmlBuilder html(true);
+  atools::util::HtmlBuilder html(true /* backgroundColorUsed */, NavApp::isGuiStyleDark());
 
   QLocale locale;
   atools::util::html::Flags header = atools::util::html::BOLD | atools::util::html::BIG;
-  atools::util::html::Flags right = atools::util::html::ALIGN_RIGHT;
+
+  html.row2AlignFlags(atools::util::html::ALIGN_RIGHT);
 
   // ======================================================
   float timeMaximum, timeAverage, timeTotal, timeMaximumSim, timeAverageSim, timeTotalSim;
@@ -400,16 +371,16 @@ void LogStatisticsDialog::updateStatisticsText()
   // Workaround to avoid translation changes
   html.p(tr("Flight Time Real"), header);
   html.table();
-  html.row2(tr("Total:"), formatter::formatMinutesHoursLong(timeTotal), right);
-  html.row2(tr("Average:"), formatter::formatMinutesHoursLong(timeAverage), right);
-  html.row2(tr("Maximum:"), formatter::formatMinutesHoursLong(timeMaximum), right);
+  html.row2(tr("Total:"), formatter::formatMinutesHoursLong(timeTotal));
+  html.row2(tr("Average:"), formatter::formatMinutesHoursLong(timeAverage));
+  html.row2(tr("Maximum:"), formatter::formatMinutesHoursLong(timeMaximum));
   html.tableEnd();
 
   html.p(tr("Flight Time Simulator"), header);
   html.table();
-  html.row2(tr("Total:"), formatter::formatMinutesHoursLong(timeTotalSim), right);
-  html.row2(tr("Average:"), formatter::formatMinutesHoursLong(timeAverageSim), right);
-  html.row2(tr("Maximum:"), formatter::formatMinutesHoursLong(timeMaximumSim), right);
+  html.row2(tr("Total:"), formatter::formatMinutesHoursLong(timeTotalSim));
+  html.row2(tr("Average:"), formatter::formatMinutesHoursLong(timeAverageSim));
+  html.row2(tr("Maximum:"), formatter::formatMinutesHoursLong(timeMaximumSim));
   html.tableEnd();
 
   // ======================================================
@@ -417,18 +388,18 @@ void LogStatisticsDialog::updateStatisticsText()
   float distTotal, distMax, distAverage;
   logdataController->getFlightStatsDistance(distTotal, distMax, distAverage);
   html.table();
-  html.row2(tr("Total:"), Unit::distNm(distTotal), right);
-  html.row2(tr("Maximum:"), Unit::distNm(distMax), right);
-  html.row2(tr("Average:"), Unit::distNm(distAverage), right);
+  html.row2(tr("Total:"), Unit::distNm(distTotal));
+  html.row2(tr("Maximum:"), Unit::distNm(distMax));
+  html.row2(tr("Average:"), Unit::distNm(distAverage));
   html.tableEnd();
 
   html.p(tr("Simulators"), header);
-  QVector<std::pair<int, QString> > simulators;
+  QList<std::pair<int, QString> > simulators;
   logdataController->getFlightStatsSimulator(simulators);
   html.table();
-  for(const std::pair<int, QString>& sim : qAsConst(simulators))
+  for(const std::pair<int, QString>& sim : std::as_const(simulators))
     html.row2(tr("%1:").arg(sim.second.isEmpty() ? tr("Unknown") : sim.second),
-              tr("%1 flights").arg(locale.toString(sim.first)), right);
+              tr("%1 flights").arg(locale.toString(sim.first)));
   html.tableEnd();
 
   // ======================================================
@@ -436,9 +407,9 @@ void LogStatisticsDialog::updateStatisticsText()
   int numTypes, numRegistrations, numNames, numSimulators;
   logdataController->getFlightStatsAircraft(numTypes, numRegistrations, numNames, numSimulators);
   html.table();
-  html.row2(tr("Number of distinct types:"), locale.toString(numTypes), right);
-  html.row2(tr("Number of distinct registrations:"), locale.toString(numRegistrations), right);
-  html.row2(tr("Number of distinct names:"), locale.toString(numNames), right);
+  html.row2(tr("Number of distinct types:"), locale.toString(numTypes));
+  html.row2(tr("Number of distinct registrations:"), locale.toString(numRegistrations));
+  html.row2(tr("Number of distinct names:"), locale.toString(numNames));
   html.tableEnd();
 
   // ======================================================
@@ -446,8 +417,8 @@ void LogStatisticsDialog::updateStatisticsText()
   int numDepartAirports, numDestAirports;
   logdataController->getFlightStatsAirports(numDepartAirports, numDestAirports);
   html.table();
-  html.row2(tr("Distinct departures:"), locale.toString(numDepartAirports), right);
-  html.row2(tr("Distinct destinations:"), locale.toString(numDestAirports), right);
+  html.row2(tr("Distinct departures:"), locale.toString(numDepartAirports));
+  html.row2(tr("Distinct destinations:"), locale.toString(numDestAirports));
   html.tableEnd();
 
   // ======================================================
@@ -457,17 +428,18 @@ void LogStatisticsDialog::updateStatisticsText()
   html.table();
   html.row2If(tr("Earliest:"), tr("%1 %2").
               arg(locale.toString(earliest, QLocale::ShortFormat)).
-              arg(earliest.timeZoneAbbreviation()), right);
+              arg(earliest.timeZoneAbbreviation()));
   html.row2If(tr("Earliest in Simulator:"), tr("%1 %2").
               arg(locale.toString(earliestSim, QLocale::ShortFormat)).
-              arg(earliestSim.timeZoneAbbreviation()), right);
+              arg(earliestSim.timeZoneAbbreviation()));
   html.row2If(tr("Latest:"), tr("%1 %2").
               arg(locale.toString(latest, QLocale::ShortFormat)).
-              arg(latest.timeZoneAbbreviation()), right);
+              arg(latest.timeZoneAbbreviation()));
   html.row2If(tr("Latest in Simulator:"), tr("%1 %2").
               arg(locale.toString(latestSim, QLocale::ShortFormat)).
-              arg(latestSim.timeZoneAbbreviation()), right);
+              arg(latestSim.timeZoneAbbreviation()));
   html.tableEnd();
+  html.row2AlignClear();
 
   ui->textBrowserLogStatsOverview->setHtml(html.getHtml());
 }
@@ -537,7 +509,8 @@ void LogStatisticsDialog::initQueries()
            tr("Total simulator time\nhours"), tr("Total real time\nhours"), tr("Model"), tr("Type"), tr(
              "Registration")},
           {RIGHT, LEFT, RIGHT, RIGHT, RIGHT, LEFT, LEFT, LEFT},
-          {"cnt", "simulator", "dist", "time", "simtime", "aircraft_name", "aircraft_type", "aircraft_registration"}, 0, Qt::DescendingOrder,
+          {"cnt", "simulator", "dist", "time", "simtime", "aircraft_name", "aircraft_type", "aircraft_registration"}, 0,
+          Qt::DescendingOrder,
           "select count(1) as cnt, simulator, cast(round(sum(distance) * %1) as int) as dist, "
           "cast(sum((strftime('%s', destination_time) - strftime('%s', departure_time)) / 3600.) as double) as time, "
           "cast(sum(max(strftime('%s', destination_time_sim) - strftime('%s', departure_time_sim), 0) / 3600.) as double) as simtime, "

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include "common/formatter.h"
 #include "common/maptypes.h"
 #include "common/maptypes.h"
+#include "common/maptypes.h"
 #include "common/proctypes.h"
 #include "common/settingsmigrate.h"
 #include "common/textpointer.h"
@@ -31,20 +32,17 @@
 #include "fs/sc/simconnectdata.h"
 #include "fs/sc/simconnectreply.h"
 #include "fs/weather/metarparser.h"
-#include "geo/aircrafttrail.h"
-#include "geo/calculations.h"
-#include "gui/dockwidgethandler.h"
+#include "gui/actiontool.h"
 #include "gui/mainwindow.h"
-#include "gui/mapposhistory.h"
 #include "gui/translator.h"
 #include "logging/logginghandler.h"
 #include "logging/loggingutil.h"
+#include "options/optiondata.h"
 #include "options/optionsdialog.h"
 #include "routeexport/routeexportformat.h"
 #include "settings/settings.h"
 #include "userdata/userdataicons.h"
 #include "util/crashhandler.h"
-#include "util/properties.h"
 
 #include <QDebug>
 #include <QSplashScreen>
@@ -53,6 +51,7 @@
 #include <QPixmapCache>
 #include <QScreen>
 #include <QProcessEnvironment>
+#include <QFontDatabase>
 
 #include <marble/MarbleGlobal.h>
 #include <marble/MarbleDirs.h>
@@ -68,7 +67,7 @@ using atools::gui::Translator;
 int main(int argc, char *argv[])
 {
   // Start timer to measure startup time
-  Application::startup();
+  Application::setStartingUp();
 
   // Initialize the resources from atools static library
   Q_INIT_RESOURCE(atools);
@@ -78,41 +77,14 @@ int main(int argc, char *argv[])
 #endif
 
   // Register all types to allow conversion from/to QVariant and thus reading/writing into settings
-  atools::geo::registerMetaTypes();
   atools::fs::sc::registerMetaTypes();
-  atools::util::Properties::registerMetaTypes();
-  atools::gui::MapPosHistory::registerMetaTypes();
-  atools::gui::DockWidgetHandler::registerMetaTypes();
-
-  qRegisterMetaTypeStreamOperators<FsPathType>();
-  qRegisterMetaTypeStreamOperators<SimulatorTypeMap>();
-
-  qRegisterMetaTypeStreamOperators<map::DistanceMarker>();
-  qRegisterMetaTypeStreamOperators<QList<map::DistanceMarker> >();
-
-  qRegisterMetaTypeStreamOperators<map::PatternMarker>();
-  qRegisterMetaTypeStreamOperators<QList<map::PatternMarker> >();
-
-  qRegisterMetaTypeStreamOperators<map::HoldingMarker>();
-  qRegisterMetaTypeStreamOperators<QList<map::HoldingMarker> >();
-
-  qRegisterMetaTypeStreamOperators<map::MsaMarker>();
-  qRegisterMetaTypeStreamOperators<QList<map::MsaMarker> >();
-
-  qRegisterMetaTypeStreamOperators<map::RangeMarker>();
-  qRegisterMetaTypeStreamOperators<QList<map::RangeMarker> >();
-
-  qRegisterMetaTypeStreamOperators<AircraftTrailPos>();
-  qRegisterMetaTypeStreamOperators<QList<AircraftTrailPos> >();
-
-  qRegisterMetaTypeStreamOperators<RouteExportFormat>();
-  qRegisterMetaTypeStreamOperators<RouteExportFormatMap>();
-
-  qRegisterMetaTypeStreamOperators<map::MapAirspaceFilter>();
-  qRegisterMetaTypeStreamOperators<map::MapTypes>();
 
   // Register types and load process environment
   atools::fs::FsPaths::intitialize();
+  SimulatorTypeMap::registerMetaTypes();
+  RouteExportFormatMap::registerMetaTypes();
+  map::registerMapMetaTypes();
+  map::registerMarkerMetaTypes();
 
   // Tasks that have to be done before creating the application object and logging system =================
   // Application name is not available yet
@@ -159,42 +131,6 @@ int main(int argc, char *argv[])
   }
   logMessages.append("RenderOpt " + renderOpt);
 
-  // High DPI option =================================================
-  if(settings.valueInt("OptionsDialog/Widget_checkBoxOptionsGuiHighDpi", 2) == 2)
-  {
-    logMessages.append("High DPI scaling enabled");
-
-    // Enables high-DPI scaling in Qt on supported platforms (see also High DPI Displays). Supported
-    // platforms are X11, Windows and Android. Enabling makes Qt scale the main (device independent)
-    // coordinate system according to display scale factors provided by the operating system.
-    QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
-
-    // Make QIcon::pixmap() generate high-dpi pixmaps that can be larger than the requested size. Such
-    // pixmaps will have devicePixelRatio() set to a value higher than 1. After setting this attribute,
-    // application code that uses pixmap sizes in layout geometry calculations should typically divide by
-    // devicePixelRatio() to get device-independent layout geometry.
-    QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
-  }
-  else
-  {
-    logMessages.append("High DPI scaling disabled");
-
-    // Disables high-DPI scaling in Qt, exposing window system coordinates. Note that the window
-    // system may do its own scaling, so this does not guarantee that QPaintDevice::devicePixelRatio()
-    // will be equal to 1. In addition, scale factors set by QT_SCALE_FACTOR will not be affected.
-    QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling, false);
-    // QGuiApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true); // Freezes with QT_SCALE_FACTOR=2 on Linux
-
-    QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, false);
-#if !defined(Q_OS_WIN32)
-    // Assume the screen has a resolution of 96 DPI rather than using the OS-provided resolution. This
-    // will cause font rendering to be consistent in pixels-per-point across devices rather than defining
-    // 1 point as 1/72 inch
-    // Causes weird font effects on Windows
-    QGuiApplication::setAttribute(Qt::AA_Use96Dpi, true);
-#endif
-  }
-
   // Show dialog on exception in main event queue - can be disabled for debugging purposes
   NavApp::setShowExceptionDialog(settings.valueBool("Options/ExceptionDialog", true));
 
@@ -207,7 +143,7 @@ int main(int argc, char *argv[])
 #endif
 
   // Byte arrays have to remain for the whole runtime
-  QByteArray argument = QString("-platform").toLatin1(), value = QString("windows:fontengine=freetype").toLatin1();
+  QByteArray argument("-platform"), value("windows:fontengine=freetype");
 
   // Copy pointers to regular arguments - add two for freetype options if needed
   int appArgc = freetype ? argc + 2 : argc;
@@ -229,6 +165,7 @@ int main(int argc, char *argv[])
   DatabaseManager *dbManager = nullptr;
 
 #if defined(Q_OS_WIN32)
+  // Add Marble plugins on Windows
   QApplication::addLibraryPath(QApplication::applicationDirPath() + atools::SEP + "plugins");
 #endif
 
@@ -239,7 +176,11 @@ int main(int argc, char *argv[])
     CommandLine commandLine;
 
     // Process the actual command line arguments given by the user
+    // Option values passed to Application::addStartupOptionStr()
     commandLine.process();
+
+    // Check files passed on the command line and save it in FileCheck
+    NavApp::initStartupProperties();
 
     // ==============================================
     // Check if LNM is already running - send message across shared memory and exit if yes, otherwise continue normally
@@ -251,7 +192,7 @@ int main(int argc, char *argv[])
       // ==============================================
       // Initialize logging and force logfiles into the system or user temp directory
       // This will prefix all log files with orgranization and application name and append ".log"
-      QString logCfg = Settings::getOverloadedPath(":/littlenavmap/resources/config/logging.cfg");
+      QString logCfg = Settings::getOverloadedPath(lnm::LOGGING_CONFIG);
       if(commandLine.getLogPath().isEmpty())
         LoggingHandler::initializeForTemp(logCfg);
       else
@@ -266,7 +207,7 @@ int main(int argc, char *argv[])
       LoggingUtil::logSystemInformation();
 
       for(const QString& message : logMessages)
-        qInfo() << message;
+        qInfo() << Q_FUNC_INFO << message;
 
       // Initialize crashhandler - disable on Linux to get core files
       if(settings.valueBool("Options/PrintStackTrace", true))
@@ -286,7 +227,7 @@ int main(int argc, char *argv[])
         // Use system default for now if not given in settings yet
         language = QLocale().name();
 
-      qInfo() << "Loading translations for" << language;
+      qInfo() << Q_FUNC_INFO << "Loading translations for" << language;
       Translator::load(language);
 
       // Load help URLs from urls.cfg =================================
@@ -298,7 +239,17 @@ int main(int argc, char *argv[])
       // ==============================================
       // Start splash screen
       if(settings.valueBool(lnm::OPTIONS_DIALOG_SHOW_SPLASH, true))
-        Application::initSplashScreen(":/littlenavmap/resources/icons/splash.png", GIT_REVISION_LITTLENAVMAP);
+      {
+        QString fontStr = settings.valueStr(lnm::OPTIONS_DIALOG_GUI_FONT, QStringLiteral());
+        QFont font;
+        if(fontStr.isEmpty())
+          font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+        else
+          font.fromString(fontStr);
+
+        Application::initSplashScreen(":/littlenavmap/resources/icons/splash.png", GIT_REVISION_LITTLENAVMAP, font);
+        Application::showSplashScreenMessage(QObject::tr("Initializing ... "));
+      }
 
       // Log system information ========================================
       qInfo().noquote().nospace() << "atools revision " << atools::gitRevision() << " "
@@ -306,65 +257,55 @@ int main(int argc, char *argv[])
 
       LoggingUtil::logStandardPaths();
 
-      qInfo() << "SSL supported" << QSslSocket::supportsSsl()
+      qInfo() << Q_FUNC_INFO << "SSL supported" << QSslSocket::supportsSsl()
               << "build library" << QSslSocket::sslLibraryBuildVersionString()
               << "library" << QSslSocket::sslLibraryVersionString();
 
-      qInfo() << "Available styles" << QStyleFactory::keys();
+      qInfo() << Q_FUNC_INFO << "Available styles" << QStyleFactory::keys();
 
-      qInfo() << "SimConnectData Version" << atools::fs::sc::SimConnectData::getDataVersion()
+      qInfo() << Q_FUNC_INFO << "SimConnectData Version" << atools::fs::sc::SimConnectData::getDataVersion()
               << "SimConnectReply Version" << atools::fs::sc::SimConnectReply::getReplyVersion();
 
-      qInfo() << "QT_OPENGL" << QProcessEnvironment::systemEnvironment().value("QT_OPENGL");
-      qInfo() << "QT_SCALE_FACTOR" << QProcessEnvironment::systemEnvironment().value("QT_SCALE_FACTOR");
+      qInfo() << Q_FUNC_INFO << "QT_OPENGL" << QProcessEnvironment::systemEnvironment().value("QT_OPENGL");
+      qInfo() << Q_FUNC_INFO << "QT_SCALE_FACTOR" << QProcessEnvironment::systemEnvironment().value("QT_SCALE_FACTOR");
       if(QApplication::testAttribute(Qt::AA_UseDesktopOpenGL))
-        qInfo() << "Using Qt desktop renderer";
+        qInfo() << Q_FUNC_INFO << "Using Qt desktop renderer";
       if(QApplication::testAttribute(Qt::AA_UseOpenGLES))
-        qInfo() << "Using Qt angle renderer";
+        qInfo() << Q_FUNC_INFO << "Using Qt angle renderer";
       if(QApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
-        qInfo() << "Using Qt software renderer";
+        qInfo() << Q_FUNC_INFO << "Using Qt software renderer";
 
-      qInfo() << "UI default font" << QApplication::font();
+      qInfo() << Q_FUNC_INFO << "UI default font" << QApplication::font();
       const QList<QScreen *> screens = QGuiApplication::screens();
       for(const QScreen *screen: screens)
-        qInfo() << "Screen" << screen->name() << "size" << screen->size() << "physical size" << screen->physicalSize()
+        qInfo() << Q_FUNC_INFO << "Screen" << screen->name() << "size" << screen->size() << "physical size" << screen->physicalSize()
                 << "DPI ratio" << screen->devicePixelRatio() << "DPI x" << screen->logicalDotsPerInchX()
                 << "y" << screen->logicalDotsPerInchX();
+
+      // QCoreApplication::setAttribute(Qt::AA_UseStyleSheetPropagationInWidgetStyles, true);
 
       // Start settings and file migration
       migrate::checkAndMigrateSettings();
 
-      qInfo() << "Settings dir name" << Settings::getDirName();
+      qInfo() << Q_FUNC_INFO << "Settings dir name" << Settings::getDirName();
 
       int pixmapCache = settings.valueInt(lnm::OPTIONS_PIXMAP_CACHE, -1);
-      qInfo() << "QPixmapCache cacheLimit" << QPixmapCache::cacheLimit() << "KB";
+      qInfo() << Q_FUNC_INFO << "QPixmapCache cacheLimit" << QPixmapCache::cacheLimit() << "KB";
       if(pixmapCache != -1)
       {
-        qInfo() << "Overriding pixmap cache" << pixmapCache << "KB";
+        qInfo() << Q_FUNC_INFO << "Overriding pixmap cache" << pixmapCache << "KB";
         QPixmapCache::setCacheLimit(pixmapCache);
       }
-
-      // Load font from options settings ========================================
-      QString fontStr = settings.valueStr(lnm::OPTIONS_DIALOG_FONT, QString());
-      QFont font;
-      if(!fontStr.isEmpty())
-      {
-        font.fromString(fontStr);
-        QApplication::setFont(font);
-      }
-
-      TextPointer::initPointerCharacters(QApplication::font());
-      qInfo() << "Loaded font" << font.toString() << "from options. Stored font info" << fontStr;
 
       // Load region override ============================================
       // Forcing the English locale if the user has chosen it this way
       if(OptionsDialog::isOverrideRegion())
       {
-        qInfo() << "Overriding region settings";
+        qInfo() << Q_FUNC_INFO << "Overriding region settings";
         QLocale::setDefault(QLocale("en"));
       }
 
-      qDebug() << "Locale after setting to" << OptionData::getLanguageFromConfigFile() << QLocale()
+      qDebug() << Q_FUNC_INFO << "Locale after setting to" << OptionData::getLanguageFromConfigFile() << QLocale()
                << "decimal point" << QString(QLocale().decimalPoint())
                << "group separator" << QString(QLocale().groupSeparator());
 
@@ -384,18 +325,19 @@ int main(int argc, char *argv[])
       proc::initTranslateableTexts();
       atools::fs::weather::initTranslateableTexts();
       formatter::initTranslateableTexts();
+      atools::gui::ActionTool::initTranslateableTexts();
 
       // =============================================================================================
       // Set up Marble widget and print debugging information
       MarbleGlobal::Profiles profiles = MarbleGlobal::detectProfiles();
       MarbleGlobal::getInstance()->setProfiles(profiles);
 
-      qDebug() << "Marble Local Path:" << MarbleDirs::localPath();
-      qDebug() << "Marble Plugin Local Path:" << MarbleDirs::pluginLocalPath();
-      qDebug() << "Marble Data Path (Run Time) :" << MarbleDirs::marbleDataPath();
-      qDebug() << "Marble Plugin Path (Run Time) :" << MarbleDirs::marblePluginPath();
-      qDebug() << "Marble System Path:" << MarbleDirs::systemPath();
-      qDebug() << "Marble Plugin System Path:" << MarbleDirs::pluginSystemPath();
+      qDebug() << Q_FUNC_INFO << "Marble Local Path:" << MarbleDirs::localPath();
+      qDebug() << Q_FUNC_INFO << "Marble Plugin Local Path:" << MarbleDirs::pluginLocalPath();
+      qDebug() << Q_FUNC_INFO << "Marble Data Path (Run Time) :" << MarbleDirs::marbleDataPath();
+      qDebug() << Q_FUNC_INFO << "Marble Plugin Path (Run Time) :" << MarbleDirs::marblePluginPath();
+      qDebug() << Q_FUNC_INFO << "Marble System Path:" << MarbleDirs::systemPath();
+      qDebug() << Q_FUNC_INFO << "Marble Plugin System Path:" << MarbleDirs::pluginSystemPath();
 
       MarbleDirs::setMarbleDataPath(QApplication::applicationDirPath() + atools::SEP + "data");
 
@@ -404,7 +346,7 @@ int main(int argc, char *argv[])
         // "/home/USER/.local/share" ("/home/USER/.local/share/marble/maps/earth/openstreetmap")
         // "C:/Users/USER/AppData/Local" ("C:\Users\USER\AppData\Local\.marble\data\maps\earth\openstreetmap")
 
-        /// home/USER/.local/share/marble
+        // . /home/USER/.local/share/marble
         QFileInfo cacheFileinfo(commandLine.getCachePath());
 
         QString marbleCache;
@@ -436,29 +378,28 @@ int main(int argc, char *argv[])
 
       MarbleDebug::setEnabled(settings.getAndStoreValue(lnm::OPTIONS_MARBLE_DEBUG, false).toBool());
 
-      qDebug() << "New Marble Local Path:" << MarbleDirs::localPath();
-      qDebug() << "New Marble Plugin Local Path:" << MarbleDirs::pluginLocalPath();
-      qDebug() << "New Marble Data Path (Run Time) :" << MarbleDirs::marbleDataPath();
-      qDebug() << "New Marble Plugin Path (Run Time) :" << MarbleDirs::marblePluginPath();
-      qDebug() << "New Marble System Path:" << MarbleDirs::systemPath();
-      qDebug() << "New Marble Plugin System Path:" << MarbleDirs::pluginSystemPath();
+      qDebug() << Q_FUNC_INFO << "New Marble Local Path:" << MarbleDirs::localPath();
+      qDebug() << Q_FUNC_INFO << "New Marble Plugin Local Path:" << MarbleDirs::pluginLocalPath();
+      qDebug() << Q_FUNC_INFO << "New Marble Data Path (Run Time) :" << MarbleDirs::marbleDataPath();
+      qDebug() << Q_FUNC_INFO << "New Marble Plugin Path (Run Time) :" << MarbleDirs::marblePluginPath();
+      qDebug() << Q_FUNC_INFO << "New Marble System Path:" << MarbleDirs::systemPath();
+      qDebug() << Q_FUNC_INFO << "New Marble Plugin System Path:" << MarbleDirs::pluginSystemPath();
 
       // =============================================================================================
       // Disable tooltip effects since these do not work well with tooltip updates while displaying
       QApplication::setEffectEnabled(Qt::UI_FadeTooltip, false);
       QApplication::setEffectEnabled(Qt::UI_AnimateTooltip, false);
 
-      QApplication::setAttribute(Qt::AA_DisableWindowContextHelpButton);
-
       // =============================================================================================
       // Check if database is compatible and ask the user to erase all incompatible ones
       // If erasing databases is refused exit application
       bool databasesErased = false;
-      dbManager = new DatabaseManager(nullptr);
+      dbManager = new DatabaseManager(nullptr, false /* verbose - log database parameters */);
 
       /* Copy from application directory to settings directory if newer and create indexes if missing */
       dbManager->checkCopyAndPrepareDatabases();
 
+      Application::showSplashScreenMessage(QObject::tr("Checking databases ... "));
       if(dbManager->checkIncompatibleDatabases(&databasesErased))
       {
         ATOOLS_DELETE_LOG(dbManager);
@@ -492,7 +433,7 @@ int main(int argc, char *argv[])
     else
       retval = 0;
 
-    qInfo() << "QApplication::exec() done, retval is" << retval << (retval == 0 ? "(ok)" : "(error)");
+    qInfo() << Q_FUNC_INFO << "QApplication::exec() done, retval is" << retval << (retval == 0 ? "(ok)" : "(error)");
   }
   catch(atools::Exception& e)
   {
@@ -514,8 +455,6 @@ int main(int argc, char *argv[])
 
   ATOOLS_DELETE_LOG(dbManager);
 
-  qInfo() << "About to shut down logging";
-  atools::logging::LoggingHandler::shutdown();
-
+  qInfo() << Q_FUNC_INFO << "Exiting" << retval;
   return retval;
 }

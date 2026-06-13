@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,6 @@
 #include "fs/userdata/airspacereadervatsim.h"
 #include "gui/dialog.h"
 #include "gui/errorhandler.h"
-#include "gui/mainwindow.h"
 #include "gui/textdialog.h"
 #include "gui/widgetstate.h"
 #include "query/airportquery.h"
@@ -46,13 +45,13 @@
 #include <QDirIterator>
 #include <QProgressDialog>
 
-AirspaceController::AirspaceController(MainWindow *mainWindowParam)
-  : QObject(mainWindowParam), mainWindow(mainWindowParam)
+AirspaceController::AirspaceController(QWidget *parent)
+  : QObject(parent), parentWidget(parent)
 {
   // Button and action handler =================================
   qDebug() << Q_FUNC_INFO;
 
-  airspaceHandler = new AirspaceToolBarHandler(NavApp::getMainWindow());
+  airspaceHandler = new AirspaceToolBarHandler(parentWidget);
   airspaceHandler->createToolButtons();
 
   connect(airspaceHandler, &AirspaceToolBarHandler::updateAirspaceTypes, this, &AirspaceController::updateAirspaceTypes);
@@ -107,7 +106,7 @@ void AirspaceController::sourceToActions()
 void AirspaceController::restoreState()
 {
   Ui::MainWindow *ui = NavApp::getMainUi();
-  atools::gui::WidgetState state(lnm::AIRSPACE_CONTROLLER_WIDGETS, false /* visibility */, true /* block signals */);
+  atools::gui::WidgetState state(lnm::AIRSPACE_CONTROLLER_WIDGETS, false /* visibility */, true /* blockSignals */);
   state.restore({ui->actionViewAirspaceSrcSimulator, ui->actionViewAirspaceSrcNavigraph, ui->actionViewAirspaceSrcUser,
                  ui->actionViewAirspaceSrcOnline});
 
@@ -121,7 +120,6 @@ void AirspaceController::saveState() const
                                                                                           ui->actionViewAirspaceSrcNavigraph,
                                                                                           ui->actionViewAirspaceSrcUser,
                                                                                           ui->actionViewAirspaceSrcOnline}));
-
 }
 
 void AirspaceController::optionsChanged()
@@ -209,7 +207,7 @@ void AirspaceController::loadAirspaces()
 
   using atools::fs::userdata::AirspaceReaderBase;
 
-  AirspaceDialog dialog(mainWindow);
+  AirspaceDialog dialog(parentWidget);
   int result = dialog.exec();
 
   if(result == QDialog::Accepted)
@@ -252,7 +250,7 @@ void AirspaceController::loadAirspaces()
       }
 
       // Set up progress dialog ==================================================
-      QProgressDialog progress(tr("Reading airspaces ..."), tr("&Cancel"), 0, numFiles, mainWindow);
+      QProgressDialog progress(tr("Reading airspaces ..."), tr("&Cancel"), 0, numFiles, parentWidget);
       progress.setWindowModality(Qt::WindowModal);
       progress.setMinimumDuration(0);
       progress.show();
@@ -272,7 +270,7 @@ void AirspaceController::loadAirspaces()
         QString file = dirIter.next();
 
         // Write file metadata for display in information window
-        metadataWriter.writeFile(file, QString(), sceneryId, fileId);
+        metadataWriter.writeFile(file, QStringLiteral(), sceneryId, fileId);
 
         // Get first lines at beginning of file and remove empty lines
         AirspaceReaderBase::Format format = AirspaceReaderBase::detectFileFormat(file);
@@ -324,11 +322,11 @@ void AirspaceController::loadAirspaces()
     }
     catch(atools::Exception& e)
     {
-      atools::gui::ErrorHandler(mainWindow).handleException(e);
+      atools::gui::ErrorHandler(parentWidget).handleException(e);
     }
     catch(...)
     {
-      atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+      atools::gui::ErrorHandler(parentWidget).handleUnknownException();
     }
 
     // Show messages only if no exception and not canceled by user
@@ -346,23 +344,23 @@ void AirspaceController::loadAirspaces()
           errors.append(tr("More ..."));
         }
 
-        atools::util::HtmlBuilder html(true);
+        atools::util::HtmlBuilder html(true /* backgroundColorUsed */, NavApp::isGuiStyleDark());
         html.p(tr("User Airspaces"), atools::util::html::BOLD | atools::util::html::BIG);
         html.p(message);
 
         html.p(tr("Conversion Errors/Warnings"), atools::util::html::BOLD | atools::util::html::BIG);
         html.ol();
-        for(const QString& err :  qAsConst(errors))
+        for(const QString& err :  std::as_const(errors))
           html.li(err);
         html.olEnd();
 
-        TextDialog error(mainWindow, QCoreApplication::applicationName() + tr(" - Errors"));
+        TextDialog error(parentWidget, QCoreApplication::applicationName() + tr(" - Errors"));
         error.setHtmlMessage(html.getHtml(), true /* print to log */);
         error.exec();
       }
       else
         // No errors ======================
-        atools::gui::Dialog::information(mainWindow, message);
+        atools::gui::Dialog::information(parentWidget, message);
     }
 
     // Re-initialize queries again
@@ -378,7 +376,7 @@ void AirspaceController::loadAirspace(atools::fs::userdata::AirspaceReaderBase& 
 {
   // Read OpenAir file =============================================================
   qDebug() << Q_FUNC_INFO << "Reading" << file << "as OpenAIR";
-  reader.setFetchAirportCoords(std::bind(&AirspaceController::fetchAirportCoordinates, this, std::placeholders::_1));
+  reader.setFetchAirportCoords(&AirspaceController::fetchAirportCoordinates, this);
 
   reader.setFileId(fileId);
   reader.setAirspaceId(nextAirspaceId);
@@ -387,7 +385,7 @@ void AirspaceController::loadAirspace(atools::fs::userdata::AirspaceReaderBase& 
   nextAirspaceId = reader.getNextAirspaceId();
 }
 
-atools::geo::Pos AirspaceController::fetchAirportCoordinates(const QString& airportIdent)
+atools::geo::Pos AirspaceController::fetchAirportCoordinates(const QByteArray& airportIdent, void *)
 {
   if(!NavApp::isLoadingDatabase())
   {

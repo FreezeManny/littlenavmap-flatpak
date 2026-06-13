@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,18 +18,21 @@
 #ifndef LITTLENAVMAP_UNIT_H
 #define LITTLENAVMAP_UNIT_H
 
-#include "options/optiondata.h"
+#include "options/optionchangeflags.h"
+#include "options/optionflags.h"
 
 #include <QCoreApplication>
-#include <functional>
+#include <QLocale>
 
+class OptionData;
 namespace atools {
 namespace geo {
 class Pos;
 }
 }
 
-class OptionData;
+typedef float (*UnitRevFloatFunc)(float);
+typedef float (*UnitRevFloatFuelFunc)(float, bool);
 
 /*
  * Converts arbitrary values and units into local user selected units.
@@ -53,52 +56,75 @@ public:
   /* Initialize all text that are translateable after loading the translation files */
   static void initTranslateableTexts();
 
-  ~Unit();
-
   Unit(const Unit& other) = delete;
   Unit& operator=(const Unit& other) = delete;
 
   /* Reverse functions. Convert local unit to known unit
    * Example: Unit::rev(OptionData::instance().getSimZoomOnLandingDistance(), Unit::distMeterF);
    * Converts the getSimZoomOnLandingDistance in user selected units to meter */
-  static inline float rev(float value, std::function<float(float value)> func)
+  static inline float rev(float value, UnitRevFloatFunc function)
   {
-    return value / func(1.f);
+    return value / function(1.f);
   }
 
-  static inline float rev(float value, std::function<float(float value, bool fuelAsVolume)> func, bool fuelAsVolume)
+  static inline float rev(float value, UnitRevFloatFuelFunc function, bool fuelAsVolume)
   {
-    return value / func(1.f, fuelAsVolume);
+    return value / function(1.f, fuelAsVolume);
   }
 
   /* Replace values in text like "%dist%" or "%fuel% and returns new string. Saves original test in origtext. */
-  static QString replacePlaceholders(const QString& text, QString& origtext, bool fuelAsVolume = false);
-  static QString replacePlaceholders(const QString& text, bool fuelAsVolume = false);
+  static QString replacePlaceholders(const QString& text, QString& origtext, bool fuelAsVolume = false)
+  {
+    if(origtext.isEmpty())
+      origtext = text;
+
+    return replacePlaceholders(origtext, fuelAsVolume);
+  }
+
+  static QString replacePlaceholders(const QString& text, bool fuelAsVolume = false)
+  {
+    return replacePlaceholders(text, fuelAsVolume, unitFuelWeight);
+  }
+
   static QString replacePlaceholders(const QString& text, bool fuelAsVolume, opts::UnitFuelAndWeight unit);
 
   /* Read all unit names (Meter, Nm, ...) in the methods as "from" values */
 
   /* Distances: Returns either nautical miles, kilometer or miles */
-  static QString distMeter(float meter, bool addUnit = true, int minValPrec = 20, bool narrow = false);
-  static QString distNm(float nm, bool addUnit = true, int minValPrec = 20, bool narrow = false);
+  static QString distMeter(float meter, bool addUnit = true, int minValPrec = 20, bool narrow = false, int precision = 0);
+  static QString distNm(float nm, bool addUnit = true, int minValPrec = 20, bool narrow = false, int precision = 0);
 
   static float distMeterF(float meter);
   static float distNmF(float nm);
 
   /* Short distances: Returns either feet or meter */
-  static QString distShortMeter(float meter, bool addUnit = true, bool narrow = false);
-  static QString distShortNm(float nm, bool addUnit = true, bool narrow = false);
-  static QString distShortFeet(float ft, bool addUnit = true, bool narrow = false);
+  static QString distShortMeter(float meter, bool addUnit = true, bool narrow = false, int precision = 0)
+  {
+    return u(distShortMeterF(meter), unitShortDistStr, addUnit, narrow, precision);
+  }
+
+  static QString distShortNm(float nm, bool addUnit = true, bool narrow = false)
+  {
+    return u(distShortNmF(nm), unitShortDistStr, addUnit, narrow);
+  }
+
+  static QString distShortFeet(float ft, bool addUnit = true, bool narrow = false)
+  {
+    return u(distShortFeetF(ft), unitShortDistStr, addUnit, narrow);
+  }
 
   /* Short and long distance. Meter or km / NM and ft */
-  static QString distLongShortMeter(float ft, const QString& separator, bool addUnit = true, bool narrow = false);
+  static QString distLongShortMeter(float ft, const QString& separator, bool addUnit = true, bool narrow = false, int precision = 0);
 
   static float distShortMeterF(float meter);
   static float distShortNmF(float nm);
   static float distShortFeetF(float ft);
 
   /* Speed: Returns either kts, km/h or m/h */
-  static QString speedKts(float kts, bool addUnit = true, bool narrow = false);
+  static QString speedKts(float kts, bool addUnit = true, bool narrow = false)
+  {
+    return u(speedKtsF(kts), unitSpeedStr, addUnit, narrow);
+  }
 
   /* Get the other available two units except the currently selected one. */
   static QStringList speedKtsOther(float kts, bool addUnit = true, bool narrow = false);
@@ -125,16 +151,29 @@ public:
   static int altFeetI(int ft);
 
   /* Volume: Returns either gal or l for fuel*/
-  static QString volGallon(float gal, bool addUnit = true);
+  static QString volGallon(float gal, bool addUnit = true)
+  {
+    return u(volGallonF(gal), unitVolStr, addUnit);
+  }
+
   static float volGallonF(float gal);
 
   static QString volLiter(float liter, bool addUnit = true);
   static float volLiterF(float liter);
 
   /* Weight: Returns either lbs or kg for fuel */
-  static QString weightLbs(float lbs, bool addUnit = true);
+  static QString weightLbs(float lbs, bool addUnit = true)
+  {
+    return u(weightLbsF(lbs), unitWeightStr, addUnit);
+  }
+
   static float weightLbsF(float lbs);
-  static QString weightKg(float kg, bool addUnit = true);
+
+  static QString weightKg(float kg, bool addUnit = true)
+  {
+    return u(weightKgF(kg), unitWeightStr, addUnit);
+  }
+
   static float weightKgF(float kg);
 
   /* Get unit string with unit as selected in options and other unit in brackets */
@@ -142,56 +181,126 @@ public:
   static QString fuelLbsAndGalLocalOther(float lbs, float gal, bool localBold = false, bool otherSmall = true);
 
   /* Fuel flow US Gallon and lbs */
-  static QString ffGallon(float gal, bool addUnit = true);
-  static float ffGallonF(float gal);
-  static QString ffLbs(float lbs, bool addUnit = true);
-  static float ffLbsF(float lbs);
+  static QString ffGallon(float gal, bool addUnit = true)
+  {
+    return u(volGallonF(gal), unitFfVolStr, addUnit);
+  }
+
+  static float ffGallonF(float gal)
+  {
+    return volGallonF(gal);
+  }
+
+  static QString ffLbs(float lbs, bool addUnit = true)
+  {
+    return u(weightLbsF(lbs), unitFfWeightStr, addUnit);
+  }
+
+  static float ffLbsF(float lbs)
+  {
+    return weightLbsF(lbs);
+  }
 
   /* Return string containing both units - weight and volume */
   static QString ffLbsAndGal(float lbs, float gal, bool addUnit = true);
   static QString fuelLbsAndGal(float lbs, float gal, bool addUnit = true);
 
-  static QString fuelLbsGallon(float gal, bool addUnit = true, bool fuelAsVolume = false);
+  static QString fuelLbsGallon(float gal, bool addUnit = true, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? volGallon(gal, addUnit) : weightLbs(gal, addUnit);
+  }
 
   /* Converts either volume or weight to current unit */
-  static float fuelLbsGallonF(float gal, bool fuelAsVolume = false);
+  static float fuelLbsGallonF(float gal, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? volGallonF(gal) : weightLbsF(gal);
+  }
 
-  static QString ffLbsGallon(float gal, bool addUnit = true, bool fuelAsVolume = false);
-  static float ffLbsGallonF(float gal, bool fuelAsVolume = false);
+  static QString ffLbsGallon(float gal, bool addUnit = true, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? ffGallon(gal, addUnit) : ffLbs(gal, addUnit);
+  }
+
+  static float ffLbsGallonF(float gal, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? ffGallonF(gal) : ffLbsF(gal);
+  }
 
   /* Fuel flow metric */
-  static QString ffLiter(float liter, bool addUnit = true);
+  static QString ffLiter(float liter, bool addUnit = true)
+  {
+    return u(volLiterF(liter), unitFfVolStr, addUnit);
+  }
+
   static float ffLiterF(float liter);
-  static QString ffKg(float kg, bool addUnit = true);
-  static float ffKgF(float kg);
+
+  static QString ffKg(float kg, bool addUnit = true)
+  {
+    return u(weightKgF(kg), unitFfWeightStr, addUnit);
+  }
+
+  static float ffKgF(float kg)
+  {
+    return weightKgF(kg);
+  }
 
   /* Return string containing both units - weight and volume */
   static QString ffKgAndLiter(float kg, float liter, bool addUnit = true);
   static QString fuelKgAndLiter(float kg, float liter, bool addUnit = true);
 
-  static QString fuelKgLiter(float kgLiter, bool addUnit = true, bool fuelAsVolume = false);
-  static float fuelKgLiterF(float kgLiter, bool fuelAsVolume = false);
+  static QString fuelKgLiter(float kgLiter, bool addUnit = true, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? volLiter(kgLiter, addUnit) : weightKg(kgLiter, addUnit);
+  }
 
-  static QString ffKgLiter(float kgLiter, bool addUnit = true, bool fuelAsVolume = false);
-  static float ffKgLiterF(float kgLiter, bool fuelAsVolume = false);
+  static float fuelKgLiterF(float kgLiter, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? volLiterF(kgLiter) : weightKgF(kgLiter);
+  }
+
+  static QString ffKgLiter(float kgLiter, bool addUnit = true, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? ffLiter(kgLiter, addUnit) : ffKg(kgLiter, addUnit);
+  }
+
+  static float ffKgLiterF(float kgLiter, bool fuelAsVolume = false)
+  {
+    return fuelAsVolume ? ffLiterF(kgLiter) : ffKgF(kgLiter);
+  }
 
   /* Can be used as function pointers for conversion. fromCopy is a dummy returning the same value */
   static float fromUsToMetric(float value, bool fuelAsVolume);
   static float fromMetricToUs(float value, bool fuelAsVolume);
-  static float fromCopy(float value, bool);
+
+  static float fromCopy(float value, bool)
+  {
+    return value;
+  }
 
   /* Coordinates: Returns either decimal or sexagesimal notation */
-  static QString coords(const atools::geo::Pos& pos);
+  static QString coords(const atools::geo::Pos& pos)
+  {
+    return coords(pos, unitCoords);
+  }
+
   static QString coords(const atools::geo::Pos& pos, opts::UnitCoords coordUnit);
 
-  static QString coordsLatY(const atools::geo::Pos& pos);
+  static QString coordsLatY(const atools::geo::Pos& pos)
+  {
+    return coordsLatY(pos, unitCoords);
+  }
+
   static QString coordsLatY(const atools::geo::Pos& pos, opts::UnitCoords coordUnit);
 
-  static QString coordsLonX(const atools::geo::Pos& pos);
+  static QString coordsLonX(const atools::geo::Pos& pos)
+  {
+    return coordsLonX(pos, unitCoords);
+  }
+
   static QString coordsLonX(const atools::geo::Pos& pos, opts::UnitCoords coordUnit);
 
   /* Program options changed - update units */
-  static void optionsChanged();
+  static void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
   /* ==================================================================
    * Getters for current units strings / suffixes from options */
@@ -381,12 +490,15 @@ public:
   static QString adjustNum(QString num);
 
 private:
-  /* Singleton */
-  Unit();
+  /* Singleton - make private */
+  Unit()
+  {
+
+  }
 
   /* Merges numbers and units depending on flags */
   static QString u(const QString& num, const QString& un, bool addUnit, bool narrow);
-  static QString u(float num, const QString& un, bool addUnit, bool narrow = false);
+  static QString u(float num, const QString& unitStr, bool addUnit, bool narrow = false, int precision = 0);
   static QString localOtherText(bool localBold, bool otherSmall);
   static QString localOtherText2(bool localBold, bool otherSmall);
 
@@ -403,7 +515,7 @@ private:
   /* Negative sign or empty */
   static QString s(float ord)
   {
-    return ord < 0.f ? "-" : QString();
+    return ord < 0.f ? locale->negativeSign() : QString();
   }
 
   static const OptionData *opts;
@@ -417,6 +529,7 @@ private:
   static opts::UnitCoords unitCoords;
   static opts::UnitFuelAndWeight unitFuelWeight;
   static bool showOtherFuel;
+  static bool enhancedAccuracy;
 
   /* Currently selected unit suffixes */
   static QString unitDistStr;

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,7 @@ AircraftProgressConfig::AircraftProgressConfig(QWidget *parentWidget)
 }
 
 // All available ids. Keep this updated with pid::ProgressConfId
-const static QVector<pid::ProgressConfId> ALLIDS({
+const static QList<pid::ProgressConfId> ALLIDS({
   pid::DATE_TIME, pid::LOCAL_TIME, pid::DATE_TIME_REAL, pid::LOCAL_TIME_REAL, pid::FLOWN, pid::DEST_DIST_TIME_ARR, pid::DEST_FUEL,
   pid::DEST_GROSS_WEIGHT, pid::TOD_DIST_TIME_ARR, pid::TOD_FUEL, pid::TOD_TO_DESTINATION, pid::TOC_DIST_TIME_ARR, pid::TOC_FUEL,
   pid::TOC_FROM_DESTINATION, pid::NEXT_LEG_TYPE, pid::NEXT_INSTRUCTIONS, pid::NEXT_RELATED, pid::NEXT_RESTRICTION, pid::NEXT_DIST_TIME_ARR,
@@ -41,12 +41,12 @@ const static QVector<pid::ProgressConfId> ALLIDS({
   pid::AIRCRAFT_FUEL_FLOW, pid::AIRCRAFT_ENDURANCE, pid::AIRCRAFT_FUEL, pid::AIRCRAFT_GROSS_WEIGHT, pid::AIRCRAFT_ICE, pid::ALT_INDICATED,
   pid::ALT_INDICATED_OTHER, pid::ALT_ACTUAL, pid::ALT_ACTUAL_OTHER, pid::ALT_ABOVE_GROUND, pid::ALT_GROUND_ELEVATION,
   pid::ALT_AUTOPILOT_ALT, pid::SPEED_INDICATED, pid::SPEED_INDICATED_OTHER, pid::SPEED_GROUND, pid::SPEED_GROUND_OTHER, pid::SPEED_TRUE,
-  pid::SPEED_MACH, pid::SPEED_VERTICAL, pid::SPEED_VERTICAL_OTHER, pid::DESCENT_DEVIATION, pid::DESCENT_ANGLE_SPEED,
+  pid::SPEED_MACH, pid::SPEED_VERTICAL, pid::SPEED_VERTICAL_OTHER, pid::SPEED_TRUE_OTHER, pid::DESCENT_DEVIATION, pid::DESCENT_ANGLE_SPEED,
   pid::DESCENT_VERT_ANGLE_NEXT, pid::ENV_WIND_DIR_SPEED, pid::ENV_TAT, pid::ENV_SAT, pid::ENV_ISA_DEV, pid::ENV_SEA_LEVEL_PRESS,
   pid::ENV_DENSITY_ALTITUDE, pid::ENV_CONDITIONS, pid::ENV_VISIBILITY, pid::POS_COORDINATES});
 
 // Default ids which are enabled without settings
-const static QVector<pid::ProgressConfId> DEFAULTIDS({
+const static QList<pid::ProgressConfId> DEFAULTIDS({
   pid::DATE_TIME, pid::LOCAL_TIME, pid::FLOWN, pid::DEST_DIST_TIME_ARR, pid::DEST_FUEL, pid::DEST_GROSS_WEIGHT, pid::TOD_DIST_TIME_ARR,
   pid::TOD_FUEL, pid::TOD_TO_DESTINATION, pid::NEXT_LEG_TYPE, pid::NEXT_INSTRUCTIONS, pid::NEXT_RELATED, pid::NEXT_RESTRICTION,
   pid::NEXT_DIST_TIME_ARR, pid::NEXT_ALTITUDE, pid::NEXT_FUEL, pid::NEXT_COURSE_TO_WP, pid::NEXT_LEG_COURSE, pid::NEXT_HEADING,
@@ -58,7 +58,7 @@ const static QVector<pid::ProgressConfId> DEFAULTIDS({
   pid::ENV_VISIBILITY});
 
 // Always enables coordinate display or other required fields for web interface
-const static QVector<pid::ProgressConfId> ADDITIONAL_WEB_IDS({pid::POS_COORDINATES});
+const static QList<pid::ProgressConfId> ADDITIONAL_WEB_IDS({pid::POS_COORDINATES});
 
 void AircraftProgressConfig::treeDialogItemToggled(atools::gui::TreeDialog *treeDialog, int id, bool checked)
 {
@@ -80,12 +80,14 @@ void AircraftProgressConfig::treeDialogItemToggled(atools::gui::TreeDialog *tree
       treeDialog->setItemDisabled(pid::SPEED_GROUND_OTHER, !checked);
     else if(configId == pid::SPEED_VERTICAL)
       treeDialog->setItemDisabled(pid::SPEED_VERTICAL_OTHER, !checked);
+    else if(configId == pid::SPEED_TRUE)
+      treeDialog->setItemDisabled(pid::SPEED_TRUE_OTHER, !checked);
   }
 }
 
 void AircraftProgressConfig::progressConfiguration()
 {
-  atools::gui::TreeDialog treeDialog(parent, QCoreApplication::applicationName() + tr(" - Aircraft Progress Configuration"),
+  atools::gui::TreeDialog treeDialog(parent, QCoreApplication::applicationName() + tr(" - Aircraft Progress Display Options"),
                                      tr("Select the fields to show in the aircraft progress tab.\n"
                                         "Note that some fields are only shown if certain conditions apply."),
                                      lnm::INFOWINDOW_PROGRESS_FIELD_DIALOG, "INFO.html#progress-field-configuration",
@@ -184,6 +186,8 @@ void AircraftProgressConfig::progressConfiguration()
   treeDialog.addItem2(speedItem, pid::SPEED_GROUND_OTHER,    tr("Ground Alternate"), tr("Aircraft groundspeed additional display in other\n"
                                                                                         "than selected default units (kts, km/h or mph)."));
   treeDialog.addItem2(speedItem, pid::SPEED_TRUE,            tr("True Airspeed"), tr("Aircraft true airspeed."));
+  treeDialog.addItem2(speedItem, pid::SPEED_TRUE_OTHER,      tr("True Alternate"), tr("Aircraft true speed additional display in other\n"
+                                                                                          "than selected default units (kts, km/h or mph)."));
   treeDialog.addItem2(speedItem, pid::SPEED_MACH,            tr("Mach"), tr("Aircraft mach number."));
   treeDialog.addItem2(speedItem, pid::SPEED_VERTICAL,        tr("Vertical"), tr("Aircraft vertical speed."));
   treeDialog.addItem2(speedItem, pid::SPEED_VERTICAL_OTHER,  tr("Vertical Alternate"), tr("Aircraft vertical speed additional display in other\n"
@@ -227,7 +231,7 @@ void AircraftProgressConfig::progressConfiguration()
 
   // Check all items from enabled
   treeDialog.setAllChecked(false);
-  for(pid::ProgressConfId id : qAsConst(enabledIds))
+  for(pid::ProgressConfId id : std::as_const(enabledIds))
     treeDialog.setItemChecked(id);
 
   if(treeDialog.exec() == QDialog::Accepted)
@@ -257,7 +261,7 @@ void AircraftProgressConfig::restoreState()
   {
     // Load from settings
     QString idStr = settings.valueStr(lnm::INFOWINDOW_PROGRESS_FIELDS);
-    enabledIds = atools::strListToNumVector<pid::ProgressConfId>(idStr.split(";", QString::SkipEmptyParts));
+    enabledIds = atools::strListToNumVector<pid::ProgressConfId>(idStr.split(";", Qt::SkipEmptyParts));
   }
   else
     // Not saved yet - use defaults
@@ -270,7 +274,7 @@ void AircraftProgressConfig::updateBits()
 {
   // Update bitfield for HtmlBuilder
   enabledBits.fill(false, pid::LAST + 1);
-  for(pid::ProgressConfId id : qAsConst(enabledIds))
+  for(pid::ProgressConfId id : std::as_const(enabledIds))
     enabledBits.setBit(id, true);
 
   // Update separate bitfield with required additional fields

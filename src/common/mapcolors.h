@@ -73,7 +73,6 @@ extern QColor airwayBothColor;
 extern QColor airwayTrackColor;
 extern QColor airwayTextColor;
 extern QColor holdingColor;
-extern QColor rangeRingColor;
 extern QColor rangeRingTextColor;
 extern QColor compassRoseColor;
 extern QColor compassRoseTextColor;
@@ -111,7 +110,8 @@ extern QColor minimumAltitudeNumberColorDark;
 
 /* Elevation profile colors and pens */
 extern QColor profileSkyColor;
-extern QColor profileLandColor;
+extern QColor profileLandColorInner;
+extern QColor profileLandColorOuter;
 extern QColor profileLabelColor;
 extern QColor profileVasiAboveColor;
 extern QColor profileVasiBelowColor;
@@ -126,8 +126,8 @@ extern QPen profileSafeAltLinePen;
 extern QPen profileSafeAltLegLinePen;
 extern QPen profileElevationScalePen;
 
-extern QColor distanceMarkerTextColor;
-extern QColor distanceMarkerTextBackgroundColor;
+extern QColor markerTextColor;
+extern QColor markerTextBackgroundColor;
 
 /* Objects highlighted because of selection in search */
 extern QColor highlightBackColor;
@@ -155,6 +155,7 @@ extern QPen searchCenterFillPen;
 extern QPen touchMarkBackPen;
 extern QPen touchMarkFillPen;
 extern QColor touchRegionFillColor;
+extern QColor touchRegionCornerFillColor;
 
 extern QColor aircraftUserLabelColor;
 extern QColor aircraftUserLabelColorBg;
@@ -165,8 +166,8 @@ extern QColor aircraftAiLabelColorBg;
 // ==========================================================================
 
 /* Web page table background colors */
-const QColor webTableBackgroundColor("#f3f3f3");
-const QColor webTableAltBackgroundColor("#eceae8");
+const QColor webTableBackgroundColor(QLatin1String("#f3f3f3"));
+const QColor webTableAltBackgroundColor(QLatin1String("#eceae8"));
 
 extern QPen taxiwayLinePen;
 extern QColor taxiwayNameColor;
@@ -200,11 +201,26 @@ const QColor runwayTextBackgroundColor = QColor(255, 255, 255, 170);
 /* Text background color */
 const QColor textBoxColor = QColor(Qt::white);
 
+/* Navaid and airport bright fill colors */
+const QColor symbolFillTransparentColor = QColor(Qt::transparent);
+const QColor symbolFillWhiteColor = QColor(Qt::white);
+const QColor symbolFillRouteColor = QColor(255, 255, 150);
+const QColor symbolFillPreviewColor = QColor(190, 250, 255); /* Procedure preview */
+const QColor symbolFillLogbookPreviewColor = QColor(190, 250, 255);
+
 /* Text background color for flight plan waypoints */
 const QColor routeTextBoxColor = QColor(255, 255, 150);
 const QColor logTextBoxColor = QColor(150, 240, 255);
+const QColor previewTextBoxColor = QColor(190, 250, 255);
+
+/* Colors for aircraft range and other warning and error colors on the map */
+const QColor colorForegroundError("#ffffff");
+const QColor colorBackgroundError("#ff0000");
+const QColor colorForegroundWarning("#ff2000");
+const QColor colorBackgroundWarning(Qt::white);
 
 const QColor airportSymbolFillColor = QColor(Qt::white);
+const QColor airportSymbolFillRouteColor = QColor(255, 255, 150);
 
 const QPen aircraftBackPen = QPen(Qt::black, 7, Qt::SolidLine, Qt::RoundCap);
 const QPen aircraftFillPen = QPen(Qt::yellow, 4, Qt::SolidLine, Qt::RoundCap);
@@ -215,7 +231,7 @@ const QPen aircraftGroundFillPen = QPen(Qt::yellow, 4, Qt::SolidLine, Qt::RoundC
 const QColor highlightProcedureColor = QColor(80, 80, 255);
 
 /* Use rotating colors for procedure multi preview */
-const QVector<QColor> highlightProcedureColorTable(
+const QList<QColor> highlightProcedureColorTable(
   {QColor(Qt::black), QColor(Qt::red), QColor(Qt::green), QColor(Qt::blue), QColor(Qt::cyan), QColor(Qt::magenta),
    QColor(Qt::yellow), QColor(Qt::darkRed), QColor(Qt::darkGreen), QColor(Qt::darkBlue), QColor(Qt::darkCyan), QColor(Qt::darkMagenta),
    QColor(Qt::darkYellow) /*, QColor(Qt::white)*/, QColor(Qt::darkGray), QColor(Qt::gray) /*, QColor(Qt::lightGray)*/});
@@ -314,6 +330,7 @@ QPen adjustWidth(QPen pen, float width);
 
 /* Scale current font in painter. Uses defaultFont as a base otherwise current font in painter. */
 void scaleFont(QPainter *painter, float scale, const QFont *defaultFont = nullptr);
+void scaleFont(QFont& font, float scale, const QFont *defaultFont = nullptr);
 
 void darkenPainterRect(QPainter& painter);
 

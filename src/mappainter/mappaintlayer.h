@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 
 #include "mappainter/mappainter.h"
 
-#include <QPen>
+#include "mappainter/paintcontext.h"
 
 #include <marble/LayerInterface.h>
 
@@ -181,6 +181,16 @@ public:
     minimumRunwayLengthFt = value;
   }
 
+  int getShownMaximumRunwayFt() const
+  {
+    return maximumRunwayLengthFt;
+  }
+
+  void setShowMaximumRunwayFt(int maximumRunwayLengthFtParam)
+  {
+    maximumRunwayLengthFt = maximumRunwayLengthFtParam;
+  }
+
   /* No drawing at all and not map interactions except moving and zooming if true.
    * Limit depends on projection. */
   bool noRender() const;
@@ -199,7 +209,7 @@ private:
   /* Implemented from LayerInterface: We  draw above all but below user tools */
   virtual QStringList renderPosition() const override
   {
-    return QStringList("ORBIT");
+    return RENDER_POS;
   }
 
   // Implemented from LayerInterface
@@ -222,7 +232,7 @@ private:
   QSet<int> shownDetailAirportIds;
 
   /* Value from toolbar */
-  int minimumRunwayLengthFt = 0;
+  int minimumRunwayLengthFt = 0, maximumRunwayLengthFt = 0;
 
   /* Default detail factor. Range is from 5 to 15 */
   int detailLevel = 10;
@@ -255,9 +265,10 @@ private:
   MapPaintWidget *mapPaintWidget = nullptr;
   const MapLayer *mapLayer = nullptr, *mapLayerText = nullptr, *mapLayerRoute = nullptr, *mapLayerRouteText = nullptr,
                  *mapLayerEffective = nullptr;
-  bool verbose = false, verboseDraw = false, debugTileSize = false;
+  bool verbose = false, debugTileSize = false;
   QFont::StyleStrategy savedFontStrategy, savedDefaultFontStrategy;
 
+  static QStringList RENDER_POS;
 };
 
 #endif // LITTLENAVMAP_MAPPAINTLAYER_H

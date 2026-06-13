@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -24,29 +24,32 @@
 #include "common/unitstringtool.h"
 #include "geo/calculations.h"
 #include "gui/helphandler.h"
-#include "gui/runwayselection.h"
+#include "gui/runwaytable.h"
 #include "gui/widgetstate.h"
+#include "gui/widgettool.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
+#include "settings/settings.h"
 #include "ui_customproceduredialog.h"
 
 #include <QPushButton>
 #include <QStringBuilder>
 
 CustomProcedureDialog::CustomProcedureDialog(QWidget *parent, const map::MapAirport& mapAirport, bool departureParam,
-                                             const QString& dialogHeader, int preselectRunwayEndSim)
-  : QDialog(parent), ui(new Ui::CustomProcedureDialog), departure(departureParam)
+                                             const QString& dialogHeader, int preselectRunwayEndSim, bool forceShowParam)
+  : QDialog(parent), ui(new Ui::CustomProcedureDialog), departure(departureParam), forceShow(forceShowParam)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
 
-  runwaySelection = new RunwaySelection(parent, mapAirport, ui->tableWidgetCustomProcRunway, false /* navdata */);
-  runwaySelection->setAirportLabel(ui->labelCustomProcAirport);
-  runwaySelection->setPreSelectedRunwayEnd(preselectRunwayEndSim);
+  runwayTable = new RunwayTable(parent, mapAirport, ui->tableWidgetCustomProcRunway, false /* navdata */, true /* addAirportParam */);
+  runwayTable->setAirportLabel(ui->labelCustomProcAirport);
+  runwayTable->setPreSelectedRunwayEnd(preselectRunwayEndSim);
 
-  // YES is show procedures button
+  // Yes is show procedures button
   ui->buttonBoxCustomProc->button(QDialogButtonBox::Yes)->setText(departureParam ? tr("Show Departure &Procedures") :
                                                                   tr("Show Arrival/Approach &Procedures"));
 
@@ -55,8 +58,8 @@ CustomProcedureDialog::CustomProcedureDialog(QWidget *parent, const map::MapAirp
   else if(!QueryManager::instance()->getQueriesGui()->getMapQuery()->hasArrivalProcedures(mapAirport) && !departureParam)
     ui->buttonBoxCustomProc->button(QDialogButtonBox::Yes)->setDisabled(true);
 
-  connect(runwaySelection, &RunwaySelection::doubleClicked, this, &CustomProcedureDialog::doubleClicked);
-  connect(runwaySelection, &RunwaySelection::itemSelectionChanged, this, &CustomProcedureDialog::updateWidgets);
+  connect(runwayTable, &RunwayTable::doubleClicked, this, &CustomProcedureDialog::doubleClicked);
+  connect(runwayTable, &RunwayTable::itemSelectionChanged, this, &CustomProcedureDialog::updateWidgets);
 
   connect(ui->spinBoxCustomProcAlt, QOverload<int>::of(&QSpinBox::valueChanged), this, &CustomProcedureDialog::updateWidgets);
   connect(ui->spinBoxCustomProcAngle, QOverload<int>::of(&QSpinBox::valueChanged), this, &CustomProcedureDialog::updateWidgets);
@@ -67,7 +70,7 @@ CustomProcedureDialog::CustomProcedureDialog(QWidget *parent, const map::MapAirp
   restoreState();
 
   setWindowTitle(QCoreApplication::applicationName() %
-                 (departureParam ? tr(" - Select Departure Runway") : tr(" - Select Destination Runway")));
+                 (departureParam ? tr(" - Select Departure Airport or Runway") : tr(" - Select Destination Airport or Runway")));
   ui->labelCustomProcRunway->setText(dialogHeader);
 
   // Show or hide widgets not relevant for departure
@@ -102,7 +105,7 @@ CustomProcedureDialog::~CustomProcedureDialog()
 {
   atools::gui::WidgetState(departure ? lnm::CUSTOM_DEPARTURE_DIALOG : lnm::CUSTOM_APPROACH_DIALOG).save(this);
 
-  delete runwaySelection;
+  delete runwayTable;
   delete units;
   delete ui;
 }
@@ -115,11 +118,11 @@ void CustomProcedureDialog::doubleClicked()
 
 void CustomProcedureDialog::restoreState()
 {
-  atools::gui::WidgetState widgetState(departure ? lnm::CUSTOM_DEPARTURE_DIALOG : lnm::CUSTOM_APPROACH_DIALOG, false);
+  atools::gui::WidgetState widgetState(departure ? lnm::CUSTOM_DEPARTURE_DIALOG : lnm::CUSTOM_APPROACH_DIALOG);
   // Angle not saved on purpose
   widgetState.restore({this, ui->doubleSpinBoxCustomProcDist, ui->spinBoxCustomProcAlt});
 
-  runwaySelection->restoreState();
+  runwayTable->init();
   updateWidgets();
 
   ui->tableWidgetCustomProcRunway->setFocus();
@@ -127,13 +130,21 @@ void CustomProcedureDialog::restoreState()
 
 void CustomProcedureDialog::saveState() const
 {
-  atools::gui::WidgetState widgetState(departure ? lnm::CUSTOM_DEPARTURE_DIALOG : lnm::CUSTOM_APPROACH_DIALOG, false);
+  atools::gui::WidgetState widgetState(departure ? lnm::CUSTOM_DEPARTURE_DIALOG : lnm::CUSTOM_APPROACH_DIALOG);
   widgetState.save({this, ui->doubleSpinBoxCustomProcDist, ui->spinBoxCustomProcAlt});
 }
 
-void CustomProcedureDialog::getSelected(map::MapRunway& runway, map::MapRunwayEnd& end) const
+void CustomProcedureDialog::getSelected(map::MapRunway& runway, map::MapRunwayEnd& end, bool& airportSelected) const
 {
-  runwaySelection->getCurrentSelected(runway, end);
+  if(airportAutoSelected)
+  {
+    // Use clicked do not show again
+    runway = map::MapRunway();
+    end = map::MapRunwayEnd();
+    airportSelected = true;
+  }
+  else
+    runwayTable->getCurrentSelected(runway, end, &airportSelected);
 }
 
 float CustomProcedureDialog::getLegDistance() const
@@ -151,7 +162,31 @@ float CustomProcedureDialog::getEntryAltitude() const
   return Unit::rev(static_cast<float>(ui->spinBoxCustomProcAlt->value()), Unit::altFeetF);
 }
 
-/* A button box button was clicked */
+int CustomProcedureDialog::exec()
+{
+  atools::settings::Settings& settings = atools::settings::Settings::instance();
+
+  // show only if the key is true (also default)
+  bool showDialog = settings.valueBool(lnm::ACTIONS_SHOW_CUSTOM_PROCEDURE_DIALOG, true);
+  if(forceShow || showDialog)
+  {
+    // Open dialog window ==================
+    ui->checkBoxDoNotShowAgain->setChecked(!showDialog);
+    int retval = QDialog::exec();
+
+    settings.setValue(lnm::ACTIONS_SHOW_CUSTOM_PROCEDURE_DIALOG, !ui->checkBoxDoNotShowAgain->isChecked());
+    atools::settings::Settings::syncSettings();
+    return retval;
+  }
+  else
+  {
+    // Do not open ==================
+    airportAutoSelected = true;
+    QDialog::accept();
+  }
+  return QDialog::Accepted;
+}
+
 void CustomProcedureDialog::buttonBoxClicked(QAbstractButton *button)
 {
   if(button == ui->buttonBoxCustomProc->button(QDialogButtonBox::Ok))
@@ -173,7 +208,22 @@ void CustomProcedureDialog::buttonBoxClicked(QAbstractButton *button)
 
 void CustomProcedureDialog::updateWidgets()
 {
-  if(!departure)
+  map::MapRunway runway;
+  map::MapRunwayEnd end;
+  bool airportSelected;
+  runwayTable->getCurrentSelected(runway, end, &airportSelected);
+
+  // Disable all widgets as default
+  atools::gui::WidgetTool({ui->labelCustomProcRunwayDist, ui->doubleSpinBoxCustomProcDist, ui->labelCustomProcRunwayAngle,
+                           ui->spinBoxCustomProcAngle, ui->labelCustomProcAngle, ui->labelCustomProcRunwayAlt,
+                           ui->spinBoxCustomProcAlt, ui->labelCustomProcSlope}).setDisabled(airportSelected);
+
+  if(departure)
+  {
+    ui->labelCustomProcSlope->clear();
+    ui->labelCustomProcAngle->clear();
+  }
+  else
   {
     // Update labels only for destination
 
@@ -183,26 +233,21 @@ void CustomProcedureDialog::updateWidgets()
     ui->labelCustomProcSlope->setText(tr("Approach slope %1°").
                                       arg(QLocale().toString(atools::geo::toDegree(std::atan2(height, dist)), 'f', 1)));
 
-    // Heading =======================
-    map::MapRunway runway;
-    map::MapRunwayEnd end;
-    runwaySelection->getCurrentSelected(runway, end);
-
-    if(runway.isValid() && end.isValid())
+    if(!airportSelected)
     {
-      float angle = end.heading - runwaySelection->getAirport().magvar + getLegOffsetAngle();
-      ui->labelCustomProcAngle->setText(tr("Final course to runway %1 %2 is %3°M").
-                                        arg(end.name).arg(atools::almostEqual(getLegOffsetAngle(), 0.f) ? QString() : tr("with offset ")).
-                                        arg(QLocale().toString(angle, 'f', 0)));
+      if(runway.isValid() && end.isValid())
+      {
+        float angle = end.heading - runwayTable->getAirport().magvar + getLegOffsetAngle();
+        ui->labelCustomProcAngle->setText(tr("Final course to runway %1 %2 is %3°M").
+                                          arg(end.name).
+                                          arg(atools::almostEqual(getLegOffsetAngle(), 0.f) ? QStringLiteral() : tr("with offset ")).
+                                          arg(QLocale().toString(angle, 'f', 0)));
+      }
+      else
+        ui->labelCustomProcAngle->clear();
     }
-    else
-      ui->labelCustomProcAngle->clear();
-  }
-  else
-  {
-    ui->labelCustomProcSlope->clear();
-    ui->labelCustomProcAngle->clear();
   }
 
-  ui->buttonBoxCustomProc->button(QDialogButtonBox::Ok)->setEnabled(runwaySelection->hasRunways());
+  // Should always have runways
+  ui->buttonBoxCustomProc->button(QDialogButtonBox::Ok)->setEnabled(runwayTable->hasRunways());
 }

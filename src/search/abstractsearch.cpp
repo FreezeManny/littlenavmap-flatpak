@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,16 +18,27 @@
 #include "search/abstractsearch.h"
 
 #include "app/navapp.h"
+#include "atools.h"
+#include "gui/mainwindow.h"
+#include "gui/widgetzoomhandler.h"
+#include "options/optiondata.h"
 
-#include <QMainWindow>
-
-AbstractSearch::AbstractSearch(QMainWindow *parent, si::TabSearchId tabWidgetIndex)
-  : QObject(parent), tabIndex(tabWidgetIndex), mainWindow(parent)
+AbstractSearch::AbstractSearch(MainWindow *parent, QWidget *resultWidgetParam, si::TabSearchId tabWidgetIndex)
+  : QObject(parent), tabIndex(tabWidgetIndex), mainWindow(parent), parentWidget(parent)
 {
   ui = NavApp::getMainUi();
+  zoomHandler = new atools::gui::WidgetZoomHandler(resultWidgetParam);
+
+  // Load text size from options
+  zoomHandler->zoomPercent(OptionData::instance().getGuiSearchTableTextSize());
 }
 
 AbstractSearch::~AbstractSearch()
 {
+  ATOOLS_DELETE_LOG(zoomHandler);
+}
 
+void AbstractSearch::fontChanged(const QFont&)
+{
+  zoomHandler->zoomPercent(OptionData::instance().getGuiSearchTableTextSize());
 }

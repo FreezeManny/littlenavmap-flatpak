@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 
 #include "atools.h"
 #include "common/constants.h"
+#include "common/elevationprovider.h"
 #include "common/mapresult.h"
 #include "common/maptypesfactory.h"
 #include "db/undoredoprogress.h"
@@ -29,7 +30,6 @@
 #include "gui/choicedialog.h"
 #include "gui/dialog.h"
 #include "gui/errorhandler.h"
-#include "gui/mainwindow.h"
 #include "app/navapp.h"
 #include "gui/sqlquerydialog.h"
 #include "options/optiondata.h"
@@ -54,11 +54,11 @@ using atools::sql::SqlRecord;
 using atools::sql::SqlColumn;
 using atools::geo::Pos;
 
-UserdataController::UserdataController(atools::fs::userdata::UserdataManager *userdataManager, MainWindow *parent)
-  : manager(userdataManager), mainWindow(parent)
+UserdataController::UserdataController(atools::fs::userdata::UserdataManager *userdataManager, QWidget *parent)
+  : manager(userdataManager), parentWidget(parent)
 {
-  dialog = new atools::gui::Dialog(mainWindow);
-  buttonHandler = new atools::gui::ActionButtonHandler(mainWindow);
+  dialog = new atools::gui::Dialog(parentWidget);
+  buttonHandler = new atools::gui::ActionButtonHandler(parentWidget);
   icons = new UserdataIcons();
   icons->loadIcons();
   lastAddedRecord = new SqlRecord();
@@ -68,10 +68,13 @@ UserdataController::UserdataController(atools::fs::userdata::UserdataManager *us
   Ui::MainWindow *ui = NavApp::getMainUi();
   connect(ui->actionSearchUserpointUndo, &QAction::triggered, this, &UserdataController::undoTriggered);
   connect(ui->actionSearchUserpointRedo, &QAction::triggered, this, &UserdataController::redoTriggered);
+  connect(ui->actionMainUserpointUndo, &QAction::triggered, this, &UserdataController::undoTriggered);
+  connect(ui->actionMainUserpointRedo, &QAction::triggered, this, &UserdataController::redoTriggered);
 
   manager->setMaximumUndoSteps(50);
   manager->setTextSuffix(tr("Userpoint", "Userpoint singular"), tr("Userpoints", "Userpoint plural"));
-  manager->setActions(ui->actionSearchUserpointUndo, ui->actionSearchUserpointRedo);
+  manager->setActionLists({ui->actionSearchUserpointUndo, ui->actionMainUserpointUndo},
+                          {ui->actionSearchUserpointRedo, ui->actionMainUserpointRedo});
 }
 
 UserdataController::~UserdataController()
@@ -88,7 +91,7 @@ void UserdataController::undoTriggered()
   if(manager->canUndo())
   {
     SqlTransaction transaction(manager->getDatabase());
-    UndoRedoProgress progress(mainWindow, tr("Little Navmap - Undoing Userpoint changes"), tr("Undoing changes ..."));
+    UndoRedoProgress progress(parentWidget, tr("Little Navmap - Undoing Userpoint changes"), tr("Undoing changes ..."));
     manager->setProgressCallback(std::bind(&UndoRedoProgress::callback, &progress, std::placeholders::_1, std::placeholders::_2));
 
     progress.start();
@@ -117,7 +120,7 @@ void UserdataController::redoTriggered()
   if(manager->canRedo())
   {
     SqlTransaction transaction(manager->getDatabase());
-    UndoRedoProgress progress(mainWindow, tr("Little Navmap - Redoing Userpoint changes"), tr("Redoing changes ..."));
+    UndoRedoProgress progress(parentWidget, tr("Little Navmap - Redoing Userpoint changes"), tr("Redoing changes ..."));
     manager->setProgressCallback(std::bind(&UndoRedoProgress::callback, &progress, std::placeholders::_1, std::placeholders::_2));
 
     progress.start();
@@ -161,8 +164,8 @@ void UserdataController::enableCategoryOnMap(const QString& category)
 
   if(icons->hasType(category))
   {
-    if(!selectedTypes.contains(category))
-      selectedTypes.append(category);
+    if(!selectedTypesMap.contains(category))
+      selectedTypesMap.insert(category, QStringLiteral());
   }
   else
     selectedUnknownType = true;
@@ -225,13 +228,14 @@ void UserdataController::addToolbarButton()
   mainMenu->addSeparator();
 
   // Create and add select an action for each registered type =====================================
-  int screenHeight = mainWindow->screen()->geometry().height();
-  for(const QString& type : icons->getAllTypes())
+  int screenHeight = parentWidget->screen()->geometry().height();
+  for(auto it = icons->getAllTypesMap().begin(); it != icons->getAllTypesMap().end(); ++it)
   {
+    const QString& type = it.key();
     // Create an overflow menu item for the button if the menu exceeds the screen height
     if(buttonMenu->sizeHint().height() > screenHeight * 8 / 10)
     {
-      buttonMenu = buttonMenu->addMenu(tr("More ..."));
+      buttonMenu = buttonMenu->addMenu(tr("&More ..."));
       buttonMenu->setToolTipsVisible(userdataToolButton->menu()->toolTipsVisible());
       buttonMenu->setTearOffEnabled(userdataToolButton->menu()->isTearOffEnabled());
     }
@@ -239,7 +243,7 @@ void UserdataController::addToolbarButton()
     // Create an overflow menu item for the main menu if the menu exceeds the screen height
     if(mainMenu->sizeHint().height() > screenHeight * 8 / 10)
     {
-      mainMenu = mainMenu->addMenu(tr("More ..."));
+      mainMenu = mainMenu->addMenu(tr("&More ..."));
       mainMenu->setToolTipsVisible(ui->menuViewUserpoints->toolTipsVisible());
       mainMenu->setTearOffEnabled(ui->menuViewUserpoints->isTearOffEnabled());
     }
@@ -259,15 +263,13 @@ void UserdataController::addToolbarButton()
   }
 
   // Add all signals from actions to the same handler method
-  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionAllTriggered, this, &UserdataController::toolbarActionTriggered);
-  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionNoneTriggered, this, &UserdataController::toolbarActionTriggered);
+  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionAllTriggered, this, &UserdataController::toolbarActionAllTriggered);
+  connect(buttonHandler, &atools::gui::ActionButtonHandler::actionNoneTriggered, this, &UserdataController::toolbarActionNoneTriggered);
   connect(buttonHandler, &atools::gui::ActionButtonHandler::actionOtherTriggered, this, &UserdataController::toolbarActionTriggered);
 }
 
 void UserdataController::toolbarActionTriggered(QAction *)
 {
-  qDebug() << Q_FUNC_INFO;
-
   // Copy action state to class data
   actionsToTypes();
 
@@ -275,70 +277,91 @@ void UserdataController::toolbarActionTriggered(QAction *)
   emit userdataChanged();
 }
 
+void UserdataController::toolbarActionAllTriggered(QAction *)
+{
+  selectedTypesMap = allLastFoundTypesMap;
+  selectedUnknownType = true;
+  typesToActions();
+  userdataToolButton->setChecked(true);
+  emit userdataChanged();
+}
+
+void UserdataController::toolbarActionNoneTriggered(QAction *)
+{
+  selectedTypesMap.clear();
+  selectedUnknownType = false;
+  typesToActions();
+  userdataToolButton->setChecked(false);
+  emit userdataChanged();
+}
+
 void UserdataController::actionsToTypes()
 {
-  // Copy state for known types
-  selectedTypes.clear();
-  for(QAction *action : qAsConst(actions))
+  selectedTypesMap.clear();
+  for(QAction *action : std::as_const(actions))
   {
     if(action->isChecked())
-      selectedTypes.append(action->data().toString());
+      selectedTypesMap.insert(action->data().toString(), QStringLiteral());
   }
 
   selectedUnknownType = actionUnknown->isChecked();
-  userdataToolButton->setChecked(!selectedTypes.isEmpty() || selectedUnknownType);
-  qDebug() << Q_FUNC_INFO << selectedTypes;
+  userdataToolButton->setChecked(!selectedTypesMap.isEmpty() || selectedUnknownType);
+  qDebug() << Q_FUNC_INFO << selectedTypesMap;
 }
 
 void UserdataController::typesToActions()
 {
   // Copy state for known types
-  for(QAction *action : qAsConst(actions))
-    action->setChecked(selectedTypes.contains(action->data().toString()));
+  for(QAction *action : std::as_const(actions))
+    action->setChecked(selectedTypesMap.contains(action->data().toString()));
   actionUnknown->setChecked(selectedUnknownType);
-  userdataToolButton->setChecked(!selectedTypes.isEmpty() || selectedUnknownType);
+  userdataToolButton->setChecked(!selectedTypesMap.isEmpty() || selectedUnknownType);
 }
 
 void UserdataController::saveState() const
 {
-  atools::settings::Settings::instance().setValue(lnm::MAP_USERDATA, selectedTypes);
-  atools::settings::Settings::instance().setValue(lnm::MAP_USERDATA_ALL, allLastFoundTypes);
+  atools::settings::Settings::instance().setValue(lnm::MAP_USERDATA, selectedTypesMap.keys());
+  atools::settings::Settings::instance().setValue(lnm::MAP_USERDATA_ALL, allLastFoundTypesMap.keys());
   atools::settings::Settings::instance().setValue(lnm::MAP_USERDATA_UNKNOWN, selectedUnknownType);
 }
 
 void UserdataController::restoreState()
 {
-  const QStringList allTypes = getAllTypes();
+  const QMap<QString, QString>& allTypesMap = getAllTypesMap();
   atools::settings::Settings& settings = atools::settings::Settings::instance();
 
   // Get the list of icons found the last time which allows to identify new types and enable them per default
-  allLastFoundTypes = settings.valueStrList(lnm::MAP_USERDATA_ALL);
-  if(allLastFoundTypes.isEmpty())
-    allLastFoundTypes = allTypes;
+
+  for(const QString& key : settings.valueStrList(lnm::MAP_USERDATA_ALL))
+    allLastFoundTypesMap.insert(key, QStringLiteral());
+
+  if(allLastFoundTypesMap.isEmpty())
+    allLastFoundTypesMap = allTypesMap;
 
   if(OptionData::instance().getFlags().testFlag(opts::STARTUP_LOAD_MAP_SETTINGS))
   {
     // Get list of enabled. Enable all as default
-    const QStringList list = settings.valueStrList(lnm::MAP_USERDATA, allTypes);
+    const QStringList list = settings.valueStrList(lnm::MAP_USERDATA, allTypesMap.keys());
     selectedUnknownType = settings.valueBool(lnm::MAP_USERDATA_UNKNOWN, true);
 
     // Remove all types from the restored list of enabled which were not found in the new list of registered types
     // in case some were removed
-    selectedTypes.clear();
+    selectedTypesMap.clear();
     for(const QString& type : list)
     {
-      if(allTypes.contains(type))
-        selectedTypes.append(type);
+      if(allTypesMap.contains(type))
+        selectedTypesMap.insert(type, QStringLiteral());
     }
 
     // Now check for types that are new and not included in the last saved list and enable them
-    for(const QString& type : allTypes)
+    for(auto it = allTypesMap.constBegin(); it != allTypesMap.constEnd(); ++it)
     {
-      if(!allLastFoundTypes.contains(type))
-        selectedTypes.append(type);
+      const QString& type = it.key();
+      if(!allLastFoundTypesMap.contains(type))
+        selectedTypesMap.insert(type, QStringLiteral());
     }
 
-    allLastFoundTypes = allTypes;
+    allLastFoundTypesMap = allTypesMap;
   }
   else
     // Enable all
@@ -350,15 +373,15 @@ void UserdataController::restoreState()
 
 void UserdataController::resetSettingsToDefault()
 {
-  selectedTypes.clear();
-  selectedTypes.append(icons->getAllTypes());
+  selectedTypesMap.clear();
+  selectedTypesMap.insert(icons->getAllTypesMap());
   selectedUnknownType = true;
   typesToActions();
 }
 
-QStringList UserdataController::getAllTypes() const
+const QMap<QString, QString>& UserdataController::getAllTypesMap() const
 {
-  return icons->getAllTypes();
+  return icons->getAllTypesMap();
 }
 
 void UserdataController::addUserpointFromMap(const map::MapResult& result, atools::geo::Pos pos, bool airportAddon)
@@ -366,8 +389,12 @@ void UserdataController::addUserpointFromMap(const map::MapResult& result, atool
   qDebug() << Q_FUNC_INFO;
 
   if(result.isEmpty(map::AIRPORT | map::VOR | map::NDB | map::WAYPOINT | map::USERPOINT))
+  {
+    if(NavApp::isGlobeOfflineProvider())
+      pos.setAltitude(NavApp::getElevationProvider()->getElevationFt(pos));
     // No prefill start empty dialog of with last added data
     addUserpointInternal(-1, pos, SqlRecord());
+  }
   else
   {
     // Prepare the dialog prefill data
@@ -435,15 +462,18 @@ void UserdataController::addUserpointFromMap(const map::MapResult& result, atool
       const map::MapUserpoint& up = result.userpoints.constFirst();
       prefillRec.appendFieldAndValue("ident", up.ident)
       .appendFieldAndValue("name", up.name)
-      .appendFieldAndValue("type", up.type)
-      .appendFieldAndValue("region", up.region)
+      .appendFieldAndValue("type", up.userpointType)
+      .appendFieldAndValue("region", up.region);
       // .appendFieldAndValue("description", up.description)
       // .appendFieldAndValue("tags", up.tags)
-      ;
       pos = up.position;
     }
     else
       prefillRec.appendFieldAndValue("type", UserdataDialog::DEFAULT_TYPE);
+
+    if(NavApp::isGlobeOfflineProvider() && (atools::almostEqual(pos.getAltitude(), 0.f) ||
+                                            !(pos.getAltitude() < map::INVALID_ALTITUDE_VALUE)))
+      pos.setAltitude(NavApp::getElevationProvider()->getElevationFt(pos));
 
     prefillRec.appendFieldAndValue("altitude", pos.getAltitude());
 
@@ -464,6 +494,7 @@ void UserdataController::moveUserpointFromMap(const map::MapUserpoint& userpoint
   SqlRecord rec;
   rec.appendFieldAndValue("lonx", userpoint.position.getLonX());
   rec.appendFieldAndValue("laty", userpoint.position.getLatY());
+  rec.appendFieldAndValue("last_edit_timestamp", atools::convertToIsoWithOffset(QDateTime::currentDateTime()));
 
   SqlTransaction transaction(manager->getDatabase());
 
@@ -471,9 +502,9 @@ void UserdataController::moveUserpointFromMap(const map::MapUserpoint& userpoint
   manager->updateRecords(rec, {userpoint.id});
   transaction.commit();
 
-  // No need to update search
+  emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
   emit userdataChanged();
-  mainWindow->setStatusMessage(tr("Userpoint moved."));
+  NavApp::setStatusMessage(tr("Userpoint moved."));
 }
 
 void UserdataController::clearTemporary()
@@ -496,10 +527,10 @@ void UserdataController::setMagDecReader(atools::fs::common::MagDecReader *magDe
   manager->setMagDecReader(magDecReader);
 }
 
-void UserdataController::editUserpointFromMap(const map::MapResult& result)
+void UserdataController::editUserpointFromMap(int id)
 {
   qDebug() << Q_FUNC_INFO;
-  editUserpoints({result.userpoints.constFirst().id});
+  editUserpoints({id});
 }
 
 void UserdataController::addUserpoint(int id, const atools::geo::Pos& pos)
@@ -543,7 +574,7 @@ void UserdataController::addUserpointInternalAddon(const atools::geo::Pos& pos, 
 
   emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
   emit userdataChanged();
-  mainWindow->setStatusMessage(tr("Addon Userpoint added."));
+  NavApp::setStatusMessage(tr("Addon Userpoint added."));
 }
 
 void UserdataController::addUserpointInternal(int id, const atools::geo::Pos& pos, const SqlRecord& prefillRec)
@@ -582,7 +613,7 @@ void UserdataController::addUserpointInternal(int id, const atools::geo::Pos& po
   qDebug() << Q_FUNC_INFO << rec;
 #endif
 
-  UserdataDialog dlg(mainWindow, ud::ADD, icons);
+  UserdataDialog dlg(parentWidget, ud::ADD, icons);
   dlg.restoreState();
 
   dlg.setRecord(rec);
@@ -614,12 +645,12 @@ void UserdataController::addUserpointInternal(int id, const atools::geo::Pos& po
 
     emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
     emit userdataChanged();
-    mainWindow->setStatusMessage(tr("Userpoint added."));
+    NavApp::setStatusMessage(tr("Userpoint added."));
   }
   dlg.saveState();
 }
 
-void UserdataController::editUserpoints(const QVector<int>& ids)
+void UserdataController::editUserpoints(const QList<int>& ids)
 {
   qDebug() << Q_FUNC_INFO;
 
@@ -629,7 +660,7 @@ void UserdataController::editUserpoints(const QVector<int>& ids)
   SqlRecord rec = manager->getRecord(ids.constFirst());
   if(!rec.isEmpty())
   {
-    UserdataDialog dlg(mainWindow, ids.size() > 1 ? ud::EDIT_MULTIPLE : ud::EDIT_ONE, icons);
+    UserdataDialog dlg(parentWidget, ids.size() > 1 ? ud::EDIT_MULTIPLE : ud::EDIT_ONE, icons);
     dlg.restoreState();
 
     dlg.setRecord(rec);
@@ -650,7 +681,7 @@ void UserdataController::editUserpoints(const QVector<int>& ids)
 
       emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
       emit userdataChanged();
-      mainWindow->setStatusMessage(tr("%n userpoint(s) updated.", "", ids.size()));
+      NavApp::setStatusMessage(tr("%n userpoint(s) updated.", "", ids.size()));
     }
     dlg.saveState();
   }
@@ -658,17 +689,40 @@ void UserdataController::editUserpoints(const QVector<int>& ids)
     qWarning() << Q_FUNC_INFO << "Empty record" << rec;
 }
 
-void UserdataController::deleteUserpoints(const QVector<int>& ids)
+void UserdataController::deleteUserpoints(const QList<int>& ids)
 {
-  qDebug() << Q_FUNC_INFO;
+  // Generate a truncated list of object names to delete
+  QStringList texts;
+  for(int id : ids)
+  {
+    texts.append(map::userpointShortText(getUserpointById(id), 5000));
+    if(texts.size() > 6)
+      break;
+  }
 
-  SqlTransaction transaction(manager->getDatabase());
-  manager->deleteRows(QSet<int>(ids.constBegin(), ids.constEnd()));
-  transaction.commit();
+  // Function relies on line feeds - join and split again to get a list
+  texts = atools::elideTextLinesShort(texts.join('\n'), 5, 20, true /* compressEmpty */, true /* ellipseLastLine */).split('\n');
 
-  emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
-  emit userdataChanged();
-  mainWindow->setStatusMessage(tr("%n userpoint(s) deleted.", "", ids.size()));
+  int result = dialog->showQuestionMsgBox(lnm::ACTIONS_SHOW_DELETE_USERPOINT,
+                                          tr("<p>Delete %1 %2?</p>"
+                                               "<ul><li>%3</li></ul>"
+                                                 "<p>Note that you can undo this action in menu \"Userpoints\".</p>").
+                                          arg(ids.size()).
+                                          arg(ids.size() == 1 ? tr("userpoint") : tr("userpoints")).
+                                          arg(texts.join(tr("</li><li>"))),
+                                          tr("Do not &show this dialog again."),
+                                          QMessageBox::Yes | QMessageBox::No, QMessageBox::No, QMessageBox::Yes);
+
+  if(result == QMessageBox::Yes)
+  {
+    SqlTransaction transaction(manager->getDatabase());
+    manager->deleteRows(QSet<int>(ids.constBegin(), ids.constEnd()));
+    transaction.commit();
+
+    emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
+    emit userdataChanged();
+    NavApp::setStatusMessage(tr("%n userpoint(s) deleted.", "", ids.size()));
+  }
 }
 
 void UserdataController::importCsv()
@@ -677,8 +731,8 @@ void UserdataController::importCsv()
   try
   {
     QStringList files = dialog->openFileDialogMulti(tr("Open Userpoint CSV File(s)"),
-                                                    tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_USERDATA_CSV), "Userdata/Csv");
-    files.removeAll(QString());
+                                                    tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_CSV), "Userdata/Csv");
+    files.removeAll(QStringLiteral());
 
     if(!files.isEmpty())
     {
@@ -688,10 +742,10 @@ void UserdataController::importCsv()
       transaction.commit();
       QGuiApplication::restoreOverrideCursor();
 
-      mainWindow->setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
+      NavApp::setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
       if(numImported > 0)
       {
-        mainWindow->showUserpointSearch();
+        emit showUserpointSearch();
         manager->updateUndoRedoActions();
         emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
       }
@@ -700,12 +754,12 @@ void UserdataController::importCsv()
   catch(atools::Exception& e)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -727,8 +781,8 @@ void UserdataController::importXplaneUserFixDat()
       transaction.commit();
       QGuiApplication::restoreOverrideCursor();
 
-      mainWindow->showUserpointSearch();
-      mainWindow->setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
+      emit showUserpointSearch();
+      NavApp::setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
       manager->updateUndoRedoActions();
       emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
     }
@@ -736,12 +790,12 @@ void UserdataController::importXplaneUserFixDat()
   catch(atools::Exception& e)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -763,8 +817,8 @@ void UserdataController::importGarmin()
       transaction.commit();
       QGuiApplication::restoreOverrideCursor();
 
-      mainWindow->showUserpointSearch();
-      mainWindow->setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
+      emit showUserpointSearch();
+      NavApp::setStatusMessage(tr("%n userpoint(s) imported.", "", numImported));
       manager->updateUndoRedoActions();
       emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
     }
@@ -772,12 +826,12 @@ void UserdataController::importGarmin()
   catch(atools::Exception& e)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
     QGuiApplication::restoreOverrideCursor();
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -791,8 +845,8 @@ void UserdataController::exportCsv()
     {
       QString file = dialog->saveFileDialog(
         tr("Export Userpoint CSV File"),
-        tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_USERDATA_CSV),
-        ".csv", "Userdata/Csv", QString(), QString(), append /* dont confirm overwrite */);
+        tr("CSV Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_CSV),
+        ".csv", "Userdata/Csv", QStringLiteral(), tr("Userpoints.csv"), append /* dontComfirmOverwrite */);
 
       if(!file.isEmpty())
       {
@@ -800,21 +854,21 @@ void UserdataController::exportCsv()
         flags.setFlag(atools::fs::userdata::APPEND, append);
         flags.setFlag(atools::fs::userdata::CSV_HEADER, header);
 
-        QVector<int> ids;
+        QList<int> ids;
         if(selected)
           ids = NavApp::getUserdataSearch()->getSelectedIds();
         int numExported = manager->exportCsv(file, ids, flags);
-        mainWindow->setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
+        NavApp::setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
       }
     }
   }
   catch(atools::Exception& e)
   {
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -829,26 +883,26 @@ void UserdataController::exportXplaneUserFixDat()
       QString file = dialog->saveFileDialog(
         tr("Export X-Plane user_fix.dat File"),
         tr("X-Plane User Fix Files %1;;X-Plane Dat Files %2;;All Files (*)").arg(lnm::FILE_PATTERN_USER_FIX_DAT).arg(lnm::FILE_PATTERN_DAT),
-        ".dat", "Userdata/UserFixDat", xplaneUserWptDatPath(), "user_fix.dat", append /* dont confirm overwrite */);
+        ".dat", "Userdata/UserFixDat", xplaneUserWptDatPath(), "user_fix.dat", append /* dontComfirmOverwrite */);
 
       if(!file.isEmpty())
       {
-        QVector<int> ids;
+        QList<int> ids;
         if(selected)
           ids = NavApp::getUserdataSearch()->getSelectedIds();
         int numExported = manager->exportXplane(file, ids, append ? atools::fs::userdata::APPEND : atools::fs::userdata::NONE,
                                                 xp12);
-        mainWindow->setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
+        NavApp::setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
       }
     }
   }
   catch(atools::Exception& e)
   {
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -865,26 +919,26 @@ void UserdataController::exportGarmin()
         tr("Garmin User Waypoint Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_USER_WPT),
         ".dat",
         "Userdata/UserWptDat",
-        xplaneUserWptDatPath(), "user.wpt", append /* dont confirm overwrite */);
+        xplaneUserWptDatPath(), "user.wpt", append /* dontComfirmOverwrite */);
 
       if(!file.isEmpty())
       {
-        QVector<int> ids;
+        QList<int> ids;
         if(selected)
           ids = NavApp::getUserdataSearch()->getSelectedIds();
         int numExported =
           manager->exportGarmin(file, ids, append ? atools::fs::userdata::APPEND : atools::fs::userdata::NONE);
-        mainWindow->setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
+        NavApp::setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
       }
     }
   }
   catch(atools::Exception& e)
   {
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -899,26 +953,26 @@ void UserdataController::exportBglXml()
       QString file = dialog->saveFileDialog(
         tr("Export XML File for FSX/P3D BGL Compiler"),
         tr("XML Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_BGL_XML),
-        ".xml", "Userdata/BglXml", QString(), QString(), false);
+        ".xml", "Userdata/BglXml", QStringLiteral(), QStringLiteral());
 
       if(!file.isEmpty())
       {
-        QVector<int> ids;
+        QList<int> ids;
         if(selected)
           ids = NavApp::getUserdataSearch()->getSelectedIds();
         int numExported =
           manager->exportBgl(file, ids);
-        mainWindow->setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
+        NavApp::setStatusMessage(tr("%n userpoint(s) exported.", "", numExported));
       }
     }
   }
   catch(atools::Exception& e)
   {
-    atools::gui::ErrorHandler(mainWindow).handleException(e);
+    atools::gui::ErrorHandler(parentWidget).handleException(e);
   }
   catch(...)
   {
-    atools::gui::ErrorHandler(mainWindow).handleUnknownException();
+    atools::gui::ErrorHandler(parentWidget).handleUnknownException();
   }
 }
 
@@ -962,7 +1016,7 @@ bool UserdataController::exportSelectedQuestion(bool& selected, bool& append, bo
   // Keep ids stable since they are used to save state
   enum {SELECTED, APPEND, HEADER, XP12};
 
-  atools::gui::ChoiceDialog choiceDialog(mainWindow, QCoreApplication::applicationName() + tr(" - Userpoint Export Options"),
+  atools::gui::ChoiceDialog choiceDialog(parentWidget, QCoreApplication::applicationName() + tr(" - Userpoint Export Options"),
                                          tr("Select export options for userpoints.\n\n"
                                             "Note that the field \"Tags\" is used for the ID of the airport "
                                             "terminal area and the waypoint type.\n"
@@ -972,17 +1026,17 @@ bool UserdataController::exportSelectedQuestion(bool& selected, bool& append, bo
   choiceDialog.setHelpLanguageOnline(lnm::helpLanguageOnline());
 
   if(appendAllowed)
-    choiceDialog.addCheckBox(APPEND, tr("&Append to an already present file"),
+    choiceDialog.addCheckBox(APPEND, tr("&Append to an existing file"),
                              tr("File header will be ignored if this is enabled."), false);
   else
     // Add a hidden dummy which still allows to save the settings to the same key/variable
     choiceDialog.addCheckBoxHidden(APPEND);
 
-  choiceDialog.addCheckBox(SELECTED, tr("Export &selected entries only"), QString(), true,
+  choiceDialog.addCheckBox(SELECTED, tr("Export &selected entries only"), QStringLiteral(), true,
                            numSelected == 0 /* disabled */);
 
   if(headerAllowed)
-    choiceDialog.addCheckBox(HEADER, tr("Add a &header to the first line"), QString(), false);
+    choiceDialog.addCheckBox(HEADER, tr("Add a &header to the first line"), QStringLiteral(), true);
   else
     choiceDialog.addCheckBoxHidden(HEADER);
 
@@ -1022,7 +1076,7 @@ void UserdataController::cleanupUserdata()
   enum {COMPARE, /* Ident, Name, and Type */ REGION, DESCRIPTION, TAGS, COORDINATES, EMPTY, SHOW_PREVIEW};
 
   // Create a dialog with tree checkboxes =====================
-  atools::gui::ChoiceDialog choiceDialog(mainWindow, QCoreApplication::applicationName() + tr(" - Cleanup Userpoints"),
+  atools::gui::ChoiceDialog choiceDialog(parentWidget, QCoreApplication::applicationName() + tr(" - Cleanup Userpoints"),
                                          tr("Select criteria for cleanup.\nNote that you can undo this change."),
                                          lnm::SEARCHTAB_USERDATA_CLEANUP_DIALOG, "USERPOINT.html#userpoint-cleanup");
 
@@ -1030,7 +1084,7 @@ void UserdataController::cleanupUserdata()
   choiceDialog.setHelpLanguageOnline(lnm::helpLanguageOnline());
 
   choiceDialog.addCheckBox(EMPTY, tr("Delete userpoints having no information\n"
-                                     "except coordinates and type."), QString(), true);
+                                     "except coordinates and type."), QStringLiteral(), true);
   choiceDialog.addLine();
 
   choiceDialog.addLabel(tr("Remove duplicates using the additional fields below as criteria.\n"
@@ -1088,7 +1142,7 @@ void UserdataController::cleanupUserdata()
     if(choiceDialog.isButtonChecked(SHOW_PREVIEW))
     {
       // Columns to be shown in the preview
-      QVector<atools::sql::SqlColumn> previewCols({
+      QList<atools::sql::SqlColumn> previewCols({
         SqlColumn("type", tr("Type")),
         SqlColumn("last_edit_timestamp", tr("Last Change")),
         SqlColumn("ident", tr("Ident")),
@@ -1117,7 +1171,7 @@ void UserdataController::cleanupUserdata()
         });
 
       // Build preview dialog ===============================================
-      atools::gui::SqlQueryDialog previewDialog(mainWindow, QCoreApplication::applicationName() + tr(" - Cleanup Preview"),
+      atools::gui::SqlQueryDialog previewDialog(parentWidget, QCoreApplication::applicationName() + tr(" - Cleanup Preview"),
                                                 tr("These userpoints will be deleted.\nNote that you can undo this change."),
                                                 lnm::SEARCHTAB_USERDATA_CLEANUP_PREVIEW, "USERPOINT.html#cleanup-userpoints",
                                                 tr("&Delete Userpoints"));
@@ -1149,10 +1203,15 @@ void UserdataController::cleanupUserdata()
     {
       if(removed > 0)
         emit userdataChanged();
-      mainWindow->setStatusMessage(tr("%1 %2 deleted.").arg(removed).arg(removed == 1 ? tr("userpoint") : tr("userpoints")));
+      NavApp::setStatusMessage(tr("%1 %2 deleted.").arg(removed).arg(removed == 1 ? tr("userpoint") : tr("userpoints")));
 
       emit refreshUserdataSearch(false /* loadAll */, false /* keepSelection */, true /* force */);
       emit userdataChanged();
     }
   }
+}
+
+bool UserdataController::hasUserdata() const
+{
+  return manager->hasData();
 }

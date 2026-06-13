@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -109,15 +109,15 @@ Column& Column::condition(const QString& cond)
   return *this;
 }
 
-Column& Column::convertFunc(std::function<float(float)> unitConvertFunc)
+Column& Column::convertFunction(UnitRevFloatFunc unitConvertFunction)
 {
-  unitConvert = unitConvertFunc;
+  unitConvertFunc = unitConvertFunction;
   return *this;
 }
 
-Column& Column::sqlFunc(const QString& sqlFunctionParam)
+Column& Column::sqlFunction(const QString& sqlFunctionParam)
 {
-  sqlFunction = sqlFunctionParam;
+  sqlFunc = sqlFunctionParam;
   return *this;
 }
 
@@ -149,7 +149,7 @@ Column& Column::includesName(bool value)
   return *this;
 }
 
-Column& Column::distanceCol(bool value)
+Column& Column::distanceHeadingCol(bool value)
 {
   colIsDistance = value;
   return *this;

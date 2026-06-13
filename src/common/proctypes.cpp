@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -33,10 +33,6 @@
 
 namespace proc  {
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-using Qt::endl;
-#endif
-
 static QHash<QString, QString> approachFixTypeToStr;
 static QHash<QString, QString> approachTypeToStr;
 static QHash<ProcedureLegType, QString> approachLegTypeToStr;
@@ -54,7 +50,7 @@ void initTranslateableTexts()
       {proc::FACF, QObject::tr("FACF")},
       {proc::MAP, QObject::tr("MAP")},
       {proc::FEP, QObject::tr("FEP")},
-      {proc::NONE, QString()}
+      {proc::NONE, QStringLiteral()}
     });
 
   specialTypeLongStr = QHash<LegSpecialType, QString>(
@@ -64,7 +60,7 @@ void initTranslateableTexts()
       {proc::FACF, QObject::tr("Final Approach Course Fix")},
       {proc::MAP, QObject::tr("Missed Approach Point")},
       {proc::FEP, QObject::tr("Final Endpoint Fix")},
-      {proc::NONE, QString()}
+      {proc::NONE, QStringLiteral()}
     });
 
   approachFixTypeToStr = QHash<QString, QString>(
@@ -148,41 +144,41 @@ void initTranslateableTexts()
 
   approachLegRemarkStr = QHash<ProcedureLegType, QString>(
     {
-      {ARC_TO_FIX, QString()},
-      {COURSE_TO_ALTITUDE, QString()},
-      {COURSE_TO_DME_DISTANCE, QString()},
-      {COURSE_TO_FIX, QString()},
-      {COURSE_TO_INTERCEPT, QString()},
-      {COURSE_TO_RADIAL_TERMINATION, QString()},
-      {DIRECT_TO_FIX, QString()},
-      {FIX_TO_ALTITUDE, QString()},
-      {TRACK_FROM_FIX_FROM_DISTANCE, QString()},
-      {TRACK_FROM_FIX_TO_DME_DISTANCE, QString()},
-      {FROM_FIX_TO_MANUAL_TERMINATION, QString()},
+      {ARC_TO_FIX, QStringLiteral()},
+      {COURSE_TO_ALTITUDE, QStringLiteral()},
+      {COURSE_TO_DME_DISTANCE, QStringLiteral()},
+      {COURSE_TO_FIX, QStringLiteral()},
+      {COURSE_TO_INTERCEPT, QStringLiteral()},
+      {COURSE_TO_RADIAL_TERMINATION, QStringLiteral()},
+      {DIRECT_TO_FIX, QStringLiteral()},
+      {FIX_TO_ALTITUDE, QStringLiteral()},
+      {TRACK_FROM_FIX_FROM_DISTANCE, QStringLiteral()},
+      {TRACK_FROM_FIX_TO_DME_DISTANCE, QStringLiteral()},
+      {FROM_FIX_TO_MANUAL_TERMINATION, QStringLiteral()},
       {HOLD_TO_ALTITUDE, QObject::tr("Mandatory hold")},
       {HOLD_TO_FIX, QObject::tr("Single circuit")},
       {HOLD_TO_MANUAL_TERMINATION, QObject::tr("Mandatory hold")},
-      {INITIAL_FIX, QString()},
-      {PROCEDURE_TURN, QString()},
-      {CONSTANT_RADIUS_ARC, QString()},
-      {TRACK_TO_FIX, QString()},
-      {HEADING_TO_ALTITUDE_TERMINATION, QString()},
-      {HEADING_TO_DME_DISTANCE_TERMINATION, QString()},
-      {HEADING_TO_INTERCEPT, QString()},
-      {HEADING_TO_MANUAL_TERMINATION, QString()},
-      {HEADING_TO_RADIAL_TERMINATION, QString()},
+      {INITIAL_FIX, QStringLiteral()},
+      {PROCEDURE_TURN, QStringLiteral()},
+      {CONSTANT_RADIUS_ARC, QStringLiteral()},
+      {TRACK_TO_FIX, QStringLiteral()},
+      {HEADING_TO_ALTITUDE_TERMINATION, QStringLiteral()},
+      {HEADING_TO_DME_DISTANCE_TERMINATION, QStringLiteral()},
+      {HEADING_TO_INTERCEPT, QStringLiteral()},
+      {HEADING_TO_MANUAL_TERMINATION, QStringLiteral()},
+      {HEADING_TO_RADIAL_TERMINATION, QStringLiteral()},
 
-      {DIRECT_TO_RUNWAY, QString()},
-      {CIRCLE_TO_LAND, QString()},
-      {STRAIGHT_IN, QString()},
-      {START_OF_PROCEDURE, QString()},
-      {VECTORS, QString()},
+      {DIRECT_TO_RUNWAY, QStringLiteral()},
+      {CIRCLE_TO_LAND, QStringLiteral()},
+      {STRAIGHT_IN, QStringLiteral()},
+      {START_OF_PROCEDURE, QStringLiteral()},
+      {VECTORS, QStringLiteral()},
 
-      {CUSTOM_APP_START, QString()},
-      {CUSTOM_APP_RUNWAY, QString()},
+      {CUSTOM_APP_START, QStringLiteral()},
+      {CUSTOM_APP_RUNWAY, QStringLiteral()},
 
-      {CUSTOM_DEP_END, QString()},
-      {CUSTOM_DEP_RUNWAY, QString()},
+      {CUSTOM_DEP_END, QStringLiteral()},
+      {CUSTOM_DEP_RUNWAY, QStringLiteral()},
     });
 }
 
@@ -313,7 +309,7 @@ const QString& proceduresLegSecialTypeLongStr(proc::LegSpecialType type)
 QString procedureLegTypeStr(proc::ProcedureLegType type)
 {
 #ifdef DEBUG_INFORMATION
-  return QString("%1 [%2]").arg(approachLegTypeToStr.value(type)).arg(approachLegTypeToShortStr.value(type));
+  return QStringLiteral("%1 [%2]").arg(approachLegTypeToStr.value(type)).arg(approachLegTypeToShortStr.value(type));
 #else
   return approachLegTypeToStr.value(type);
 #endif
@@ -354,7 +350,7 @@ QString vertRestrictionText(const MapProcedureLeg& procedureLeg)
   if(procedureLeg.isVerticalAngleValid())
     return QObject::tr("%L1°").arg(procedureLeg.verticalAngle, 0, 'g', 3);
 
-  return QString();
+  return QStringLiteral();
 }
 
 QString altRestrictionText(const MapAltRestriction& restriction)
@@ -370,7 +366,7 @@ QString altRestrictionText(const MapAltRestriction& restriction)
         return QObject::tr("ILS GS %1").arg(Unit::altFeet(restriction.alt1));
 
       case proc::MapAltRestriction::NO_ALT_RESTR:
-        return QString();
+        return QStringLiteral();
 
       case proc::MapAltRestriction::AT:
         return QObject::tr("At %1").arg(Unit::altFeet(restriction.alt1));
@@ -387,7 +383,7 @@ QString altRestrictionText(const MapAltRestriction& restriction)
                arg(Unit::altFeet(restriction.alt1));
     }
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString altRestrictionTextNarrow(const proc::MapAltRestriction& altRestriction)
@@ -467,7 +463,7 @@ QString speedRestrictionTextShort(const proc::MapSpeedRestriction& speedRestrict
     case proc::MapSpeedRestriction::MAX:
       return QObject::tr("B ") + Unit::speedKts(speedRestriction.speed, false);
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString speedRestrictionText(const proc::MapSpeedRestriction& speedRestriction)
@@ -486,7 +482,7 @@ QString speedRestrictionText(const proc::MapSpeedRestriction& speedRestriction)
     case proc::MapSpeedRestriction::MAX:
       return QObject::tr("Below ") + Unit::speedKts(speedRestriction.speed);
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString speedRestrictionTextNarrow(const proc::MapSpeedRestriction& speedRestriction)
@@ -507,7 +503,7 @@ QString speedRestrictionTextNarrow(const proc::MapSpeedRestriction& speedRestric
       return QObject::tr("B", "Procedure speed restriction - avoid translation") +
              Unit::speedKts(speedRestriction.speed, false) + Unit::getUnitSpeedStr();
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QDebug operator<<(QDebug out, const proc::MapProcedureRef& ref)
@@ -533,12 +529,12 @@ QDebug operator<<(QDebug out, const ProcedureLegType& type)
 QDebug operator<<(QDebug out, const MapProcedureLegs& legs)
 {
   QDebugStateSaver saver(out);
-  out << "MapProcedureLegs =====" << endl;
-  out << "maptype" << legs.mapType << endl;
+  out << "MapProcedureLegs =====" << Qt::endl;
+  out << "maptype" << legs.mapType << Qt::endl;
 
   out << "procedureDistance" << legs.procedureDistance
       << "transitionDistance" << legs.transitionDistance
-      << "missedDistance" << legs.missedDistance << endl;
+      << "missedDistance" << legs.missedDistance << Qt::endl;
 
   out << "type" << legs.type
       << "suffix" << legs.suffix
@@ -553,59 +549,59 @@ QDebug operator<<(QDebug out, const MapProcedureLegs& legs)
       << "runwayEnd.name" << legs.runwayEnd.name
       << "bounding" << legs.bounding
       << "boundingWithRecommended" << legs.boundingWithRecommended
-      << "boundingWithMissed" << legs.boundingWithMissed << endl;
+      << "boundingWithMissed" << legs.boundingWithMissed << Qt::endl;
 
-  out << "===== Legs =====" << endl;
+  out << "===== Legs =====" << Qt::endl;
   for(int i = 0; i < legs.size(); i++)
     out << "#" << i << legs.at(i);
-  out << "==========================" << endl;
+  out << "==========================" << Qt::endl;
   return out;
 }
 
 QDebug operator<<(QDebug out, const MapProcedureLeg& leg)
 {
   QDebugStateSaver saver(out);
-  out << "MapProcedureLeg =============" << endl;
+  out << "MapProcedureLeg =============" << Qt::endl;
   out << "approachId" << leg.procedureId
       << "transitionId" << leg.transitionId
-      << "legId" << leg.legId << endl
+      << "legId" << leg.legId << Qt::endl
       << "type" << leg.type
       << "maptype" << leg.mapType
       << "missed" << leg.missed
-      << "line" << leg.line << endl
-      << "geometry" << leg.geometry << endl;
+      << "line" << leg.line << Qt::endl
+      << "geometry" << leg.geometry << Qt::endl;
 
   out << "displayText" << leg.displayText
       << "remarks" << leg.remarks;
 
-  out << "fix" << leg.fixType << leg.fixIdent << leg.fixRegion << leg.fixPos << endl;
+  out << "fix" << leg.fixType << leg.fixIdent << leg.fixRegion << leg.fixPos << Qt::endl;
 
-  out << leg.recFixType << leg.recFixIdent << leg.recFixRegion << leg.recFixPos << endl;
-  out << "intercept" << leg.interceptPos << leg.intercept << endl;
-  out << "procturn pos" << leg.procedureTurnPos << endl;
-  out << "rw sim" << leg.runwaySim << endl;
+  out << leg.recFixType << leg.recFixIdent << leg.recFixRegion << leg.recFixPos << Qt::endl;
+  out << "intercept" << leg.interceptPos << leg.intercept << Qt::endl;
+  out << "procturn pos" << leg.procedureTurnPos << Qt::endl;
+  out << "rw sim" << leg.runwaySim << Qt::endl;
 
   out << "turnDirection" << leg.turnDirection
       << "flyover" << leg.flyover
       << "trueCourse" << leg.trueCourse
       << "disabled" << leg.disabled
-      << "course" << leg.course << endl;
+      << "course" << leg.course << Qt::endl;
 
   out << "calculatedDistance" << leg.calculatedDistance
-      << "calculatedTrueCourse" << leg.calculatedTrueCourse << endl;
+      << "calculatedTrueCourse" << leg.calculatedTrueCourse << Qt::endl;
 
   out << "magvar" << leg.magvar
       << "theta" << leg.theta
       << "rho" << leg.rho
       << "distance" << leg.distance
-      << "time" << leg.time << endl;
+      << "time" << leg.time << Qt::endl;
 
   out << "altDescriptor" << leg.altRestriction.descriptor
       << "alt1" << leg.altRestriction.alt1
-      << "alt2" << leg.altRestriction.alt2 << endl;
+      << "alt2" << leg.altRestriction.alt2 << Qt::endl;
 
   out << "speedDescriptor" << leg.speedRestriction.descriptor
-      << "speed" << leg.speedRestriction.speed << endl;
+      << "speed" << leg.speedRestriction.speed << Qt::endl;
   return out;
 }
 
@@ -814,7 +810,7 @@ QString procedureLegCourse(const MapProcedureLeg& leg)
   if(!leg.noCalcCourseDisplay() && leg.calculatedDistance > 0.f && leg.calculatedTrueCourse < map::INVALID_COURSE_VALUE)
     return QLocale().toString(leg.calculatedMagCourse(), 'f', 0);
   else
-    return QString();
+    return QStringLiteral();
 }
 
 QString procedureLegDistance(const MapProcedureLeg& leg)
@@ -922,7 +918,7 @@ QStringList procedureLegRemark(const MapProcedureLeg& leg)
                    arg(leg.recFixIdent).arg(leg.recFixRegion).arg(leg.recFixType));
 
   remarks.removeDuplicates();
-  remarks.removeAll(QString());
+  remarks.removeAll(QStringLiteral());
 
   return remarks;
 }
@@ -992,11 +988,11 @@ QString procedureLegsText(const proc::MapProcedureLegs& legs, proc::MapProcedure
         // Approach procedure or transition =================================================
         procText = QObject::tr("%1%2%3 %4").
                    // Add missed text if leg ist missed
-                   arg(narrow ? QString() :
+                   arg(narrow ? QStringLiteral() :
                        (procType.testFlag(proc::PROCEDURE_MISSED) && !missedAsApproach ?
                         QObject::tr("Missed ") : QObject::tr("Approach "))).
                    arg(legs.displayType()).
-                   arg(legs.suffix.isEmpty() ? QString() : (QObject::tr("-") + legs.suffix)).
+                   arg(legs.suffix.isEmpty() ? QStringLiteral() : (QObject::tr("-") + legs.suffix)).
                    arg(legs.procedureFixIdent);
 
         // Add transition text if type from related leg is a transitionn
@@ -1035,35 +1031,30 @@ QString procedureLegsText(const proc::MapProcedureLegs& legs, proc::MapProcedure
   return procText;
 }
 
+QDebug operator<<(QDebug out, const proc::MapProcedureType& type)
+{
+  out << proc::MapProcedureTypes(type);
+  return out;
+}
+
+QStringList mapProcedureTypesToString(const proc::MapProcedureTypes& flags)
+{
+  ATOOLS_FLAGS_TO_STR_BEGIN(PROCEDURE_NONE);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_APPROACH);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_MISSED);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_TRANSITION);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_SID);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_SID_TRANSITION);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_STAR);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_STAR_TRANSITION);
+  ATOOLS_FLAGS_TO_STR_END;
+}
+
 QDebug operator<<(QDebug out, const proc::MapProcedureTypes& type)
 {
   QDebugStateSaver saver(out);
-
-  QStringList flags;
-  if(type == PROCEDURE_NONE)
-    flags.append("PROC_NONE");
-  else
-  {
-    if(type & PROCEDURE_APPROACH)
-      flags.append("PROC_APPROACH");
-    if(type & PROCEDURE_MISSED)
-      flags.append("PROC_MISSED");
-    if(type & PROCEDURE_TRANSITION)
-      flags.append("PROC_TRANSITION");
-    if(type & PROCEDURE_SID)
-      flags.append("PROC_SID");
-    if(type & PROCEDURE_SID_TRANSITION)
-      flags.append("PROC_SID_TRANSITION");
-    if(type & PROCEDURE_STAR)
-      flags.append("PROC_STAR");
-    if(type & PROCEDURE_STAR_TRANSITION)
-      flags.append("PROC_STAR_TRANSITION");
-  }
-
-  out.nospace().noquote() << flags.join("|");
-
+  out.nospace().noquote() << mapProcedureTypesToString(type).join("|");
   return out;
-
 }
 
 bool procedureLegFixAtStart(ProcedureLegType type)
@@ -1210,7 +1201,7 @@ bool procedureLegFrom(ProcedureLegType type)
     });
 }
 
-QString  procedureTextSuffixDepartDest(const Route& route, const map::MapAirport& airport, bool *disable)
+QString procedureTextSuffixDepartDest(const Route& route, const map::MapAirport& airport, bool *disable)
 {
   QString text;
   if(airport.isValid())
@@ -1233,32 +1224,20 @@ QString  procedureTextSuffixDepartDest(const Route& route, const map::MapAirport
   return text;
 }
 
-QString  procedureTextSuffixAlternate(const Route& route, const map::MapAirport& airport, bool *disable)
+void procedureAlternateFlags(const Route& route, const map::MapAirport& airport, bool& disable)
 {
   bool departure = false, destination = false, alternate = false;
   proc::procedureFlags(route, &airport, &departure, &destination, &alternate);
 
-  QString text;
   if(airport.isValid())
   {
     if(destination)
-    {
-      if(disable != nullptr)
-        *disable = true;
-      text = QObject::tr(" (is destination)");
-    }
-    else if(departure)
-      text = QObject::tr(" (is departure)");
+      disable = true;
     else if(alternate)
-    {
-      if(disable != nullptr)
-        *disable = true;
-      text = QObject::tr(" (is alternate)");
-    }
+      disable = true;
   }
-  else if(disable != nullptr)
-    *disable = true;
-  return text;
+  else
+    disable = true;
 }
 
 QString  procedureTextSuffixDirectTo(const Route& route, int legIndex, const map::MapAirport *airport, bool *disable)
@@ -1287,7 +1266,7 @@ QString  procedureTextSuffixDirectTo(const Route& route, int legIndex, const map
     // Do not allow to direct to back if leg index is given
     // Or circling with single airport - allow only another airport or navaid
     disableItem = true;
-    text = QObject::tr(" (past active)");
+    text = QObject::tr(" (behind active)");
   }
   else if(legIndex != -1 && legIndex < map::INVALID_INDEX_VALUE)
   {
@@ -1344,7 +1323,6 @@ void procedureFlags(const Route& route, const map::MapBase *base, bool *departur
   if(base != nullptr && base->getType() == map::AIRPORT)
   {
     const map::MapAirport *airport = base->asPtr<map::MapAirport>();
-    MapQuery *mapQueryGui = QueryManager::instance()->getQueriesGui()->getMapQuery();
 
     if(departure != nullptr)
       *departure = route.isAirportDeparture(airport->ident);
@@ -1358,18 +1336,22 @@ void procedureFlags(const Route& route, const map::MapBase *base, bool *departur
     if(roundtrip != nullptr)
       *roundtrip = route.isAirportRoundTrip(airport->ident);
 
-    if(arrivalProc != nullptr)
-      *arrivalProc = mapQueryGui->hasArrivalProcedures(*airport);
+    if(arrivalProc != nullptr || departureProc != nullptr)
+    {
+      MapQuery *mapQueryGui = QueryManager::instance()->getQueriesGui()->getMapQuery();
+      if(arrivalProc != nullptr)
+        *arrivalProc = mapQueryGui->hasArrivalProcedures(*airport);
 
-    if(departureProc != nullptr)
-      *departureProc = mapQueryGui->hasDepartureProcedures(*airport);
+      if(departureProc != nullptr)
+        *departureProc = mapQueryGui->hasDepartureProcedures(*airport);
+    }
   }
 }
 
 QStringList procedureTextFirstAndLastFix(const MapProcedureLegs& legs, proc::MapProcedureTypes mapType)
 {
   // First create a vector with either all legs or only approach legs depending on type related to leg
-  QVector<const MapProcedureLeg *> tempLegs;
+  QList<const MapProcedureLeg *> tempLegs;
   if(mapType & proc::PROCEDURE_ANY_TRANSITION)
   {
     for(int i = 0; i < legs.size(); i++)
@@ -1415,7 +1397,7 @@ QString aircraftCategoryText(const QString& cat)
 {
   // Aircraft category
   if(cat.isEmpty())
-    return QString();
+    return QStringLiteral();
   else if(cat == "A")
     return QObject::tr("All Aircraft");
   else if(cat == "C")
@@ -1440,24 +1422,24 @@ QString aircraftCategoryText(const QString& cat)
     return QObject::tr("Non-Jet, Cruise below 190 kts");
   else if(cat == "R")
     // return QObject::tr("Aircraft as defined in a Notes Continuation Record");
-    return QString();
+    return QStringLiteral();
   else if(cat == "S")
     return QObject::tr("Single Engine");
   else if(cat == "T")
     return QObject::tr("Twin Engine");
 
 #ifdef DEBUG_INFORMATION
-  return QString("[Aircraft %1]").arg(cat);
+  return QStringLiteral("[Aircraft %1]").arg(cat);
 
 #else
-  return QString();
+  return QStringLiteral();
 
 #endif
 }
 
-QString radialText(float radial)
+QString radialText(float radial, int precision)
 {
-  return QObject::tr("R%1", "Radial").arg(radial, 3, 'f', 0, QChar('0'));
+  return QObject::tr("R%1", "Radial").arg(radial, 3, 'f', precision, QChar('0'));
 }
 
 } // namespace proc

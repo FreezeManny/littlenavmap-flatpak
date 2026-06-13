@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,9 +18,10 @@
 #ifndef LNM_WEBCONTROLLER_H
 #define LNM_WEBCONTROLLER_H
 
+#include "options/optionchangeflags.h"
 #include <QHash>
 #include <QObject>
-#include <QVector>
+#include <QList>
 
 namespace stefanfrings {
 class HttpListener;
@@ -74,7 +75,7 @@ public:
   QStringList getUrlStr();
 
   /* Update settings and probably restart server. */
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
   /* Update settings from option data but do not restart. Returns true if any changes. */
   bool updateSettings();
@@ -156,7 +157,7 @@ private:
   bool verbose = false;
 
   /* Caches host names sorted by IPv4 and IPv6 */
-  QVector<Host> hosts;
+  QList<Host> hosts;
 
   /* Remember custom certifiates. */
   QString sslKeyFile, sslCertFile;

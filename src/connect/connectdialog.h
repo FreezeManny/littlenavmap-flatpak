@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,11 @@
 
 #include <QDialog>
 
+namespace atools {
+namespace gui {
+class ComboBoxHandler;
+}
+}
 namespace Ui {
 class ConnectDialog;
 }
@@ -78,6 +83,8 @@ public:
 
   int execConnectDialog(cd::ConnectSimType connectionType);
 
+  void fontChanged(const QFont& font);
+
 signals:
   void disconnectClicked();
   void autoConnectToggled(bool state);
@@ -91,8 +98,8 @@ private:
   void updateRateHasChanged();
   void fetchOptionsClicked();
 
+  /* A button box button was clicked */
   void buttonBoxClicked(QAbstractButton *button);
-  void deleteClicked();
   void updateButtonStates();
   void activateTab(QWidget *tabWidget);
 
@@ -101,6 +108,7 @@ private:
 
   Ui::ConnectDialog *ui;
   bool simConnect = false;
+  atools::gui::ComboBoxHandler *comboBoxHandler = nullptr;
 
 };
 

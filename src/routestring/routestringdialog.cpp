@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,24 +17,26 @@
 
 #include "routestring/routestringdialog.h"
 
+#include "app/navapp.h"
 #include "atools.h"
 #include "common/constants.h"
 #include "gui/helphandler.h"
+#include "gui/signalblocker.h"
+#include "gui/tools.h"
 #include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
-#include "app/navapp.h"
+#include "gui/widgetzoomhandler.h"
 #include "route/routecontroller.h"
 #include "routestring/routestringreader.h"
 #include "routestring/routestringwriter.h"
 #include "settings/settings.h"
-#include "gui/signalblocker.h"
 
 #include "ui_routestringdialog.h"
 
 #include <QClipboard>
 #include <QMenu>
 #include <QButtonGroup>
+#include <QActionGroup>
 #include <QScrollBar>
 #include <QFontDatabase>
 #include <QSyntaxHighlighter>
@@ -45,36 +47,18 @@ const static int TEXT_CHANGE_DELAY_MS = 500;
 using atools::gui::HelpHandler;
 namespace apln = atools::fs::pln;
 
-// =================================================================================================
-/* Makes first block bold and rest gray to indicate active description text. */
-class SyntaxHighlighter :
-  public QSyntaxHighlighter
+SyntaxHighlighter::SyntaxHighlighter(QObject *parent)
+  : QSyntaxHighlighter(parent)
 {
-public:
-  SyntaxHighlighter(QObject *parent)
-    : QSyntaxHighlighter(parent)
-  {
-  }
+}
 
-  void styleChanged()
-  {
-    formatHighlight.setFontWeight(QFont::Bold);
-    formatNormal.setForeground(NavApp::isGuiStyleDark() ? QColor(180, 180, 180) : QColor(100, 100, 100));
-  }
 
-private:
-  virtual void highlightBlock(const QString& text) override;
 
-  QTextCharFormat formatHighlight, formatNormal;
-
-  enum
-  {
-    BEFORE_START = -1, // First line or empty lines before any text
-    IN_HIGHLIGHT_BLOCK = 0, // Currently non-empty lines
-    AFTER_HIGHLIGHT_BLOCK = 1 // After one filled block now coloring gray
-  };
-
-};
+void SyntaxHighlighter::styleChanged()
+{
+  formatHighlight.setFontWeight(QFont::Bold);
+  formatNormal.setForeground(NavApp::isGuiStyleDark() ? QColor(180, 180, 180) : QColor(100, 100, 100));
+}
 
 void SyntaxHighlighter::highlightBlock(const QString& text)
 {
@@ -89,24 +73,9 @@ void SyntaxHighlighter::highlightBlock(const QString& text)
   setFormat(0, text.size(), currentBlockState() == IN_HIGHLIGHT_BLOCK ? formatHighlight : formatNormal);
 }
 
-// =================================================================================================
-class TextEditEventFilter :
-  public QObject
-{
 
-public:
-  TextEditEventFilter(RouteStringDialog *parent)
-    : QObject(parent), dialog(parent)
-  {
-  }
 
-private:
-  virtual bool eventFilter(QObject *object, QEvent *event) override;
-
-  RouteStringDialog *dialog;
-};
-
-bool TextEditEventFilter::eventFilter(QObject *object, QEvent *event)
+bool RouteStringTextEditEventFilter::eventFilter(QObject *object, QEvent *event)
 {
   if(event->type() == QEvent::KeyPress)
   {
@@ -125,7 +94,7 @@ bool TextEditEventFilter::eventFilter(QObject *object, QEvent *event)
 RouteStringDialog::RouteStringDialog(QWidget *parent, const QString& settingsSuffixParam)
   : QDialog(parent), ui(new Ui::RouteStringDialog), settingsSuffix(settingsSuffixParam)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
   blocking = parent != nullptr;
 
@@ -237,7 +206,7 @@ RouteStringDialog::RouteStringDialog(QWidget *parent, const QString& settingsSuf
   connect(&textUpdateTimer, &QTimer::timeout, this, &RouteStringDialog::textChangedDelayed);
   textUpdateTimer.setSingleShot(true);
 
-  eventFilter = new TextEditEventFilter(this);
+  eventFilter = new RouteStringTextEditEventFilter(this);
   ui->textEditRouteString->installEventFilter(eventFilter);
 
   // Apply splitter and text formats
@@ -256,9 +225,9 @@ RouteStringDialog::~RouteStringDialog()
   ATOOLS_DELETE_LOG(procActionGroup);
   ATOOLS_DELETE_LOG(advancedMenu);
   ATOOLS_DELETE_LOG(buttonMenu);
-  ATOOLS_DELETE_LOG(ui);
   ATOOLS_DELETE_LOG(flightplan);
   ATOOLS_DELETE_LOG(eventFilter);
+  ATOOLS_DELETE_LOG(ui);
 }
 
 void RouteStringDialog::buildButtonMenu()
@@ -440,7 +409,7 @@ void RouteStringDialog::showHelpButtonToggled(bool checked)
 {
   QList<int> sizes = ui->splitterRouteString->sizes();
   int total = 0;
-  for(int size : qAsConst(sizes))
+  for(int size : std::as_const(sizes))
     total += size;
 
   if(sizes.size() == 3)
@@ -488,7 +457,7 @@ void RouteStringDialog::toolButtonOptionTriggered(QAction *act)
     return;
 
   // Copy menu state for options bitfield
-  for(const QAction *action : qAsConst(actions))
+  for(const QAction *action : std::as_const(actions))
     options.setFlag(static_cast<rs::RouteStringOption>(action->data().toInt()), action->isChecked());
 
   // Call immediately and update even if string is unchanged
@@ -526,7 +495,7 @@ void RouteStringDialog::resetWindowLayout(RouteStringDialog *routeStringDialog, 
 
   // Check if instance alread open and center if needed
   if(routeStringDialog != nullptr)
-    atools::gui::util::centerWidgetOnScreen(routeStringDialog, routeStringDialog->defaultSize);
+    atools::gui::centerWidgetOnScreen(routeStringDialog, routeStringDialog->defaultSize);
 }
 
 void RouteStringDialog::restoreState()
@@ -543,7 +512,7 @@ void RouteStringDialog::restoreState()
   {
     atools::settings::Settings& settings = atools::settings::Settings::instance();
     // Load from settings
-    textEditRouteStringPrepend(settings.valueStr(lnm::ROUTE_STRING_DIALOG_DESCR + settingsSuffix), false /* newline*/);
+    textEditRouteStringPrepend(settings.valueStr(lnm::ROUTE_STRING_DIALOG_DESCR + settingsSuffix), false /* newline */);
 
     // Avoid clean undo step
     ui->textEditRouteString->setUndoRedoEnabled(true);
@@ -585,8 +554,11 @@ void RouteStringDialog::addRouteDescription(const QString& routeString)
 
 void RouteStringDialog::fontChanged(const QFont& font)
 {
-  atools::gui::updateAllFonts(this, font);
+  atools::gui::updateAllFonts(this, font, atools::gui::WidgetZoomHandler::getRegisteredWidgets());
   ui->textEditRouteString->document()->setDefaultFont(atools::gui::getBestFixedFont());
+
+  atools::gui::setWidgetAndIconSize({ui->pushButtonRouteStringShowHelp, ui->pushButtonRouteStringUndo, ui->pushButtonRouteStringRedo},
+                                    NavApp::getMinButtonSize());
 }
 
 void RouteStringDialog::styleChanged()
@@ -597,11 +569,13 @@ void RouteStringDialog::styleChanged()
   // Styles cascade to children and mess up UI themes on linux - even if widget is selected by name
 #if !defined(Q_OS_LINUX) || defined(DEBUG_INFORMATION)
   // Make the splitter handle better visible
-  ui->splitterRouteString->setStyleSheet(QString("QSplitter::handle { "
-                                                 "background: %1;"
-                                                 "image: url(:/littlenavmap/resources/icons/splitterhandvert.png); "
-                                                 "}").arg(QApplication::palette().color(QPalette::Window).darker(120).name()));
+  ui->splitterRouteString->setStyleSheet(QStringLiteral("QSplitter::handle { "
+                                                        "background: %1;"
+                                                        "image: url(:/littlenavmap/resources/icons/splitterhandvert.png); "
+                                                        "}").arg(QApplication::palette().color(QPalette::Window).darker(120).name()));
 #endif
+
+  atools::gui::updateAllPalette(this, QApplication::palette());
 }
 
 rs::RouteStringOptions RouteStringDialog::getOptionsFromSettings()
@@ -673,14 +647,14 @@ void RouteStringDialog::textChangedInternal(bool forceUpdate)
 
         // Fill report into widget
         errorString.append(routeStringReader->getAllMessages().join("<br/>"));
-        atools::gui::util::updateTextEdit(ui->textEditRouteStringErrors, errorString, false /* scrollToTop */, true /* keepSelection */);
+        atools::gui::updateTextEdit(ui->textEditRouteStringErrors, errorString, false /* scrollToTop */, true /* keepSelection */);
       }
       else
-        atools::gui::util::updateTextEdit(ui->textEditRouteStringErrors, tr("Description is too long."), false /* scrollToTop */,
-                                          true /* keepSelection */);
+        atools::gui::updateTextEdit(ui->textEditRouteStringErrors, tr("Description is too long."), false /* scrollToTop */,
+                                    true /* keepSelection */);
     }
     else
-      atools::gui::util::updateTextEdit(ui->textEditRouteStringErrors, QString(), false /* scrollToTop */, true /* keepSelection */);
+      atools::gui::updateTextEdit(ui->textEditRouteStringErrors, QStringLiteral(), false /* scrollToTop */, true /* keepSelection */);
   }
 
   // Avoid update issues with macOS and mac style - force repaint
@@ -796,8 +770,8 @@ void RouteStringDialog::updateButtonState()
 
   // Copy option flags to dropdown menu items
   updatingActions = true;
-  for(QAction *action : qAsConst(actions))
-    action->setChecked(rs::RouteStringOptions(static_cast<quint32>(action->data().toInt())) & options);
+  for(QAction *action : std::as_const(actions))
+    action->setChecked(rs::RouteStringOptions(static_cast<quint32>(action->data().toInt())).testAnyFlag(options));
 
   updatingActions = false;
 }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,10 @@ class QueryBuilderResult;
 
 class QueryWidget;
 namespace atools {
+
+namespace gui {
+class ComboBoxHandler;
+}
 namespace sql {
 class SqlDatabase;
 }
@@ -48,7 +52,7 @@ class NavSearch :
   Q_OBJECT
 
 public:
-  explicit NavSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex);
+  explicit NavSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex);
   virtual ~NavSearch() override;
 
   NavSearch(const NavSearch& other) = delete;
@@ -67,8 +71,12 @@ private:
   virtual void saveViewState(bool distanceSearchState) override;
   virtual void restoreViewState(bool distanceSearchState) override;
   virtual void updatePushButtons() override;
-  QAction *followModeAction() override;
+  virtual void resetView() override;
 
+  /* Options dialog has changed some options */
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) override;
+
+  QAction *followModeAction() override;
   void setCallbacks();
   QVariant modelDataHandler(int colIndex, int rowIndex, const Column *col, const QVariant&,
                             const QVariant& displayRoleValue, Qt::ItemDataRole role) const;
@@ -85,6 +93,7 @@ private:
   /* Draw navaid icon into ident table column */
   NavIconDelegate *iconDelegate = nullptr;
 
+  atools::gui::ComboBoxHandler *comboBoxHandler = nullptr;
 };
 
 #endif // LITTLENAVMAP_NAVSEARCH_H

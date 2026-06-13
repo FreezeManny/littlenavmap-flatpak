@@ -18,24 +18,22 @@
 #ifndef LITTLENAVMAP_ROUTECONTROLLER_H
 #define LITTLENAVMAP_ROUTECONTROLLER_H
 
+#include "options/optionchangeflags.h"
 #include "routing/routenetworktypes.h"
 #include "route/route.h"
 
 #include <QItemSelection>
 #include <QTimer>
 
-class QUndoStack;
-
-class QAction;
 namespace atools {
 namespace routing {
 class RouteFinder;
 class RouteNetwork;
 }
 namespace gui {
-
+class TableEditDelegate;
 class Dialog;
-class ItemViewZoomHandler;
+class WidgetZoomHandler;
 class TabWidgetHandler;
 }
 namespace util {
@@ -55,14 +53,18 @@ class FlightplanEntry;
 }
 
 class FlightplanEntryBuilder;
-class QItemSelection;
 class MainWindow;
+class QAction;
+class QPlainTextEdit;
+class QStandardItem;
 class QStandardItemModel;
 class QTableView;
 class QTextCursor;
+class QUndoStack;
 class RouteCalcDialog;
 class RouteCommand;
 class RouteLabel;
+class RouteWaypointEditDialog;
 class SymbolPainter;
 class UnitStringTool;
 
@@ -87,9 +89,6 @@ public:
 
   /* Creates a new plan and emits routeChanged. Undo stack is cleared. */
   void newFlightplan();
-
-  /* Create a new plan from airports and put the change on the undo/redo stack */
-  void routeNewFromAirports(const map::MapAirport& departure, const map::MapAirport& destination);
 
   /* Loads flight plan from FSX PLN file, checks for proper start position (shows notification dialog)
    * and emits routeChanged. Uses file name as new current name  */
@@ -174,10 +173,10 @@ public:
   void postDatabaseLoad();
 
   /* Replaces departure airport or adds departure if not valid. Adds best start position (runway). */
-  void routeSetDeparture(map::MapAirport airport);
+  void routeSetDeparture(map::MapAirport airport, bool undo = true);
 
   /* Replaces destination airport or adds destination if not valid */
-  void routeSetDestination(map::MapAirport airport);
+  void routeSetDestination(map::MapAirport airport, bool undo = true);
 
   /* Add an alternate airport */
   void routeAddAlternate(map::MapAirport airport);
@@ -192,7 +191,7 @@ public:
   void routeAdd(int id, atools::geo::Pos userPos, map::MapTypes type, int legIndex);
 
   /* Add an approach and/or a transition */
-  void routeAddProcedure(proc::MapProcedureLegs legs);
+  void routeAddProcedure(proc::MapProcedureLegs legs, bool undo);
 
   /* Same as above but replaces waypoint at legIndex */
   void routeReplace(int id, atools::geo::Pos userPos, map::MapTypes type, int legIndex);
@@ -208,8 +207,8 @@ public:
 
   /* Set departure parking position. If the airport of the parking spot is different to
    * the current departure it will be replaced too. */
-  void routeSetParking(const map::MapParking& parking); /* From map context menu */
-  void routeSetHelipad(const map::MapHelipad& helipad); /* From map context menu */
+  void routeSetParkingPosition(const map::MapParking& parking, bool undo = true); /* From map context menu */
+  void routeSetHelipad(const map::MapHelipad& helipad, bool undo = true); /* From map context menu */
   void routeClearParkingAndStart(); /* Main menu and parking dialog - set airport as start */
 
   /* Shows the dialog to select departure parking or start position.
@@ -229,7 +228,7 @@ public:
   void reverseRoute();
 
   /* Change in options dialog */
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
   void fontChanged(const QFont& font);
 
   /* Tracks downloaded or deleted */
@@ -242,13 +241,16 @@ public:
    * Uses own colors for table background. Used by web server. */
   QString getFlightplanTableAsHtml(float iconSizePixel, bool print) const;
 
-  /* Same as above but full HTML document for export */
+  /* Same as above but full HTML document for export to file. */
   QString getFlightplanTableAsHtmlDoc(float iconSizePixel) const;
+
+  /* Full CSV document independent of hidden columns */
+  QString getFlightplanTableAsCsv() const;
 
   /* Get flight plan extracted from table selection */
   Route getRouteForSelection() const;
 
-  /* Insert a flight plan table as QTextTable object at the cursor position.
+  /* Insert a flight plan table as QTextTable object at the cursor position. Used for printing.
    * @param selectedCols Physical/logical and not view order. */
   void flightplanTableAsTextTable(QTextCursor& cursor, const QBitArray& selectedCols, float fontPointSize) const;
 
@@ -298,10 +300,10 @@ public:
   QStringList getAllRouteColumns() const;
 
   /* Add custom procedure and probably set new destination airport */
-  void showCustomApproach(map::MapAirport airport, QString dialogHeader);
-  void showCustomDeparture(map::MapAirport airport, QString dialogHeader);
+  void showCustomApproach(map::MapAirport airport);
+  void showCustomDeparture(map::MapAirport airport, const map::MapParking& parking, const map::MapHelipad& helipad);
 
-  /* Add custom proc for departure or destination airport. Called from main menu. */
+  /* Add custom proc for departure or destination airport. Called from main menu actions. */
   void showCustomApproachMainMenu();
   void showCustomDepartureMainMenu();
 
@@ -354,6 +356,9 @@ public:
   /* Convert given procedure type at leg index to waypoints */
   void convertProcedure(int routeIndex);
 
+  /* Connect buttons after creating map widget */
+  void connectMapWidget();
+
 signals:
   /* Show airport on map */
   void showRect(const atools::geo::Rect& rect, bool doubleClick);
@@ -388,8 +393,14 @@ signals:
 
   void addUserpointFromMap(const map::MapResult& result, const atools::geo::Pos& pos, bool airportAddon);
 
+  void addRangeMark(const atools::geo::Pos& pos, const map::MapResult& result, bool showDialog);
+  void addPatternMarker(const map::MapAirport& airport);
+  void addHoldingMarker(const map::MapResult& result, const atools::geo::Pos& position);
+  void addNavRangeMark(const map::MapResult& result, const atools::geo::Pos& position);
+
 private:
   friend class RouteCommand;
+  friend class TableEditDelegate;
 
   /* Move selected rows */
   enum MoveDirection
@@ -423,27 +434,36 @@ private:
 
   /* Save undo state before and after change */
   /* Call this before doing any change to the flight plan that should be undoable */
-  RouteCommand *preChange(const QString& text = QString());
+  RouteCommand *preChange(const QString& text, bool enable = true);
 
   /* Call this after doing a change to the flight plan that should be undoable */
   void postChange(RouteCommand *undoCommand);
 
-  void routeSetStartPosition(map::MapStart start);
+  /* Set start position (runway, helipad) for departure */
+  void routeSetStartPosition(map::MapStart start, bool undo = true);
 
+  /* Double click into table view */
   void doubleClick(const QModelIndex& index);
   void showAtIndex(int index, bool info, bool map, bool doubleClick);
 
+  /* Return pressed which triggered actionRouteShowLeg */
+  void showLeg();
+
+  /* Open and execute context menu */
   void tableContextMenu(const QPoint& pos);
+
+  /* Build route leg. Legs can get invalid if actions call their own handlers and reorganize the route */
+  map::MapResult buildMenuResult(const QModelIndex& index);
 
   void tableSelectionChanged(const QItemSelection& = QItemSelection(), const QItemSelection& = QItemSelection());
 
   /* Convert given procedure type to waypoints */
-  void convertProcedure(proc::MapProcedureTypes types);
+  void convertProcedureInternal(proc::MapProcedureTypes types);
 
   void moveSelectedLegsDownTriggered();
   void moveSelectedLegsUpTriggered();
   void moveSelectedLegsInternal(MoveDirection direction);
-  void deleteSelectedLegs(const QList<int>& rows, bool selectCurrent);
+  void deleteSelectedLegs(QList<int> rows, bool selectCurrent, bool undo = true);
   void deleteSelectedLegsInternal(const QList<int>& rows);
 
   QList<int> getSelectedRows(bool reverseRoute) const;
@@ -497,6 +517,7 @@ private:
   /* Used by undo/redo */
   void changeRouteUndoRedo(const atools::fs::pln::Flightplan& newFlightplan);
 
+  /* Ctrl-C - copy selected table contents in CSV format to clipboard */
   void tableCopyClipboardTriggered();
 
   /* From context menu */
@@ -527,7 +548,7 @@ private:
   void redoTriggered();
   void helpClicked();
 
-  void dockVisibilityChanged(bool visible);
+  void dockVisibilityChanged(bool);
 
   void updateTableHeaders();
   void highlightNextWaypoint(int activeLegIdx);
@@ -555,6 +576,7 @@ private:
 
   void updateUnits();
 
+  /* ui->actionRouteEditUserWaypoint */
   void editUserWaypointTriggered();
 
   bool canCalcSelection();
@@ -585,14 +607,19 @@ private:
 
   void updateComboBoxFromFlightplanType();
 
-  /* Do not send model updates while modifying it */
-  void blockModel();
-  void unBlockModel();
-
   /* Set and select current row */
   void setCurrentRow(int row, bool select);
 
   void updateRemarksFont();
+
+  /* Signal from waypoint edit dialog */
+  void waypointEditedDialog();
+
+  /* From itemChanged() */
+  void waypointEditedInline(int, int row, const QString& comment);
+
+  /* Signal from table model after inline change or model update */
+  void itemChanged(QStandardItem *item);
 
   /* Selected rows in table. Updated on selection change. */
   QList<int> selectedRows;
@@ -602,7 +629,7 @@ private:
 
   static Q_DECL_CONSTEXPR int ROUTE_UNDO_LIMIT = 50;
 
-  atools::gui::ItemViewZoomHandler *zoomHandler = nullptr;
+  atools::gui::WidgetZoomHandler *zoomHandlerTable = nullptr, *zoomHandlerRemarks = nullptr, *zoomHandlerPlaceholder = nullptr;
 
   /* Need a workaround since QUndoStack does not report current indices and clean state correctly */
   int undoIndex = 0;
@@ -644,6 +671,7 @@ private:
 
   /* Route calculation dock window controller */
   RouteCalcDialog *routeCalcDialog = nullptr;
+  RouteWaypointEditDialog *waypointEditDialog = nullptr;
 
   bool loadingDatabaseState = false;
   qint64 lastSimUpdate = 0;
@@ -657,6 +685,8 @@ private:
   SymbolPainter *symbolPainter = nullptr;
 
   atools::gui::TabWidgetHandler *tabHandlerRoute = nullptr;
+
+  atools::gui::TableEditDelegate *tableEditDelegate = nullptr;
 
   /* Timers for updating altitude delayer, clear selection while flying and moving active to top */
   QTimer routeAltDelayTimer, tableCleanupTimer;

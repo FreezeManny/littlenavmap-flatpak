@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,10 +19,11 @@
 #define LITTLENAVMAP_PROFILEWIDGET_H
 
 #include "fs/sc/simconnectdata.h"
+#include "options/optionchangeflags.h"
 
-#include <QFutureWatcher>
 #include <QWidget>
 
+class RouteAltitudeLeg;
 namespace atools {
 namespace geo {
 class LineString;
@@ -48,6 +49,8 @@ class Route;
 class RouteLeg;
 class ProfileOptions;
 struct ElevationLegList;
+struct ElevationLeg;
+struct ElevationLegListFuturePrivate;
 
 /*
  * Loads and displays the flight plan elevation profile. The elevation data is
@@ -93,7 +96,7 @@ public:
   /* Stops thread and disables all udpates */
   void preDatabaseLoad();
 
-  /* Restarts updates */
+  /* Restarts updates. Forces new thread creation */
   void postDatabaseLoad();
 
   /* Delta settings for option */
@@ -103,7 +106,7 @@ public:
     float altitudeDelta;
   };
 
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
   void styleChanged();
   void fontChanged(const QFont& font);
 
@@ -118,7 +121,7 @@ public:
   void mainWindowShown();
 
   /* Pair of screen y and altitude in feet to display and label the scale */
-  const QVector<std::pair<int, int> > calcScaleValues();
+  const QList<std::pair<int, int> > calcScaleValues();
 
   float getMinSafeAltitudeFt() const
   {
@@ -152,7 +155,7 @@ public:
 
   void aircraftPerformanceChanged(const atools::fs::perf::AircraftPerf *);
 
-  const QVector<int>& getWaypointX() const
+  const QList<int>& getWaypointX() const
   {
     return waypointX;
   }
@@ -213,19 +216,29 @@ private:
   virtual void mouseMoveEvent(QMouseEvent *mouseEvent) override;
   virtual void contextMenuEvent(QContextMenuEvent *event) override;
 
-  bool fetchRouteElevations(atools::geo::LineString& elevations, const atools::geo::LineString& geometry) const;
+  /* Get elevation points between the two points. This returns also correct results if the antimeridian is crossed
+   * @return true if not aborted */
+  bool fetchRouteElevations(atools::geo::LineString& elevations, const atools::geo::LineString& geometry, float sampleRadiusNm,
+                            bool precision) const;
+
+  /* Background thread. Fetches elevation points from Marble elevation model and updates totals. */
   ElevationLegList fetchRouteElevationsThread(ElevationLegList legs) const;
+
+  /* Update signal from Marble elevation model */
   void elevationUpdateAvailable();
+
+  /* Called by updateTimer after any route or elevation updates and starts the thread */
   void updateTimeout();
-  void updateThreadFinished();
+
+  /* Called by watcher when the thread is finished */
+  void fetchRouteElevationsThreadFinished();
 
   /* Update all screen coordinates and scale factors */
   void updateScreenCoords();
 
   /* Calculate the left and right margin based on font size and airport elevation text */
-  void calcLeftMargin();
+  void calculateProfileMargin();
 
-  void terminateThread();
   float calcGroundBufferFt(float maxElevationFt);
 
   void updateHeaderLabel();
@@ -233,8 +246,9 @@ private:
   /* Calculate map position on flight plan for x screen/widget position on profile.
    * Additionally gives index into route, distances from/to and altitude at x. maxElev is minimum elevation for leg.
    * Distances in NM and altitudes in feet. */
-  void calculateDistancesAndPos(int x, atools::geo::Pos& pos, int& routeIndex, float& distance, float& distanceToGo,
-                                float& groundElevation, float& maxElev);
+  void calculateDistancesAndPos(int x, atools::geo::Pos& pos, int *routeIndex = nullptr, float *distance = nullptr,
+                                float *distanceToGo = nullptr, float *groundElevationInner = nullptr, float *groundElevationOuter = nullptr,
+                                float *maxElev = nullptr);
 
   /* Calculate map position on flight plan for x screen/widget position on profile. */
   atools::geo::Pos calculatePos(int x);
@@ -257,12 +271,19 @@ private:
   void paintIls(QPainter& painter, const Route& route);
   void paintVasi(QPainter& painter, const Route& route);
 
+  /* Paint status messages into top left corner */
+  void paintCalculatingMessage(QPainter& painter);
+  void paintNoRouteMessage(QPainter& painter);
+  void paintInvalidRouteMessage(QPainter& painter);
+  void paintInitMessage(QPainter& painter);
+
   /* Draw a vertical track/path line extending from user aircraft */
   void paintVerticalPath(QPainter& painter, const Route& route);
 
   void jumpBackToAircraftStart();
   void jumpBackToAircraftTimeout();
 
+  /* Update error label in flight plan window */
   void updateErrorLabel();
 
   /* Load and save track separately */
@@ -270,14 +291,13 @@ private:
   void loadAircraftTrail();
 
   void updateTooltip();
-
   void buildTooltipText(int x, bool force);
 
   /* Get either indicated or real */
   float aircraftAlt(const atools::fs::sc::SimConnectUserAircraft& aircraft);
 
   /* Screen pixel width of this leg. Considers zero-length IAF legs */
-  int calcLegScreenWidth(const QVector<QPolygon>& altLegs, int waypointIndex);
+  int calcLegScreenWidth(const QList<QPolygon>& altLegs, int waypointIndex);
 
   /* Get text and text color for a leg. procSymbol is true if only the generic procedure waypoint should be drawn */
   QStringList textsAndColorForLeg(QColor& color, bool& procSymbol, const RouteLeg& leg, bool procedureDisplayText, int legWidth);
@@ -288,6 +308,29 @@ private:
   /* Center aircraft or zoom to aircraft and destination depending on distance to destination. */
   void centerAircraft();
 
+  /* Calculate landmass polygon in screen coordinates. width and height are window dimensions */
+  void calculateLandmass(QPolygon& landPolygon, const QList<ElevationLeg>& elevationLegs, int width, int height) const;
+
+  /* Fill leg, leg list distances, altitudes and maximum altitude for leg and plan */
+  bool fillElevationLeg(ElevationLeg& leg, ElevationLegList& legs, double& totalDistanceNm, const atools::geo::LineString& elevations,
+                        const RouteAltitudeLeg& altitudeLeg) const;
+
+  /* Fill dummy values for a too long leg */
+  void fillLongElevationLeg(ElevationLeg& leg, ElevationLegList& legs, double& totalDistanceNm, const RouteAltitudeLeg& altitudeLeg) const;
+
+  /* Adjust a correction for all distances in the leg.
+   * This can happen with the online elevation provider which does not return all points exactly on the leg */
+  void applyCorrection(ElevationLeg& leg, double scale) const;
+
+  /* Get ground elevation for give route leg and distance */
+  const ElevationLeg& legFromPos(float& groundElevation, const QList<ElevationLeg>& elevationLegs, int routeIndex, float distance);
+
+  /* true if fetchRouteElevationsThread() is running */
+  bool isCalculating() const;
+
+  /* Start thread after short delay to calculate new data. Calls ProfileWidget::updateTimeout() */
+  void startUpdateTimer();
+
   /* User aircraft data */
   atools::fs::sc::SimConnectData simData, lastSimData;
 
@@ -297,7 +340,10 @@ private:
   float aircraftDistanceFromStart; /* NM */
   float lastAircraftDistanceFromStart;
 
+  /* Aircraft is moving backwards */
   bool movingBackwards = false;
+
+  /* Contains a copy of the flight plan and all calculated elevation positions */
   ElevationLegList *legList;
 
   JumpBack *jumpBack = nullptr;
@@ -306,14 +352,9 @@ private:
   /* Calls updateTimeout which will start the update thread in background */
   QTimer *updateTimer = nullptr;
 
-  /* Used to fetch result from thread */
-  QFuture<ElevationLegList> future;
-  /* Sends signal once thread is finished */
-  QFutureWatcher<ElevationLegList> watcher;
-  bool terminateThreadSignal = false;
+  ElevationLegListFuturePrivate *futurePrivate;
 
   bool databaseLoadStatus = false;
-  bool active = false;
   bool insideResizeEvent = false; // Avoid recursion when resize is called by ProfileScrollArea::scaleView
 
   QRubberBand *rubberBand = nullptr;
@@ -321,28 +362,40 @@ private:
   int lastTooltipX = -999;
   QString lastTooltipString;
   atools::geo::Pos lastTooltipPos;
-  QPoint lastTooltipScreenPos;
+  QPointF lastTooltipScreenPos;
 
   bool widgetVisible = false, showAircraft = false, showAircraftTrail = false;
-  QVector<int> waypointX; /* Flight plan waypoint screen coordinates - does contain the dummy
-                           * from airport to runway but not missed legs */
-  QPolygon landPolygon; /* Green landmass polygon */
+  QList<int> waypointX; /* Flight plan waypoint screen coordinates - does contain the dummy
+                           from airport to runway but not missed legs */
+
+  QPolygon landPolygonInner, landPolygonOuter; /* Green landmass polygon */
+
   float minSafeAltitudeFt = 0.f, /* Red line */
         maxWindowAlt = 1.f; /* Maximum altitude at top of widget */
 
   ProfileScrollArea *scrollArea = nullptr;
-
   ProfileOptions *profileOptions = nullptr;
 
   float verticalScale = 1.f /* Factor to convert altitude in feet to screen coordinates*/,
         horizontalScale = 1.f /* Factor to convert distance along flight plan in nautical miles to screen coordinates*/;
 
-  /* Left margin inside widget - calculated depending on font and text size in paint */
-  int left = 30;
+  /* Left margin inside widget - calculated depending on font and text size in paint. Gray area left and right of profile. */
+  int paintMargin = 30;
+
+  /* Margins for messages and warnings */
+  int textX = 10, textY = 10;
+
+  /* Widget is shown */
+  bool active = false;
+
+  /* Display "initializing ..." on first startup until fetch is finished. The fetch thread is always run, even for invalid routes */
+  bool fetchRouteElevationsFinished = false;
 
   /* Numbers for aircraft track */
-  static Q_DECL_CONSTEXPR quint32 FILE_MAGIC_NUMBER = 0x6B7C2A3C;
-  static Q_DECL_CONSTEXPR quint16 FILE_VERSION = 1;
+  const static quint32 FILE_MAGIC_NUMBER = 0x6B7C2A3C;
+  const static quint16 FILE_VERSION = 1;
+
+  float elevationSampleRadiusOuterNm = 5.f;
 };
 
 Q_DECLARE_TYPEINFO(ProfileWidget::SimUpdateDelta, Q_PRIMITIVE_TYPE);

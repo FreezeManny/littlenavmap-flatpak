@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 
 #include "util/flags.h"
 
-#include <QVector>
+#include <QList>
 #include <QObject>
 
 /*
@@ -80,7 +80,7 @@ enum MapType : quint64
   AIRWAY =           1ULL << 10,
   AIRWAYV =          1ULL << 11,
   AIRWAYJ =          1ULL << 12,
-  USER_FEATURE =     1ULL << 13,
+  // 1 << 13, UNUSED
   AIRCRAFT =         1ULL << 14, /* Simulator user aircraft */
   AIRCRAFT_AI =      1ULL << 15, /* AI or multiplayer simulator aircraft */
   AIRCRAFT_AI_SHIP = 1ULL << 16, /* AI or multiplayer simulator ship */
@@ -111,6 +111,8 @@ enum MapType : quint64
 
   /* All marks */
   MARK_ALL = MARK_RANGE | MARK_DISTANCE | MARK_HOLDING | MARK_PATTERNS | MARK_MSA,
+  MARK_ALL_EDITABLE = MARK_RANGE | MARK_DISTANCE | MARK_HOLDING | MARK_PATTERNS,
+  MARK_ALL_MOVEABLE = MARK_RANGE | MARK_DISTANCE | MARK_HOLDING,
 
   /* Airport display flags ================================  */
   AIRPORT_HARD =         1ULL << 36, /* Display flag for airports having at least one hard runway */
@@ -131,17 +133,18 @@ enum MapType : quint64
 
   /* Add-on airport flags ================================  */
   AIRPORT_ADDON_ZOOM =        1ULL << 48, /* Add-on airports override zoom distance but but not filter */
-  AIRPORT_ADDON_ZOOM_FILTER = 1ULL << 49, /* Add-on airports override zoom distance and filters */
+  AIRPORT_ADDON_ZOOM_AND_FILTER = 1ULL << 49, /* Add-on airports override zoom distance and filters */
 
 
   // NEXT = 0x0001'0000'0000'0000 / 1ULL << 51 after START
+  // Also update mapTypeToString()
 
   /* =============================================================================================== */
   /* Pure visibiliy flags. Nothing is shown if not at least one of these is set */
   AIRPORT_ALL_VISIBLE = AIRPORT_HARD | AIRPORT_SOFT | AIRPORT_WATER | AIRPORT_HELIPAD,
 
   /* Any add-on override */
-  AIRPORT_ADDON_ANY = AIRPORT_ADDON_ZOOM | AIRPORT_ADDON_ZOOM_FILTER,
+  AIRPORT_ADDON_ANY = AIRPORT_ADDON_ZOOM | AIRPORT_ADDON_ZOOM_AND_FILTER,
 
   /* All available filters in drop down button */
   AIRPORT_FILTER_ALL = AIRPORT_ALL_VISIBLE | AIRPORT_EMPTY | AIRPORT_UNLIGHTED | AIRPORT_NO_PROCS |
@@ -154,7 +157,7 @@ enum MapType : quint64
   AIRPORT_ALL_MASK = AIRPORT_ALL | AIRPORT_ADDON_ANY,
 
   /* Default value on first start */
-  AIRPORT_DEFAULT = AIRPORT_ALL | AIRPORT_ADDON_ZOOM_FILTER,
+  AIRPORT_DEFAULT = AIRPORT_ALL | AIRPORT_ADDON_ZOOM_AND_FILTER,
 
   /* All online, AI and multiplayer aircraft ========================================= */
   AIRCRAFT_ALL = AIRCRAFT | AIRCRAFT_AI | AIRCRAFT_AI_SHIP | AIRCRAFT_ONLINE,
@@ -178,7 +181,7 @@ enum MapType : quint64
 ATOOLS_DECLARE_FLAGS_64(MapTypes, MapType)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(map::MapTypes)
 
-QDebug operator<<(QDebug out, const map::MapType& type);
+QDebug operator<<(QDebug out, map::MapType type);
 QDebug operator<<(QDebug out, const map::MapTypes& type);
 
 /* Type that is used only for flags to determine what should be drawn.
@@ -203,7 +206,7 @@ enum MapDisplayType : quint32
   FLIGHTPLAN_TOC_TOD = 1 << 10, /* Top of climb and top of descent */
   FLIGHTPLAN_ALTERNATE = 1 << 21, /* Alternate airport and lines in flightplan */
 
-  GLS = 1 << 13, /* RNV approach, GLS approache or GBAS path - only display flag. Object is stored with type ILS. */
+  GLS = 1 << 13, /* RNV approach, GLS approach or GBAS path - only display flag. Object is stored with type ILS. */
 
   AIRCRAFT_ENDURANCE = 1 << 18, /* Range ring for current aircraft endurance. */
 
@@ -211,12 +214,15 @@ enum MapDisplayType : quint32
   AIRCRAFT_TURN_PATH = 1 << 20, /* Turn path at aircraft */
   DIRECT_TO_DEPARTURE = 1 << 22, /* Course line direct to departure runway */
 
+  /* Also update mapDisplayTypeToString() */
+
   LOGBOOK_ALL = LOGBOOK_DIRECT | LOGBOOK_ROUTE | LOGBOOK_TRACK
 };
 
 ATOOLS_DECLARE_FLAGS_32(MapDisplayTypes, map::MapDisplayType)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(map::MapDisplayTypes)
 
+QDebug operator<<(QDebug out, map::MapDisplayType type);
 QDebug operator<<(QDebug out, const map::MapDisplayTypes& type);
 
 /* Query type for all getNearest and other functions. Covers all what is not included in MapObjectTypes */
@@ -229,7 +235,8 @@ enum MapObjectQueryType : quint32
   QUERY_MARK_PATTERNS = 1 << 3, /* Traffic patterns */
   QUERY_PROCEDURES = 1 << 4, /* Procedure navaids when querying route */
   QUERY_PROCEDURES_MISSED = 1 << 5, /* Missed procedure navaids when querying route */
-  QUERY_MARK_RANGE = 1 << 6, /* Range rings */
+  QUERY_MARK_RANGE = 1 << 6, /* Range rings - moveable */
+  QUERY_MARK_NAVRANGE = 1 << 14, /* Range ring attached to navaid - not moveable */
   QUERY_MARK_MSA = 1 << 7, /* MSA sectors */
   QUERY_MARK_DISTANCE = 1 << 8, /* Measurement lines */
   QUERY_PREVIEW_PROC_POINTS = 1 << 9, /* Points from procedure preview */
@@ -238,24 +245,15 @@ enum MapObjectQueryType : quint32
   QUERY_AIRCRAFT_TRAIL = 1 << 12, /* Aircraft trail */
   QUERY_AIRCRAFT_TRAIL_LOG = 1 << 13, /* Aircraft trail */
 
-  /* All user creatable/placeable features */
-  QUERY_MARK = QUERY_MARK_DISTANCE | QUERY_MARK_HOLDINGS | QUERY_MARK_PATTERNS | QUERY_MARK_RANGE | QUERY_MARK_MSA,
+  /* All user creatable/placeable map markers */
+  QUERY_MARK = QUERY_MARK_DISTANCE | QUERY_MARK_HOLDINGS | QUERY_MARK_PATTERNS | QUERY_MARK_RANGE | QUERY_MARK_MSA | QUERY_MARK_NAVRANGE,
+
+  /* All creatable/placeable map markers that can be moved using drag and drop */
+  QUERY_MOVEABLE_MARK = QUERY_MARK_DISTANCE | QUERY_MARK_HOLDINGS | QUERY_MARK_RANGE,
 };
 
 ATOOLS_DECLARE_FLAGS_32(MapObjectQueryTypes, map::MapObjectQueryType)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(map::MapObjectQueryTypes)
-
-/* ================================================================================== */
-/* Ident queries for airport defines which ident columns should be used in the lookup */
-enum DistanceMarkerFlag : quint32
-{
-  DIST_MARK_NONE = 0,
-  DIST_MARK_RADIAL = 1 << 0, /* Draw radial */
-  DIST_MARK_MAGVAR = 1 << 1 /* Has calibrated declination */
-};
-
-ATOOLS_DECLARE_FLAGS_32(DistanceMarkerFlags, map::DistanceMarkerFlag)
-ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(map::DistanceMarkerFlags)
 
 /* ================================================================================== */
 /* Ident queries for airport defines which ident columns should be used in the lookup */
@@ -319,6 +317,7 @@ enum MapAirspaceType : quint64
   TRSA = 1ULL << 31, // Terminal Radar Service Area (TRSA)
 
   // >>> Update MAP_AIRSPACE_TYPE_BITS below too <<<
+  // Also update mapAirspaceTypeToString()
 
   AIRSPACE_CLASS_ICAO = CLASS_A | CLASS_B | CLASS_C | CLASS_D | CLASS_E,
   AIRSPACE_CLASS_FG = CLASS_F | CLASS_G,
@@ -360,11 +359,11 @@ enum MapAirspaceSource : quint32
 ATOOLS_DECLARE_FLAGS_32(MapAirspaceSources, map::MapAirspaceSource)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(map::MapAirspaceSources)
 
-QDebug operator<<(QDebug out, const map::MapAirspaceSource& type);
+QDebug operator<<(QDebug out, map::MapAirspaceSource type);
 QDebug operator<<(QDebug out, const map::MapAirspaceSources& type);
 
-extern const QVector<map::MapAirspaceSource> MAP_AIRSPACE_SRC_VALUES;
-extern const QVector<map::MapAirspaceSource> MAP_AIRSPACE_SRC_NO_ONLINE_VALUES;
+extern const QList<map::MapAirspaceSource> MAP_AIRSPACE_SRC_VALUES;
+extern const QList<map::MapAirspaceSource> MAP_AIRSPACE_SRC_NO_ONLINE_VALUES;
 
 /* Airspace filter flags */
 enum MapAirspaceFlag : quint32
@@ -381,6 +380,8 @@ enum MapAirspaceFlag : quint32
   AIRSPACE_ALL_OFF = 1 << 4,
 
   AIRSPACE_NO_MULTIPLE_Z = 1 << 5,
+
+  /* Also update mapAirspaceFlagsToString() */
 
   AIRSPACE_FLAG_DEFAULT = AIRSPACE_ALTITUDE_ALL
 };
@@ -422,7 +423,11 @@ struct MapAirspaceFilter
 };
 
 QDebug operator<<(QDebug out, const map::MapAirspaceFilter& type);
+
+QDebug operator<<(QDebug out, map::MapAirspaceFlag type);
 QDebug operator<<(QDebug out, const map::MapAirspaceFlags& type);
+
+QDebug operator<<(QDebug out, map::MapAirspaceType type);
 QDebug operator<<(QDebug out, const map::MapAirspaceTypes& type);
 
 QDataStream& operator>>(QDataStream& dataStream, map::MapAirspaceFilter& obj);
@@ -435,9 +440,9 @@ struct MapAirspaceId
   MapAirspaceSource src;
 };
 
-inline uint qHash(const map::MapAirspaceId& id)
+inline size_t qHash(const map::MapAirspaceId& id, size_t seed)
 {
-  return static_cast<unsigned int>(id.id) ^ id.src;
+  return qHashMulti(seed, id.id, id.src);
 }
 
 inline bool operator==(const map::MapAirspaceId& id1, const map::MapAirspaceId& id2)
@@ -519,85 +524,12 @@ enum MapWeatherSource
 QString mapWeatherSourceString(map::MapWeatherSource source);
 QString mapWeatherSourceStringShort(map::MapWeatherSource source);
 
+QStringList mapTypeToString(const map::MapTypes& flags);
+map::MapTypes mapTypeFromString(const QStringList& flags);
+
 QDebug operator<<(QDebug out, const map::MapWeatherSource& type);
 
 } // namespace map
-
-namespace textflags {
-/* Flags that determine what information is added to an icon */
-enum TextFlag : quint32
-{
-  NONE = 0x0000,
-  IDENT = 0x0001, /* Draw airport or navaid ICAO ident */
-  TYPE = 0x0002, /* Draw navaid type (HIGH, MEDIUM, TERMINAL, HH, H, etc.) */
-  FREQ = 0x0004, /* Draw navaid frequency */
-  NAME = 0x0008,
-  MORSE = 0x0010, /* Draw navaid morse code */
-  INFO = 0x0020, /* Additional airport information like tower frequency, etc. */
-  ROUTE_TEXT = 0x0040, /* Object is part of route */
-  ABS_POS = 0x0080, /* Use absolute text positioning */
-  NO_BACKGROUND = 0x0100, /* No background */
-  LOG_TEXT = 0x0200, /* Object is part of log entry - only for airports */
-  ELLIPSE_IDENT = 0x0400 /* Add allipse to first text (ident) and ignore additional texts if additonal are not empty */
-};
-
-ATOOLS_DECLARE_FLAGS_32(TextFlags, textflags::TextFlag)
-ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(textflags::TextFlags)
-}
-
-namespace textatt {
-
-/* Low level text attributes for custom text boxes */
-enum TextAttribute : quint32
-{
-  NONE = 0x0000,
-
-  /* Font attributes */
-  BOLD = 0x0001,
-  ITALIC = 0x0002,
-  UNDERLINE = 0x0004,
-  OVERLINE = 0x0008,
-  STRIKEOUT = 0x0010,
-
-  /* Text placement */
-  LEFT = 0x0020, /* Reference point is at the right of the text (right-aligned) to place text at the LEFT of an icon */
-  RIGHT = 0x0040, /* Reference point is at the left of the text (left-aligned) to place text at the RIGHT of an icon */
-  CENTER = 0x0080,
-
-  /* Vertical alignment */
-  BELOW = 0x1000, /* Reference point at top to place text BELOW an icon */
-  ABOVE = 0x2000, /* Reference point at bottom to place text ABOVE an icon */
-
-  /* Color attributes */
-  ROUTE_BG_COLOR = 0x0100, /* Use light yellow background for route objects */
-  LOG_BG_COLOR = 0x0200, /* Use light blue text background for log */
-  WARNING_COLOR = 0x0400, /* Orange warning text */
-  ERROR_COLOR = 0x0800, /* White on red error text */
-
-  NO_ROUND_RECT = 0x4000, /* No rounded background rect */
-
-  /* Automatic text placement to octants for flight plan labels */
-  PLACE_ABOVE = ABOVE | CENTER,
-  PLACE_ABOVE_RIGHT = ABOVE | RIGHT,
-  PLACE_RIGHT = RIGHT,
-  PLACE_BELOW_RIGHT = BELOW | RIGHT,
-  PLACE_BELOW = BELOW | CENTER,
-  PLACE_BELOW_LEFT = BELOW | LEFT,
-  PLACE_LEFT = LEFT,
-  PLACE_ABOVE_LEFT = ABOVE | LEFT,
-
-  /* Horizontal placement flags */
-  PLACE_ALL_HORIZ = LEFT | RIGHT,
-  /* Vertical placement flags */
-  PLACE_ALL_VERT = ABOVE | BELOW,
-
-  /* All placement flags */
-  PLACE_ALL = LEFT | RIGHT | CENTER | BELOW | ABOVE,
-};
-
-ATOOLS_DECLARE_FLAGS_32(TextAttributes, textatt::TextAttribute)
-ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(textatt::TextAttributes)
-}
 
 Q_DECLARE_TYPEINFO(map::MapAirspaceFilter, Q_PRIMITIVE_TYPE);
 Q_DECLARE_METATYPE(map::MapAirspaceFilter)
@@ -607,5 +539,13 @@ Q_DECLARE_METATYPE(map::MapAirspaceId)
 
 Q_DECLARE_TYPEINFO(map::MapTypes, Q_PRIMITIVE_TYPE);
 Q_DECLARE_METATYPE(map::MapTypes)
+
+Q_DECLARE_TYPEINFO(map::MapDisplayTypes, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapObjectQueryTypes, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::AirportQueryFlags, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapAirspaceTypes, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapAirspaceSources, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapAirspaceFlags, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(map::MapAirportFlags, Q_PRIMITIVE_TYPE);
 
 #endif // LITTLENAVMAP_MAPFLAGS_H

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -115,7 +115,7 @@ MapPixmap WebMapController::getPixmapPosDistance(int width, int height, atools::
   {
     if(errorCase == QLatin1String(""))
       // Use current map position
-      pos= NavApp::getMapWidgetGui()->getCenterPos();
+      pos = NavApp::getMapWidgetGui()->getCenterPos();
     else
     {
       if(verbose)

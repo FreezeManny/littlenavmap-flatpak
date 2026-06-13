@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -50,7 +50,8 @@ const static QMap<ResolutionIndex, std::pair<int, int> > resolutions({
 ImageExportDialog::ImageExportDialog(QWidget *parent, const QString& titleParam, const QString& optionPrefixParam, const QSize& size)
   : QDialog(parent), ui(new Ui::ImageExportDialog), optionPrefix(optionPrefixParam), currentSize(size)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -118,7 +119,7 @@ void ImageExportDialog::buttonBoxClicked(QAbstractButton *button)
 
 void ImageExportDialog::saveState() const
 {
-  atools::gui::WidgetState widgetState(optionPrefix, false);
+  atools::gui::WidgetState widgetState(optionPrefix);
   widgetState.save({
     this,
     ui->comboBoxResolution,
@@ -130,7 +131,7 @@ void ImageExportDialog::saveState() const
 
 void ImageExportDialog::restoreState()
 {
-  atools::gui::WidgetState widgetState(optionPrefix, false);
+  atools::gui::WidgetState widgetState(optionPrefix);
   widgetState.restore({
     this,
     ui->comboBoxResolution,

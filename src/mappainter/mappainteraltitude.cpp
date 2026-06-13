@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -25,11 +25,12 @@
 #include "geo/marbleconverter.h"
 #include "mapgui/maplayer.h"
 #include "mapgui/mapscale.h"
+#include "mappainter/paintcontext.h"
 #include "util/paintercontextsaver.h"
 
 #include <QElapsedTimer>
 
-#include <marble/GeoDataLineString.h>
+// #include <marble/GeoDataLineString.h>
 #include <marble/GeoPainter.h>
 
 using namespace Marble;
@@ -66,14 +67,13 @@ void MapPainterAltitude::render()
       context->painter->setPen(pen);
 
       // Get covered one degree coordinate rectangles
-      const GeoDataLatLonBox& curBox = context->viewport->viewLatLonAltBox();
-      int west = static_cast<int>(curBox.west(mconvert::DEG));
-      int east = static_cast<int>(curBox.east(mconvert::DEG));
-      int north = static_cast<int>(curBox.north(mconvert::DEG));
-      int south = static_cast<int>(curBox.south(mconvert::DEG));
+      int west = static_cast<int>(context->viewportRect.getWest());
+      int east = static_cast<int>(context->viewportRect.getEast());
+      int north = static_cast<int>(context->viewportRect.getNorth());
+      int south = static_cast<int>(context->viewportRect.getSouth());
 
       // Split at anit-meridian if needed
-      QVector<std::pair<int, int> > ranges;
+      QList<std::pair<int, int> > ranges;
       if(west <= east)
         ranges.append(std::make_pair(west - 1, east));
       else
@@ -83,11 +83,11 @@ void MapPainterAltitude::render()
       }
 
       // Altitude values
-      QVector<int> altitudes;
+      QList<int> altitudes;
       // Minimum rectangle width on screen in pixel
       float minWidth = std::numeric_limits<float>::max();
       // Center points for rectangles for text placement
-      QVector<GeoDataCoordinates> centers;
+      QList<Pos> centers;
 
       // Draw rectangles and collect other values for text placement ================================
       for(int laty = south; laty <= north + 1; laty++)
@@ -118,7 +118,7 @@ void MapPainterAltitude::render()
 
                 minWidth = std::min(static_cast<float>(QLineF(leftPt, rightPt).length()), minWidth);
 
-                centers.append(mconvert::toGdc(lonx + .5f, laty - .5f));
+                centers.append(Pos(lonx + .5f, laty - .5f));
                 altitudes.append(moraFt100);
               }
             }
@@ -138,7 +138,7 @@ void MapPainterAltitude::render()
         textCol.setAlphaF(atools::minmax(0., 1., 1. - context->transparencyMora));
         context->painter->setPen(textCol);
 
-        float fontSize = minWidth * context->textSizeMora;
+        float fontSize = minWidth * context->textSizeMora * context->sizeAll;
         QFont font = context->painter->font();
         font.setItalic(true);
         font.setPixelSize(atools::roundToInt(fontSize));
@@ -150,7 +150,7 @@ void MapPainterAltitude::render()
         {
           // Draw big thousands numbers ===============================
           bool visible, hidden;
-          QVector<QPointF> baseline;
+          QList<QPointF> baseline;
           for(int i = 0; i < centers.size(); i++)
           {
             QPointF pt = wToSF(centers.at(i), DEFAULT_WTOS_SIZE, &visible, &hidden);
@@ -158,7 +158,7 @@ void MapPainterAltitude::render()
             if(!hidden)
             {
               QString numTxt = QString::number(altitudes.at(i) / 10);
-              qreal w = fontmetrics.width(numTxt);
+              qreal w = fontmetrics.horizontalAdvance(numTxt);
               pt += QPointF(-w * 0.7, fontmetrics.height() / 2. - fontmetrics.descent());
 
               context->painter->drawText(pt, numTxt);

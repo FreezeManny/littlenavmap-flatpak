@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -254,7 +254,7 @@ private:
 
 Q_DECLARE_METATYPE(RouteExportFormat)
 
-QDataStream& operator>>(QDataStream& dataStream, RouteExportFormat& obj);
+QDataStream& operator>>(QDataStream & dataStream, RouteExportFormat & obj);
 QDataStream& operator<<(QDataStream& dataStream, const RouteExportFormat& obj);
 
 /* ======================================================================= */
@@ -276,7 +276,7 @@ public:
   bool hasSelected() const;
 
   /* Get all formats that are selected for multiexport */
-  const QVector<RouteExportFormat> getSelected() const;
+  const QList<RouteExportFormat> getSelected() const;
 
   /* Clear user selected path and use default again */
   void clearPath(rexp::RouteExportFormatType type);
@@ -327,6 +327,9 @@ public:
 
 #endif
 
+  /* Register serializable objects */
+  static void registerMetaTypes();
+
 private:
   friend QDataStream& operator>>(QDataStream& dataStream, RouteExportFormatMap& obj);
 
@@ -343,7 +346,7 @@ private:
 
 Q_DECLARE_METATYPE(RouteExportFormatMap)
 
-QDataStream& operator>>(QDataStream& dataStream, RouteExportFormatMap& obj);
+QDataStream& operator>>(QDataStream & dataStream, RouteExportFormatMap & obj);
 QDataStream& operator<<(QDataStream& dataStream, const RouteExportFormatMap& obj);
 
 #endif // LNM_ROUTEEXPORTFORMAT_H

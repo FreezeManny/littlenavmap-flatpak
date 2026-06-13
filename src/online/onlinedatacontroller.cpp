@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -24,21 +24,21 @@
 #include "fs/sc/simconnectdata.h"
 #include "geo/calculations.h"
 #include "gui/dialog.h"
-#include "gui/mainwindow.h"
+#include "gui/statusbar.h"
 #include "mapgui/maplayer.h"
 #include "options/optiondata.h"
 #include "query/airspacequeries.h"
 #include "query/querymanager.h"
 #include "settings/settings.h"
-#include "sql/sqlquery.h"
-#include "sql/sqlrecord.h"
 #include "util/httpdownloader.h"
 #include "zip/gzip.h"
 
-#include <QDebug>
-#include <QTextCodec>
 #include <QCoreApplication>
 #include <QDir>
+
+#ifdef QT_CORE5COMPAT_LIB
+#include <QtCore5Compat/QTextCodec>
+#endif
 
 static const int MIN_SERVER_DOWNLOAD_INTERVAL_MIN = 15;
 static const int MIN_TRANSCEIVER_DOWNLOAD_INTERVAL_MIN = 5;
@@ -72,13 +72,15 @@ atools::fs::online::Format convertFormat(opts::OnlineFormat format)
   return atools::fs::online::UNKNOWN;
 }
 
-OnlinedataController::OnlinedataController(atools::fs::online::OnlinedataManager *onlineManager, MainWindow *parent)
-  : manager(onlineManager), mainWindow(parent), aircraftCache()
+OnlinedataController::OnlinedataController(atools::fs::online::OnlinedataManager *onlineManager, QWidget *parent)
+  : manager(onlineManager), parentWidget(parent), aircraftCache()
 {
   // Files use Windows code with embedded UTF-8 for ATIS text
-  codec = QTextCodec::codecForName("Windows-1252");
-  if(codec == nullptr)
-    codec = QTextCodec::codecForLocale();
+#ifdef QT_CORE5COMPAT_LIB
+  codecWin1252 = QTextCodec::codecForName("Windows-1252");
+  if(codecWin1252 == nullptr)
+    codecWin1252 = QTextCodec::codecForLocale();
+#endif
 
   atools::settings::Settings& settings = atools::settings::Settings::instance();
   verbose = settings.getAndStoreValue(lnm::OPTIONS_ONLINE_NETWORK_DEBUG, false).toBool();
@@ -89,10 +91,10 @@ OnlinedataController::OnlinedataController(atools::fs::online::OnlinedataManager
   maxShadowGsDiffKts = settings.getAndStoreValue(lnm::OPTIONS_ONLINE_NETWORK_MAX_SHADOW_GS_DIFF_KTS, 50.).toFloat();
   maxShadowHdgDiffDeg = settings.getAndStoreValue(lnm::OPTIONS_ONLINE_NETWORK_MAX_SHADOW_HDG_DIFF_DEG, 90.).toFloat();
 
-  downloader = new atools::util::HttpDownloader(mainWindow, verbose);
+  downloader = new atools::util::HttpDownloader(parentWidget, verbose);
 
   // Request gzipped content if possible
-  downloader->setAcceptEncoding("gzip");
+  downloader->setAcceptEncoding(QStringLiteral("gzip"));
 
   updateAtcSizes();
 
@@ -241,7 +243,7 @@ void OnlinedataController::startDownloadInternal()
     {
       // Create a default user agent if not disabled for debugging
       if(!atools::settings::Settings::instance().valueBool(lnm::OPTIONS_NO_USER_AGENT))
-        downloader->setDefaultUserAgentShort(QString(" Config/%1").arg(getNetwork()));
+        downloader->setDefaultUserAgentShort(QStringLiteral(" Config/%1").arg(getNetwork()));
 
       if(whazzupUrlFromStatus.isEmpty() && // Status not downloaded yet
          !onlineStatusUrl.isEmpty()) // Need  status.txt by configuration
@@ -277,11 +279,13 @@ QString OnlinedataController::uncompress(const QByteArray& data, const QString& 
 {
   QByteArray textData = atools::zip::gzipDecompressIf(data, func);
 
-  if(utf8)
-    return QString(textData);
-  else
+#ifdef QT_CORE5COMPAT_LIB
+  if(!utf8)
     // Convert from encoding to UTF-8. Some formats use windows encoding
-    return codec->toUnicode(textData);
+    return codecWin1252->toUnicode(textData);
+#endif
+
+  return QString(textData);
 }
 
 void OnlinedataController::downloadFinished(const QByteArray& data, QString url)
@@ -427,12 +431,12 @@ void OnlinedataController::downloadFinished(const QByteArray& data, QString url)
       case atools::fs::online::UNKNOWN:
       case atools::fs::online::VATSIM:
       case atools::fs::online::IVAO:
-        suffix = "txt";
+        suffix = QStringLiteral("txt");
         break;
 
       case atools::fs::online::VATSIM_JSON3:
       case atools::fs::online::IVAO_JSON2:
-        suffix = "json";
+        suffix = QStringLiteral("json");
         break;
     }
     atools::strToFile(QDir::tempPath() + "/lnm_servers." + suffix, serversTxt);
@@ -467,10 +471,10 @@ void OnlinedataController::downloadFailed(const QString& error, int errorCode, Q
   qWarning() << Q_FUNC_INFO << "Failed" << error << errorCode << url;
   stopAllProcesses();
 
-  mainWindow->setOnlineConnectionStatusMessageText(tr("Online Network Failed"),
-                                                   tr("Download from\n\"%1\"\nfailed. "
-                                                      "Reason:\n%2\nRetrying again in three minutes.").
-                                                   arg(url).arg(error));
+  NavApp::getStatusBar()->setOnlineConnectionStatusMessageText(tr("Online Network Failed"),
+                                                               tr("Download from\n\"%1\"\nfailed. "
+                                                                  "Reason:\n%2\nRetrying again in three minutes.").
+                                                               arg(url).arg(error));
 
   // Delay next download for three minutes to give the user a chance to correct the URLs
   QTimer::singleShot(180 * 1000, this, &OnlinedataController::startProcessing);
@@ -480,7 +484,7 @@ void OnlinedataController::downloadSslErrors(const QStringList& errors, const QS
 {
   qWarning() << Q_FUNC_INFO;
 
-  int result = atools::gui::Dialog(mainWindow).
+  int result = atools::gui::Dialog(parentWidget).
                showQuestionMsgBox(lnm::ACTIONS_SHOW_SSL_WARNING_ONLINE,
                                   tr("<p>Errors while trying to establish an encrypted connection "
                                        "to download online network data:</p>"
@@ -499,9 +503,9 @@ void OnlinedataController::statusBarMessage()
 {
   QString net = getNetworkTranslated();
   if(!net.isEmpty())
-    mainWindow->setOnlineConnectionStatusMessageText(QString(), tr("Connected to %1.").arg(net));
+    NavApp::getStatusBar()->setOnlineConnectionStatusMessageText(QStringLiteral(), tr("Connected to %1.").arg(net));
   else
-    mainWindow->setOnlineConnectionStatusMessageText(QString(), QString());
+    NavApp::getStatusBar()->setOnlineConnectionStatusMessageText(QStringLiteral(), QStringLiteral());
 }
 
 void OnlinedataController::stopAllProcesses()
@@ -514,7 +518,7 @@ void OnlinedataController::stopAllProcesses()
 
 void OnlinedataController::showMessageDialog()
 {
-  atools::gui::Dialog::information(mainWindow, tr("Message from downloaded status file:\n\n%2\n").arg(manager->getMessageFromStatus()));
+  atools::gui::Dialog::information(parentWidget, tr("Message from downloaded status file:\n\n%2\n").arg(manager->getMessageFromStatus()));
 }
 
 const LineString *OnlinedataController::airspaceGeometryCallback(const QString& callsign, atools::fs::online::fac::FacilityType type)
@@ -579,7 +583,7 @@ QString OnlinedataController::getNetworkTranslated() const
   switch(onlineNetwork)
   {
     case opts::ONLINE_NONE:
-      return QString();
+      return QStringLiteral();
 
     case opts::ONLINE_VATSIM:
       return tr("VATSIM");
@@ -594,7 +598,7 @@ QString OnlinedataController::getNetworkTranslated() const
     case opts::ONLINE_CUSTOM:
       return tr("Custom Network");
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString OnlinedataController::getNetwork() const
@@ -603,22 +607,22 @@ QString OnlinedataController::getNetwork() const
   switch(onlineNetwork)
   {
     case opts::ONLINE_NONE:
-      return QString();
+      return QStringLiteral();
 
     case opts::ONLINE_VATSIM:
-      return "VATSIM";
+      return QStringLiteral("VATSIM");
 
     case opts::ONLINE_IVAO:
-      return "IVAO";
+      return QStringLiteral("IVAO");
 
     case opts::ONLINE_PILOTEDGE:
-      return "PilotEdge";
+      return QStringLiteral("PilotEdge");
 
     case opts::ONLINE_CUSTOM_STATUS:
     case opts::ONLINE_CUSTOM:
-      return "Custom Network";
+      return QStringLiteral("Custom Network");
   }
-  return QString();
+  return QStringLiteral();
 }
 
 bool OnlinedataController::isNetworkActive() const
@@ -656,7 +660,7 @@ const QList<atools::fs::sc::SimConnectAircraft> *OnlinedataController::getAircra
       {
         SimConnectAircraft onlineAircraft;
         OnlinedataManager::fillFromClient(onlineAircraft, aircraftByRectQuery->record(),
-                                          getShadowSimAircraft(aircraftByRectQuery->valueInt("client_id")));
+                                          getShadowSimAircraft(aircraftByRectQuery->valueInt(QStringLiteral("client_id"))));
 
         if(!aircraftIdOnlineToSim.contains(onlineAircraft.getId()))
           // Avoid duplicates with simulator shadow aircraft - sim aircraft are drawn in another context
@@ -765,7 +769,7 @@ OnlineAircraft OnlinedataController::shadowAircraftInternal(const atools::fs::sc
   if(!onlineAircraftSpatialIndex.isEmpty())
   {
     // First get all nearest aircraft from spatial index ======================================
-    QVector<OnlineAircraft> nearest;
+    QList<OnlineAircraft> nearest;
     onlineAircraftSpatialIndex.getRadius(nearest, simAircraft.getPosition(), atools::geo::nmToMeter(maxShadowDistanceNm));
 
     if(verbose && simAircraft.isUser())
@@ -923,7 +927,7 @@ atools::fs::sc::SimConnectAircraft OnlinedataController::getClientAircraftById(i
 
 void OnlinedataController::fillAircraftFromClient(atools::fs::sc::SimConnectAircraft& ac, const atools::sql::SqlRecord& record)
 {
-  OnlinedataManager::fillFromClient(ac, record, getShadowSimAircraft(record.valueInt("client_id")));
+  OnlinedataManager::fillFromClient(ac, record, getShadowSimAircraft(record.valueInt(QStringLiteral("client_id"))));
 }
 
 /* Removes the online aircraft from "onlineAircraft" which also have a simulator shadow in "simAircraft" */
@@ -988,19 +992,19 @@ void OnlinedataController::startDownloadTimer()
 
   if(onlineNetwork == opts::ONLINE_CUSTOM || onlineNetwork == opts::ONLINE_CUSTOM_STATUS)
     // Use options for custom network - ignore reload in whazzup.txt
-    source = "options";
+    source = QStringLiteral("options");
   else
   {
     if(intervalSeconds == -1)
     {
       // Use time from whazzup.txt - mode auto
       intervalSeconds = std::max(manager->getReloadMinutesFromWhazzup() * 60, 60);
-      source = "whazzup";
+      source = QStringLiteral("whazzup");
     }
     else
     {
       intervalSeconds = std::max(intervalSeconds, MIN_RELOAD_TIME_SECONDS);
-      source = "networks.cfg";
+      source = QStringLiteral("networks.cfg");
     }
   }
 
@@ -1020,21 +1024,21 @@ QString OnlinedataController::stateAsStr(OnlinedataController::State state)
   switch(state)
   {
     case OnlinedataController::NONE:
-      return "None";
+      return QStringLiteral("None");
 
     case OnlinedataController::DOWNLOADING_STATUS:
-      return "Downloading Status";
+      return QStringLiteral("Downloading Status");
 
     case OnlinedataController::DOWNLOADING_WHAZZUP:
-      return "Downloading Whazzup";
+      return QStringLiteral("Downloading Whazzup");
 
     case OnlinedataController::DOWNLOADING_TRANSCEIVERS:
-      return "Downloading Transceivers";
+      return QStringLiteral("Downloading Transceivers");
 
     case OnlinedataController::DOWNLOADING_WHAZZUP_SERVERS:
-      return "Downloading Servers";
+      return QStringLiteral("Downloading Servers");
   }
-  return QString();
+  return QStringLiteral();
 }
 
 void OnlinedataController::debugDumpContainerSizes() const

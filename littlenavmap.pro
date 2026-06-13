@@ -1,5 +1,5 @@
 #*****************************************************************************
-# Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+# Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -78,13 +78,18 @@
 # Define program version here VERSION_NUMBER_TODO
 VERSION_NUMBER=3.1.0.develop
 
-QT += core gui sql xml network svg printsupport
+QT += core gui sql xml network svg printsupport widgets
 
-CONFIG += build_all c++14
+CONFIG += build_all c++20
 CONFIG -= debug_and_release debug_and_release_target
 
 TARGET = littlenavmap
 TEMPLATE = app
+
+!versionAtLeast(QT_VERSION, 6.5) {
+    message("Cannot use Qt $${QT_VERSION}. Need at least Qt 6.5 or newer.")
+    error("Need at least Qt 6.5 or newer")
+}
 
 win32 { contains(QT_ARCH, i386) { WINARCH = win32 } else { WINARCH = win64 } }
 
@@ -95,6 +100,7 @@ TARGET_NAME=Little Navmap
 ATOOLS_INC_PATH=$$(ATOOLS_INC_PATH)
 ATOOLS_LIB_PATH=$$(ATOOLS_LIB_PATH)
 ATOOLS_NO_CRASHHANDLER=$$(ATOOLS_NO_CRASHHANDLER)
+ATOOLS_NO_QT5COMPAT=$$(ATOOLS_NO_QT5COMPAT)
 
 MARBLE_INC_PATH=$$(MARBLE_INC_PATH)
 MARBLE_LIB_PATH=$$(MARBLE_LIB_PATH)
@@ -132,14 +138,11 @@ isEmpty(MARBLE_INC_PATH) : MARBLE_INC_PATH=$$PWD/../Marble-$$CONF_TYPE/include
 isEmpty(MARBLE_LIB_PATH) : MARBLE_LIB_PATH=$$PWD/../Marble-$$CONF_TYPE/lib
 }
 
-# QT_INSTALL_PREFIX: C:/Qt/5.15.2/mingw81_32
-# C:\Qt\Tools\OpenSSL\Win_x86\bin\
-# win32: isEmpty(OPENSSL_PATH) : OPENSSL_PATH=$$[QT_INSTALL_PREFIX])\..\..\Tools\OpenSSL\Win_x86\bin\
-
 # =======================================================================
 # Set compiler flags and paths
 
-QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic -Wno-pragmas -Wno-unknown-warning -Wno-unknown-warning-option
+QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic -Wno-pragmas
+# -Wno-unknown-warning -Wno-unknown-warning-option
 
 unix:!macx {
   isEmpty(GIT_PATH) : GIT_PATH=git
@@ -153,7 +156,7 @@ unix:!macx {
   # Search path for the Marble widget so while linking
   QMAKE_RPATHLINKDIR=$$MARBLE_LIB_PATH
 
-  LIBS += -L$$MARBLE_LIB_PATH -lmarblewidget-qt5 -L$$ATOOLS_LIB_PATH -latools  -lz
+  LIBS += -L$$MARBLE_LIB_PATH -lmarblewidget-lnm-qt6 -L$$ATOOLS_LIB_PATH -latools  -lz -lssl -lcrypto
 }
 
 win32 {
@@ -184,8 +187,8 @@ win32 {
 
   DEFINES += _USE_MATH_DEFINES
 
-  CONFIG(debug, debug|release) : LIBS += -L$$MARBLE_LIB_PATH -llibmarblewidget-qt5d
-  CONFIG(release, debug|release) : LIBS += -L$$MARBLE_LIB_PATH -llibmarblewidget-qt5
+  CONFIG(debug, debug|release) : LIBS += -L$$MARBLE_LIB_PATH -llibmarblewidget-lnm-qt6d
+  CONFIG(release, debug|release) : LIBS += -L$$MARBLE_LIB_PATH -llibmarblewidget-lnm-qt6
   LIBS += -L$$ATOOLS_LIB_PATH -latools -lz
 }
 
@@ -195,7 +198,8 @@ macx {
   MACDEPLOY_FLAGS = -always-overwrite
   CONFIG(debug, debug|release) : MACDEPLOY_FLAGS += -no-strip
 
-  LIBS += -L$$MARBLE_LIB_PATH -lmarblewidget-qt5 -L$$ATOOLS_LIB_PATH -latools  -lz
+  LIBS += -L$$MARBLE_LIB_PATH -lmarblewidget-lnm-qt6 -L$$ATOOLS_LIB_PATH -latools  -lz
+  QMAKE_MACOSX_DEPLOYMENT_TARGET = 11.0
 }
 
 # Cpptrace ==========================
@@ -207,6 +211,11 @@ macx {
 } else {
   DEFINES += DISABLE_CRASHHANDLER
 }
+
+# https://doc.qt.io/qt-6.5/qtcore5-index.html - needed for QTextCodec
+!isEqual(ATOOLS_NO_QT5COMPAT, "true"): QT += core5compat
+
+DEFINES += QT_DISABLE_DEPRECATED_UP_TO=0x061000
 
 isEmpty(GIT_PATH) {
   GIT_REVISION=UNKNOWN
@@ -253,10 +262,10 @@ message(OPENSSL_PATH_WIN: $$OPENSSL_PATH_WIN)
 message(ATOOLS_INC_PATH: $$ATOOLS_INC_PATH)
 message(ATOOLS_LIB_PATH: $$ATOOLS_LIB_PATH)
 message(MARBLE_INC_PATH: $$MARBLE_INC_PATH)
-message(SIMCONNECT_PATH_WIN32: $$SIMCONNECT_PATH_WIN32)
 message(SIMCONNECT_PATH_WIN64_MSFS_2020: $$SIMCONNECT_PATH_WIN64_MSFS_2020)
 message(SIMCONNECT_PATH_WIN64_MSFS_2024: $$SIMCONNECT_PATH_WIN64_MSFS_2024)
 message(ATOOLS_NO_CRASHHANDLER: $$ATOOLS_NO_CRASHHANDLER)
+message(ATOOLS_NO_QT5COMPAT: $$ATOOLS_NO_QT5COMPAT)
 message(DEPLOY_BASE: $$DEPLOY_BASE)
 message(DEFINES: $$DEFINES)
 message(INCLUDEPATH: $$INCLUDEPATH)
@@ -297,6 +306,9 @@ SOURCES += \
   src/common/jumpback.cpp \
   src/common/mapcolors.cpp \
   src/common/mapflags.cpp \
+  src/common/mapflagstext.cpp \
+  src/common/mapmarkers.cpp \
+  src/common/mapmarkertypes.cpp \
   src/common/mapresult.cpp \
   src/common/maptools.cpp \
   src/common/maptypes.cpp \
@@ -323,23 +335,20 @@ SOURCES += \
   src/db/dbtools.cpp \
   src/db/dbtypes.cpp \
   src/db/undoredoprogress.cpp \
-  src/export/csvexporter.cpp \
-  src/export/exporter.cpp \
   src/geo/aircrafttrail.cpp \
   src/geo/coordinateconverter.cpp \
   src/geo/marbleconverter.cpp \
-  src/gui/holddialog.cpp \
+  src/gui/contextmenutool.cpp \
   src/gui/coordinatedialog.cpp \
   src/gui/mainwindow.cpp \
   src/gui/messagesettings.cpp \
-  src/gui/runwayselection.cpp \
+  src/gui/runwaytable.cpp \
+  src/gui/statusbar.cpp \
   src/gui/statusbareventfilter.cpp \
   src/gui/stylehandler.cpp \
   src/gui/textdialog.cpp \
   src/gui/texteditdialog.cpp \
   src/gui/timedialog.cpp \
-  src/gui/trafficpatterndialog.cpp \
-  src/gui/rangemarkerdialog.cpp \
   src/gui/updatedialog.cpp \
   src/info/aircraftprogressconfig.cpp \
   src/info/infocontroller.cpp \
@@ -348,9 +357,9 @@ SOURCES += \
   src/logbook/logdatadialog.cpp \
   src/logbook/logstatisticsdialog.cpp \
   src/main.cpp \
-  src/mapgui/aprongeometrycache.cpp \
   src/mapgui/imageexportdialog.cpp \
   src/mapgui/mapairporthandler.cpp \
+  src/mapgui/mapcache.cpp \
   src/mapgui/mapcontextmenu.cpp \
   src/mapgui/mapdetailhandler.cpp \
   src/mapgui/mapfunctions.cpp \
@@ -384,7 +393,14 @@ SOURCES += \
   src/mappainter/mappainterweather.cpp \
   src/mappainter/mappainterwind.cpp \
   src/mappainter/mappaintlayer.cpp \
+  src/mappainter/paintcontext.cpp \
+  src/marker/distancemarkerdialog.cpp \
+  src/marker/holdingmarkerdialog.cpp \
+  src/marker/markerdialog.cpp \
+  src/marker/patternmarkerdialog.cpp \
+  src/marker/rangemarkerdialog.cpp \
   src/online/onlinedatacontroller.cpp \
+  src/options/optionchangeflags.cpp \
   src/options/optiondata.cpp \
   src/options/optionsdialog.cpp \
   src/perf/aircraftperfcontroller.cpp \
@@ -425,8 +441,8 @@ SOURCES += \
   src/route/routelabel.cpp \
   src/route/routelabelflags.cpp \
   src/route/routeleg.cpp \
+  src/route/routewaypointeditdialog.cpp \
   src/route/runwayselectiondialog.cpp \
-  src/route/userwaypointdialog.cpp \
   src/routeexport/fetchroutedialog.cpp \
   src/routeexport/routeexport.cpp \
   src/routeexport/routeexportdata.cpp \
@@ -434,6 +450,7 @@ SOURCES += \
   src/routeexport/routeexportflags.cpp \
   src/routeexport/routeexportformat.cpp \
   src/routeexport/routemultiexportdialog.cpp \
+  src/routeexport/simbriefexportdialog.cpp \
   src/routeexport/simbriefhandler.cpp \
   src/routestring/routestringdialog.cpp \
   src/routestring/routestringreader.cpp \
@@ -508,6 +525,9 @@ HEADERS  += \
   src/common/jumpback.h \
   src/common/mapcolors.h \
   src/common/mapflags.h \
+  src/common/mapflagstext.h \
+  src/common/mapmarkers.h \
+  src/common/mapmarkertypes.h \
   src/common/mapresult.h \
   src/common/maptools.h \
   src/common/maptypes.h \
@@ -534,23 +554,20 @@ HEADERS  += \
   src/db/dbtools.h \
   src/db/dbtypes.h \
   src/db/undoredoprogress.h \
-  src/export/csvexporter.h \
-  src/export/exporter.h \
   src/geo/aircrafttrail.h \
   src/geo/coordinateconverter.h \
   src/geo/marbleconverter.h \
-  src/gui/holddialog.h \
+  src/gui/contextmenutool.h \
   src/gui/coordinatedialog.h \
   src/gui/mainwindow.h \
   src/gui/messagesettings.h \
-  src/gui/runwayselection.h \
+  src/gui/runwaytable.h \
+  src/gui/statusbar.h \
   src/gui/statusbareventfilter.h \
   src/gui/stylehandler.h \
   src/gui/textdialog.h \
   src/gui/texteditdialog.h \
   src/gui/timedialog.h \
-  src/gui/trafficpatterndialog.h \
-  src/gui/rangemarkerdialog.h \
   src/gui/updatedialog.h \
   src/info/aircraftprogressconfig.h \
   src/info/infocontroller.h \
@@ -558,9 +575,9 @@ HEADERS  += \
   src/logbook/logdataconverter.h \
   src/logbook/logdatadialog.h \
   src/logbook/logstatisticsdialog.h \
-  src/mapgui/aprongeometrycache.h \
   src/mapgui/imageexportdialog.h \
   src/mapgui/mapairporthandler.h \
+  src/mapgui/mapcache.h \
   src/mapgui/mapcontextmenu.h \
   src/mapgui/mapdetailhandler.h \
   src/mapgui/mapfunctions.h \
@@ -594,8 +611,16 @@ HEADERS  += \
   src/mappainter/mappainterweather.h \
   src/mappainter/mappainterwind.h \
   src/mappainter/mappaintlayer.h \
+  src/mappainter/paintcontext.h \
+  src/marker/distancemarkerdialog.h \
+  src/marker/holdingmarkerdialog.h \
+  src/marker/markerdialog.h \
+  src/marker/patternmarkerdialog.h \
+  src/marker/rangemarkerdialog.h \
   src/online/onlinedatacontroller.h \
+  src/options/optionchangeflags.h \
   src/options/optiondata.h \
+  src/options/optionflags.h \
   src/options/optionsdialog.h \
   src/perf/aircraftperfcontroller.h \
   src/perf/aircraftperfdialog.h \
@@ -635,8 +660,8 @@ HEADERS  += \
   src/route/routelabel.h \
   src/route/routelabelflags.h \
   src/route/routeleg.h \
+  src/route/routewaypointeditdialog.h \
   src/route/runwayselectiondialog.h \
-  src/route/userwaypointdialog.h \
   src/routeexport/fetchroutedialog.h \
   src/routeexport/routeexport.h \
   src/routeexport/routeexportdata.h \
@@ -644,6 +669,7 @@ HEADERS  += \
   src/routeexport/routeexportflags.h \
   src/routeexport/routeexportformat.h \
   src/routeexport/routemultiexportdialog.h \
+  src/routeexport/simbriefexportdialog.h \
   src/routeexport/simbriefhandler.h \
   src/routestring/routestringdialog.h \
   src/routestring/routestringreader.h \
@@ -705,29 +731,31 @@ FORMS += \
   src/db/databasedialog.ui \
   src/db/databaseprogressdialog.ui \
   src/gui/coordinatedialog.ui \
-  src/gui/holddialog.ui \
   src/gui/mainwindow.ui \
-  src/gui/rangemarkerdialog.ui \
   src/gui/textdialog.ui \
   src/gui/texteditdialog.ui \
   src/gui/timedialog.ui \
-  src/gui/trafficpatterndialog.ui \
   src/gui/updatedialog.ui \
   src/logbook/logdatadialog.ui \
   src/logbook/logstatisticsdialog.ui \
   src/mapgui/imageexportdialog.ui \
-  src/options/options.ui \
+  src/marker/distancemarkerdialog.ui \
+  src/marker/holdingmarkerdialog.ui \
+  src/marker/patternmarkerdialog.ui \
+  src/marker/rangemarkerdialog.ui \
+  src/options/optionsdialog.ui \
   src/perf/aircraftperfdialog.ui \
   src/perf/perfmergedialog.ui \
   src/print/printdialog.ui \
   src/route/customproceduredialog.ui \
   src/route/parkingdialog.ui \
   src/route/routecalcdialog.ui \
+  src/route/routewaypointeditdialog.ui \
   src/route/runwayselectiondialog.ui \
-  src/route/userwaypointdialog.ui \
   src/routeexport/fetchroutedialog.ui \
   src/routeexport/routeexportdialog.ui \
   src/routeexport/routemultiexportdialog.ui \
+  src/routeexport/simbriefexportdialog.ui \
   src/routestring/routestringdialog.ui \
   src/userdata/userdatadialog.ui
 
@@ -753,6 +781,7 @@ TRANSLATIONS = littlenavmap_fr.ts \
 OTHER_FILES += \
   $$files(build/*, true) \
   $$files(customize/*, true) \
+  $$files(timezone/*, true) \
   $$files(desktop/*, true) \
   $$files(etc/*, true) \
   $$files(help/*, true) \
@@ -783,7 +812,6 @@ unix:!macx {
     $$MARBLE_LIB_PATH/marble/plugins/libCompassFloatItem.so \
     $$MARBLE_LIB_PATH/marble/plugins/libGraticulePlugin.so \
     $$MARBLE_LIB_PATH/marble/plugins/libKmlPlugin.so \
-    $$MARBLE_LIB_PATH/marble/plugins/libLatLonPlugin.so \
     $$MARBLE_LIB_PATH/marble/plugins/libPn2Plugin.so \
     $$MARBLE_LIB_PATH/marble/plugins/libMapScaleFloatItem.so \
     $$MARBLE_LIB_PATH/marble/plugins/libNavigationFloatItem.so \
@@ -795,6 +823,11 @@ unix:!macx {
   copydata.commands += cp -avfu $$PWD/help $$OUT_PWD &&
   copydata.commands += cp -avfu $$PWD/web $$OUT_PWD &&
   copydata.commands += cp -avfu $$PWD/customize $$OUT_PWD &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_darkstyle.ini $$OUT_PWD/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_fusionstyle.ini $$OUT_PWD/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_mapstyle.ini $$OUT_PWD/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/maplayers.xml $$OUT_PWD/customize &&
+  copydata.commands += cp -avfu $$PWD/timezone $$OUT_PWD &&
   copydata.commands += cp -avfu $$PWD/marble/data $$OUT_PWD &&
   copydata.commands += cp -vf $$PWD/desktop/littlenavmap*.sh $$OUT_PWD &&
   copydata.commands += chmod -v a+x $$OUT_PWD/littlenavmap*.sh
@@ -805,6 +838,11 @@ macx {
   copydata.commands += cp -Rv $$PWD/help $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   copydata.commands += cp -Rv $$PWD/web $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   copydata.commands += cp -Rv $$PWD/customize $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_darkstyle.ini $$OUT_PWD/littlenavmap.app/Contents/MacOS/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_fusionstyle.ini $$OUT_PWD/littlenavmap.app/Contents/MacOS/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/little_navmap_mapstyle.ini $$OUT_PWD/littlenavmap.app/Contents/MacOS/customize &&
+  copydata.commands += cp -vf $$PWD/resources/config/maplayers.xml $$OUT_PWD/littlenavmap.app/Contents/MacOS/customize &&
+  copydata.commands += cp -Rv $$PWD/timezone $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   copydata.commands += cp -Rv $$PWD/marble/data $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   copydata.commands += cp -vf $$PWD/*.qm $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   copydata.commands += cp -vf $$ATOOLS_INC_PATH/../*.qm $$OUT_PWD/littlenavmap.app/Contents/MacOS
@@ -821,6 +859,7 @@ unix:!macx {
   deploy.commands += rm -Rfv $$DEPLOY_DIR &&
   deploy.commands += mkdir -pv $$DEPLOY_DIR/translations &&
   deploy.commands += mkdir -pv $$DEPLOY_DIR_LIB &&
+  deploy.commands += mkdir -pv $$DEPLOY_DIR_LIB/tls &&
   deploy.commands += mkdir -pv $$DEPLOY_DIR_LIB/iconengines &&
   deploy.commands += mkdir -pv $$DEPLOY_DIR_LIB/imageformats &&
   deploy.commands += mkdir -pv $$DEPLOY_DIR_LIB/platforms &&
@@ -830,13 +869,13 @@ unix:!macx {
   deploy.commands += echo $$VERSION_NUMBER > $$DEPLOY_DIR/version.txt &&
   deploy.commands += echo $$GIT_REVISION_FULL > $$DEPLOY_DIR/revision.txt &&
   deploy.commands += cp -Rvf $$MARBLE_LIB_PATH/*.so* $$DEPLOY_DIR_LIB &&
-  deploy.commands += patchelf --set-rpath \'\$\$ORIGIN/.\' $$DEPLOY_DIR_LIB/libmarblewidget-qt5.so* &&
-  deploy.commands += patchelf --set-rpath \'\$\$ORIGIN/.\' $$DEPLOY_DIR_LIB/libastro.so* &&
+  deploy.commands += patchelf --set-rpath \'\$\$ORIGIN/.\' $$DEPLOY_DIR_LIB/libmarblewidget-lnm-qt6.so* &&
   deploy.commands += cp -Rvf $$OUT_PWD/plugins $$DEPLOY_DIR &&
   deploy.commands += cp -Rvf $$OUT_PWD/data $$DEPLOY_DIR &&
   deploy.commands += cp -Rvf $$OUT_PWD/help $$DEPLOY_DIR &&
   deploy.commands += cp -Rvf $$OUT_PWD/web $$DEPLOY_DIR &&
   deploy.commands += cp -Rvf $$OUT_PWD/customize $$DEPLOY_DIR &&
+  deploy.commands += cp -Rvf $$OUT_PWD/timezone $$DEPLOY_DIR &&
   deploy.commands += cp -Rvf $$OUT_PWD/littlenavmap $$DEPLOY_DIR &&
   deploy.commands += cp -vfa $$[QT_INSTALL_TRANSLATIONS]/qt_??.qm  $$DEPLOY_DIR/translations &&
   deploy.commands += cp -vfa $$[QT_INSTALL_TRANSLATIONS]/qt_??_??.qm  $$DEPLOY_DIR/translations &&
@@ -851,41 +890,39 @@ unix:!macx {
   deploy.commands += cp -vf $$PWD/LICENSE.txt $$DEPLOY_DIR &&
   deploy.commands += cp -vf $$PWD/resources/icons/littlenavmap.svg $$DEPLOY_DIR &&
   deploy.commands += cp -vf \"$$PWD/desktop/Little Navmap.desktop\" $$DEPLOY_DIR &&
-  exists(/usr/lib/x86_64-linux-gnu/libssl.so.1.1) : deploy.commands += cp -vfaL /usr/lib/x86_64-linux-gnu/libssl.so.1.1 $$DEPLOY_DIR_LIB &&
-  exists(/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1) : deploy.commands += cp -vfaL /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/tls/lib*.so*  $$DEPLOY_DIR_LIB/tls &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/iconengines/libqsvgicon.so*  $$DEPLOY_DIR_LIB/iconengines &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/imageformats/libqgif.so*  $$DEPLOY_DIR_LIB/imageformats &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/imageformats/libqjpeg.so*  $$DEPLOY_DIR_LIB/imageformats &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/imageformats/libqsvg.so*  $$DEPLOY_DIR_LIB/imageformats &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/imageformats/libqwbmp.so*  $$DEPLOY_DIR_LIB/imageformats &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/imageformats/libqwebp.so*  $$DEPLOY_DIR_LIB/imageformats &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqeglfs.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqlinuxfb.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqminimal.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqminimalegl.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqoffscreen.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqxcb.so*  $$DEPLOY_DIR_LIB/platforms &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platforms/libqwayland*.so*  $$DEPLOY_DIR_LIB/platforms &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/platformthemes/libqgtk*.so*  $$DEPLOY_DIR_LIB/platformthemes &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/printsupport/libcupsprintersupport.so*  $$DEPLOY_DIR_LIB/printsupport &&
   deploy.commands += cp -vfa $$[QT_INSTALL_PLUGINS]/sqldrivers/libqsqlite.so*  $$DEPLOY_DIR_LIB/sqldrivers &&
+  exists(/usr/lib/x86_64-linux-gnu/libssl.so) : deploy.commands += cp -vfaL /usr/lib/x86_64-linux-gnu/libssl.so $$DEPLOY_DIR_LIB &&
+  exists(/usr/lib/x86_64-linux-gnu/libcrypto.so) : deploy.commands += cp -vfaL /usr/lib/x86_64-linux-gnu/libcrypto.so $$DEPLOY_DIR_LIB &&
   deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libicudata.so*  $$DEPLOY_DIR_LIB &&
   deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libicui18n.so*  $$DEPLOY_DIR_LIB &&
   deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libicuuc.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Concurrent.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Core.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5DBus.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Gui.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Network.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5PrintSupport.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Qml.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Quick.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Sql.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Svg.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Widgets.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5X11Extras.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5XcbQpa.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5QmlModels.so*  $$DEPLOY_DIR_LIB &&
-  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt5Xml.so* $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Core5Compat.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Concurrent.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Core.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6DBus.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Gui.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Network.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6PrintSupport.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Sql.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Svg.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Widgets.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6XcbQpa.so*  $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6Xml.so* $$DEPLOY_DIR_LIB &&
+  deploy.commands += cp -vfa $$[QT_INSTALL_LIBS]/libQt6WaylandClient.so* $$DEPLOY_DIR_LIB &&
   deploy.commands += rm -fv $$DEPLOY_DIR_LIB/lib*.so.*.debug $$DEPLOY_DIR_LIB/*/lib*.so.*.debug
 }
 
@@ -894,13 +931,7 @@ macx {
 
   INSTALL_MARBLE_DYLIB_CMD=install_name_tool \
          -change  $$INSTALL_MARBLE_DYLIB \
-         @executable_path/../Frameworks/libmarblewidget-qt5.25.dylib $$OUT_PWD/littlenavmap.app/Contents/PlugIns
-
-  # Needs "-rpath" in GUI
-#  INSTALL_MARBLE_DYLIB_CMD=install_name_tool \
-#         -change  $$INSTALL_MARBLE_DYLIB \
-#         -rpath @executable_path/../Frameworks/libmarblewidget-qt5.25.dylib $$OUT_PWD/littlenavmap.app/Contents/PlugIns
-
+         @executable_path/../Frameworks/libmarblewidget-lnm-qt6.dylib $$OUT_PWD/littlenavmap.app/Contents/PlugIns
 
   DEPLOY_APP=\"$$PWD/../deploy/Little Navmap.app\"
   DEPLOY_DIR=\"$$PWD/../deploy\"
@@ -909,15 +940,17 @@ macx {
 
   deploy.commands = rm -Rfv $$DEPLOY_APP &&
   deploy.commands += mkdir -p $$OUT_PWD/littlenavmap.app/Contents/PlugIns &&
+  deploy.commands += mkdir -p $$OUT_PWD/littlenavmap.app/Contents/Frameworks &&
   exists($$DATABASE_BASE) : deploy.commands += cp -Rvf $$DATABASE_BASE $$OUT_PWD/littlenavmap.app/Contents/MacOS &&
   exists($$HELP_BASE) : deploy.commands += cp -Rvf $$HELP_BASE/* $$OUT_PWD/littlenavmap.app/Contents/MacOS/help &&
+
+  deploy.commands += cp -Rfv $$MARBLE_LIB_PATH/libmarblewidget-lnm-qt6*.dylib $$OUT_PWD/littlenavmap.app/Contents/Frameworks &&
   deploy.commands += cp -Rvf \
     $$MARBLE_LIB_PATH/plugins/libCachePlugin.so \
     $$MARBLE_LIB_PATH/plugins/libAtmospherePlugin.so \
     $$MARBLE_LIB_PATH/plugins/libCompassFloatItem.so \
     $$MARBLE_LIB_PATH/plugins/libGraticulePlugin.so \
     $$MARBLE_LIB_PATH/plugins/libKmlPlugin.so \
-    $$MARBLE_LIB_PATH/plugins/libLatLonPlugin.so \
     $$MARBLE_LIB_PATH/plugins/libPn2Plugin.so \
     $$MARBLE_LIB_PATH/plugins/libMapScaleFloatItem.so \
     $$MARBLE_LIB_PATH/plugins/libNavigationFloatItem.so \
@@ -928,38 +961,30 @@ macx {
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libCompassFloatItem.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libGraticulePlugin.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libKmlPlugin.so &&
-  deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libLatLonPlugin.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libPn2Plugin.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libMapScaleFloatItem.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libNavigationFloatItem.so &&
   deploy.commands +=  $$INSTALL_MARBLE_DYLIB_CMD/libOverviewMap.so &&
   deploy.commands += $$[QT_INSTALL_BINS]/macdeployqt littlenavmap.app $$MACDEPLOY_FLAGS &&
   deploy.commands += cp -vf $$PWD/desktop/\"Little Navmap Portable macOS.command\" $$DEPLOY_DIR/\"Little Navmap Portable.command\" &&
-  deploy.commands += cp -rfv $$OUT_PWD/littlenavmap.app $$DEPLOY_APP &&
+  deploy.commands += cp -Rfv $$OUT_PWD/littlenavmap.app $$DEPLOY_APP &&
   deploy.commands += cp -fv $$[QT_INSTALL_TRANSLATIONS]/qt_??.qm  $$DEPLOY_APP/Contents/MacOS &&
   deploy.commands += cp -fv $$[QT_INSTALL_TRANSLATIONS]/qt_??_??.qm  $$DEPLOY_APP/Contents/MacOS &&
   deploy.commands += cp -fv $$[QT_INSTALL_TRANSLATIONS]/qtbase*.qm  $$DEPLOY_APP/Contents/MacOS &&
-  deploy.commands += cp -Rv $$PWD/CHANGELOG.txt $$DEPLOY_APP/Contents/MacOS &&
+  deploy.commands += cp -fv $$PWD/CHANGELOG.txt $$DEPLOY_APP/Contents/MacOS &&
   deploy.commands += cp -fv $$PWD/build/mac/Info.plist $$ $$DEPLOY_APP/Contents &&
   deploy.commands += echo $$VERSION_NUMBER > $$DEPLOY_DIR/version-LittleNavmap.txt &&
   deploy.commands += echo $$GIT_REVISION_FULL > $$DEPLOY_DIR/revision-LittleNavmap.txt &&
   deploy.commands += cp -fv $$PWD/LICENSE.txt $$DEPLOY_DIR &&
   deploy.commands += cp -fv $$PWD/README.txt $$DEPLOY_DIR/README-LittleNavmap.txt &&
   deploy.commands += cp -fv $$PWD/CHANGELOG.txt $$DEPLOY_DIR/CHANGELOG-LittleNavmap.txt
-
-
-# -verbose=3
 }
 
 # Windows specific deploy target to "deploy\Little Navmap win64"
 win32 {
   defineReplace(p){return ($$shell_quote($$shell_path($$1)))}
 
-  contains(QT_ARCH, i386) { # 32 Bit build
-    RC_ICONS = resources/icons/littlenavmap32.ico
-  } else { # 64 Bit build
-    RC_ICONS = resources/icons/littlenavmap64.ico
-  }
+  RC_ICONS = resources/icons/littlenavmap64.ico
   RC_ICONS += resources/icons/littlenavmapdoc.ico
 
   CONFIG(debug, debug|release) : DLL_SUFFIX=d
@@ -977,7 +1002,6 @@ win32 {
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libCompassFloatItem$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libGraticulePlugin$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libKmlPlugin$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
-  deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libLatLonPlugin$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libPn2Plugin$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libMapScaleFloatItem$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
   deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../plugins/libNavigationFloatItem$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/plugins) &&
@@ -1000,6 +1024,11 @@ win32 {
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/help/*) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/help/) &&
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/web) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/web) &&
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/customize) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/customize) &&
+  deploy.commands += xcopy /F $$p($$PWD/resources/config/little_navmap_darkstyle.ini) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/customize) &&
+  deploy.commands += xcopy /F $$p($$PWD/resources/config/little_navmap_fusionstyle.ini) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/customize) &&
+  deploy.commands += xcopy /F $$p($$PWD/resources/config/little_navmap_mapstyle.ini) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/customize) &&
+  deploy.commands += xcopy /F $$p($$PWD/resources/config/maplayers.xml) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/customize) &&
+  deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/timezone) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/timezone) &&
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/marble/data) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/data) &&
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/etc) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/etc) &&
   deploy.commands += xcopy /I /S /E /F /Y $$p($$PWD/simconnect) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/simconnect) &&
@@ -1011,21 +1040,17 @@ win32 {
     deploy.commands += copy /Y $$p($$SIMCONNECT_PATH_WIN64_MSFS_2024/lib/SimConnect.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/SimConnect_msfs_2024.dll) &&
     deploy.commands += copy /Y $$p($$SIMCONNECT_PATH_WIN64_MSFS_2020/lib/SimConnect.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/SimConnect_msfs_2020.dll) &&
   }
-  deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../libmarblewidget-qt5$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../libastro$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$MARBLE_LIB_PATH/../libmarblewidget-lnm-qt6$${DLL_SUFFIX}.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/libgcc*.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/libstdc*.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/libwinpthread*.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += xcopy /F $$p($$OPENSSL_PATH_WIN\libcrypto*.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += xcopy /F $$p($$OPENSSL_PATH_WIN\libssl*.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5Network.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5PrintSupport.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5Qml.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5Sql.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5Quick.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5OpenGL.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5QmlModels.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
-  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt5Xml.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt6Network.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt6PrintSupport.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt6Sql.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt6OpenGL.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
+  deploy.commands += xcopy /F $$p($$[QT_INSTALL_BINS]/Qt6Xml.dll) $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += $$p($$[QT_INSTALL_BINS]/windeployqt) $$WINDEPLOY_FLAGS $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME) &&
   deploy.commands += del /f /q $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/sqldrivers/qsqlpsql.dll) &&
   deploy.commands += del /f /q $$p($$DEPLOY_BASE/$$WIN_TARGET_NAME/sqldrivers/qsqlodbc.dll)
@@ -1054,3 +1079,6 @@ QMAKE_EXTRA_TARGETS += deploy copydata all
     }
   }
 }
+
+DISTFILES += \
+  resources/icons/mapedit.svg

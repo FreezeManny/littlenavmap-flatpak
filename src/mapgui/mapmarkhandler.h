@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ class ActionButtonHandler;
 }
 
 /*
- * Adds a toolbutton and four actions to it that allow to show or hide user features like holds, range rings and others.
+ * Adds a toolbutton and four actions to it that allow to show or hide map markers like holds, range rings and others.
  */
 class MapMarkHandler :
   public QObject
@@ -60,7 +60,7 @@ public:
 
   bool isShown(map::MapTypes type) const
   {
-    return markTypes & type;
+    return markTypes.testAnyFlag(type);
   }
 
   /* Adds new types to current ones */
@@ -76,6 +76,7 @@ public:
   void clearHoldings() const;
   void clearPatterns() const;
   void clearMsa() const;
+  void clearAllMarkers() const;
 
   /* Reset flight plan and other for new flight by showing a choice dialog first */
   void routeResetAll();
@@ -86,9 +87,11 @@ signals:
 
 private:
   /* Remove all measurement lines, patterns, holds, etc. depending on types */
-  void clearRangeRingsAndDistanceMarkers(bool quiet, map::MapTypes types) const;
+  void clearMarkers(bool quiet, map::MapType types) const;
 
   void toolbarActionTriggered(QAction *);
+  void toolbarActionAllTriggered(QAction *);
+  void toolbarActionNoneTriggered(QAction *);
 
   void flagsToActions();
   void actionsToFlags();

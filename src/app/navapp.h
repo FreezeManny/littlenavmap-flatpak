@@ -25,7 +25,6 @@
 
 class AircraftPerfController;
 class AircraftTrail;
-class TrackController;
 class AirspaceController;
 class ConnectClient;
 class DatabaseManager;
@@ -34,7 +33,10 @@ class InfoController;
 class LogdataController;
 class LogdataSearch;
 class MainWindow;
+class MapDetailHandler;
+class MapMarkHandler;
 class MapPaintWidget;
+class MapThemeHandler;
 class MapWidget;
 class OnlinedataController;
 class OptionsDialog;
@@ -44,27 +46,33 @@ class Route;
 class RouteAltitude;
 class RouteController;
 class SearchController;
+class StatusBar;
 class StyleHandler;
+class TrackController;
+class TrackManager;
 class UpdateHandler;
 class UserdataController;
 class UserdataIcons;
 class UserdataSearch;
 class VehicleIcons;
+class WeatherContextHandler;
 class WeatherReporter;
 class WebController;
 class WindReporter;
-class MapMarkHandler;
 struct MapAirportHandler;
-class MapDetailHandler;
-class TrackManager;
-class MapThemeHandler;
-class QAction;
-class WeatherContextHandler;
 
+class QAction;
+class QTimeZone;
+
+class FileCheck;
 namespace map {
 struct MapAirport;
 }
 namespace atools {
+
+namespace timezone {
+class TimeZoneManager;
+}
 
 namespace win {
 class ActivationContext;
@@ -120,6 +128,8 @@ namespace Ui {
 class MainWindow;
 }
 
+class MapMarkers;
+
 /*
  * Facade that keeps most important handler, window and query classes for static access.
  * Initialized and deinitialized in main window.
@@ -131,7 +141,7 @@ class MainWindow;
 class NavApp :
   public atools::gui::Application
 {
-  Q_DECLARE_TR_FUNCTIONS(NavApp)
+  Q_OBJECT
 
 public:
   NavApp(int& argc, char **argv, int flags = ApplicationFlags);
@@ -157,9 +167,7 @@ public:
   static void deInitWebController();
 
   static void checkForUpdates(int channelOpts, bool manual, bool startup, bool forceDebug);
-  static void updateChannels(int channelOpts);
 
-  static void optionsChanged();
   static void preDatabaseLoad();
   static void postDatabaseLoad();
 
@@ -201,11 +209,11 @@ public:
   static const atools::fs::sc::SimConnectData& getSimConnectData();
   static const atools::geo::Pos& getUserAircraftPos();
 
-  static atools::win::ActivationContext* getActivationContext();
+  static atools::win::ActivationContext *getActivationContext();
 
   static void updateAllMaps();
 
-  static const QVector<atools::fs::sc::SimConnectAircraft>& getAiAircraft();
+  static const QList<atools::fs::sc::SimConnectAircraft>& getAiAircraft();
 
   static const map::MapTypes getShownMapTypes();
   static const map::MapDisplayTypes getShownMapDisplayTypes();
@@ -235,8 +243,8 @@ public:
   static bool isDatabaseXPlane();
   static QString getCurrentSimulatorBasePath();
   static QString getSimulatorBasePath(atools::fs::FsPaths::SimulatorType type);
-  static QString getSimulatorBasePathBest(const QVector<atools::fs::FsPaths::SimulatorType>& types);
-  static QString getSimulatorFilesPathBest(const QVector<atools::fs::FsPaths::SimulatorType>& types, const QString& defaultPath);
+  static QString getSimulatorBasePathBest(const QList<atools::fs::FsPaths::SimulatorType>& types);
+  static QString getSimulatorFilesPathBest(const QList<atools::fs::FsPaths::SimulatorType>& types, const QString& defaultPath);
   static bool hasSimulator(atools::fs::FsPaths::SimulatorType type);
   static bool hasAnyMsSimulator();
   static bool hasInstalledSimulator(atools::fs::FsPaths::SimulatorType type);
@@ -305,9 +313,10 @@ public:
   static QWidget *getQMainWidget();
   static QMainWindow *getQMainWindow();
   static MainWindow *getMainWindow();
-  static void addDialogToDockHandler(QDialog *dialog);
-  static void removeDialogFromDockHandler(QDialog *dialog);
+  static void registerDialogInDockHandler(QDialog *dialog);
+  static void unregisterDialogInDockHandler(QDialog *dialog);
   static QList<QAction *> getMainWindowActions();
+  static StatusBar *getStatusBar();
 
   static MapWidget *getMapWidgetGui();
   static MapPaintWidget *getMapPaintWidgetGui();
@@ -316,6 +325,10 @@ public:
   static const InfoController *getInfoController();
   static QFont getTextBrowserInfoFont();
   static MapThemeHandler *getMapThemeHandler();
+
+  /* Get minimum button size by squared height of the comboBoxRouteType */
+  static QSize getMinButtonSize();
+
 
   static DatabaseManager *getDatabaseManager();
 
@@ -342,6 +355,8 @@ public:
 
   static bool isAircraftTrailEmpty();
   static const AircraftTrail& getAircraftTrail();
+
+  static int getMaxStoredTrailEntries();
 
   static const AircraftTrail& getAircraftTrailLogbook();
   static void deleteAircraftTrailLogbook();
@@ -377,6 +392,12 @@ public:
 
   static atools::fs::common::MoraReader *getMoraReader();
 
+  static const atools::timezone::TimeZoneManager *getTimeZoneManager();
+  static QTimeZone getTimeZone(const atools::geo::Pos& position);
+
+  /* Time from either simulator if connected or current time */
+  static QDateTime getUtcDateTimeSimOrCurrent();
+
   static VehicleIcons *getVehicleIcons();
 
   /* Not entirely reliable since other modules might be initialized later */
@@ -384,6 +405,7 @@ public:
 
   static QString getCurrentGuiStyleDisplayName();
   static bool isGuiStyleDark();
+  static bool isGuiStyleAnyFusion();
 
   static bool isDarkMapTheme();
 
@@ -406,6 +428,8 @@ public:
   static MapAirportHandler *getMapAirportHandler();
   static MapDetailHandler *getMapDetailHandler();
 
+  static MapMarkers *getMapMarkers();
+
   static void showFlightplan();
   static void showAircraftPerformance();
   static void showLogbookSearch();
@@ -415,6 +439,9 @@ public:
    * Sets safe mode if user chooses to skip file loading.
    * Always creates a crash report in case of previous unsafe exit. */
   static void recordStartNavApp();
+
+  /* Restart the application if the flag restartApplication is set */
+  static void restartApplication(bool noDataExchange, bool resetLayout);
 
   /* Create manual issue report */
   static void createIssueReport(const QStringList& additionalFiles);
@@ -431,6 +458,12 @@ public:
   static atools::gui::DataExchange *getDataExchange();
   static bool initDataExchange();
   static void deInitDataExchange();
+
+  /* Check files that are passed on the command line */
+  static void initStartupProperties();
+
+  /* Get all valid files passed on the command line */
+  static const FileCheck *getCommandLineFiles();
 
 private:
   static void initApplication();
@@ -460,6 +493,8 @@ private:
   /* Main window is not aggregated */
   static MainWindow *mainWindow;
 
+  static FileCheck *fileCheck;
+
   static atools::fs::db::DatabaseMeta *databaseMetaSim;
   static atools::fs::db::DatabaseMeta *databaseMetaNav;
 
@@ -470,6 +505,8 @@ private:
   static WebController *webController;
 
   static atools::gui::DataExchange *dataExchange;
+
+  static atools::timezone::TimeZoneManager *timeZone;
 
   static bool loadingDatabase;
   static bool closeCalled;

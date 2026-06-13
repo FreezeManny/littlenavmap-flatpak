@@ -10,6 +10,7 @@
         <file>resources/config/networks.cfg</file>
         <file>resources/config/ssl/lnm.cert</file>
         <file>resources/config/ssl/lnm.key</file>
+        <file>resources/config/track.cfg</file>
         <file>resources/config/urls.cfg</file>
         <file>resources/config/webserver.cfg</file>
         <file>resources/css/export.css</file>
@@ -140,8 +141,11 @@
         <file>resources/icons/databasecheck.svg</file>
         <file>resources/icons/detaildefault.svg</file>
         <file>resources/icons/detailless.svg</file>
+        <file>resources/icons/detaillesslabel.svg</file>
         <file>resources/icons/detailmap.svg</file>
         <file>resources/icons/detailmore.svg</file>
+        <file>resources/icons/detailmorelabel.svg</file>
+        <file>resources/icons/directrunway.svg</file>
         <file>resources/icons/directto.svg</file>
         <file>resources/icons/distancemeasure.svg</file>
         <file>resources/icons/distancemeasureoff.svg</file>
@@ -182,8 +186,6 @@
         <file>resources/icons/lessdetails.svg</file>
         <file>resources/icons/littlenavmap.ico</file>
         <file>resources/icons/littlenavmap.svg</file>
-        <file>resources/icons/littlenavmap32.ico</file>
-        <file>resources/icons/littlenavmap32.svg</file>
         <file>resources/icons/littlenavmap64.ico</file>
         <file>resources/icons/littlenavmap64.svg</file>
         <file>resources/icons/littlenavmapdoc.ico</file>
@@ -287,10 +289,6 @@
         <file>resources/icons/startrunway.svg</file>
         <file>resources/icons/startwater.svg</file>
         <file>resources/icons/statusbar.svg</file>
-        <file>resources/icons/tab_close_button.png</file>
-        <file>resources/icons/tab_close_button_hover.png</file>
-        <file>resources/icons/tab_close_button_hover_night.png</file>
-        <file>resources/icons/tab_close_button_night.png</file>
         <file>resources/icons/tabbutton.svg</file>
         <file>resources/icons/trackline.svg</file>
         <file>resources/icons/trafficpattern.svg</file>
@@ -355,8 +353,17 @@
         <file>resources/icons/windpointer.svg</file>
         <file>resources/icons/zoomin.svg</file>
         <file>resources/icons/zoomout.svg</file>
-        <file>resources/icons/detailmorelabel.svg</file>
-        <file>resources/icons/detaillesslabel.svg</file>
-        <file>resources/icons/directrunway.svg</file>
+        <file>resources/config/little_navmap_fusionstyle.ini</file>
+        <file>resources/icons/close_dark_hover.svg</file>
+        <file>resources/icons/close_dark.svg</file>
+        <file>resources/icons/close_hover.svg</file>
+        <file>resources/icons/close.svg</file>
+        <file>resources/config/little_navmap_darkstyle.ini</file>
+        <file>resources/icons/profiledata.svg</file>
+        <file>resources/icons/mapcache.svg</file>
+        <file>resources/icons/mapfont.svg</file>
+        <file>resources/icons/edit.svg</file>
+        <file>resources/icons/mapedit.svg</file>
+        <file>resources/icons/approachoff.svg</file>
     </qresource>
 </RCC>

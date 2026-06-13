@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2022 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #ifndef LITTLENAVMAP_UPDATEHANDLER_H
 #define LITTLENAVMAP_UPDATEHANDLER_H
 
-#include "options/optiondata.h"
+#include "options/optionflags.h"
 
 #include <QObject>
 #include <QTimer>
@@ -27,11 +27,9 @@ namespace atools {
 namespace util {
 class UpdateCheck;
 class Update;
-typedef QVector<atools::util::Update> UpdateList;
+typedef QList<atools::util::Update> UpdateList;
 }
 }
-
-class MainWindow;
 
 /*
  * Update handler that drives all checks for updates and show dialogs,
@@ -43,7 +41,7 @@ class UpdateHandler :
   Q_OBJECT
 
 public:
-  explicit UpdateHandler(MainWindow *parent = nullptr);
+  explicit UpdateHandler(QWidget *parent = nullptr);
   virtual ~UpdateHandler() override;
 
   UpdateHandler(const UpdateHandler& other) = delete;
@@ -86,6 +84,8 @@ public:
     channelOpts = value;
   }
 
+  void optionsChanged();
+
 private:
   void updateFound(atools::util::UpdateList updates);
   void updateFailed(QString errorString);
@@ -98,7 +98,7 @@ private:
   UpdateReason updateReason = UPDATE_REASON_UNKNOWN;
   bool enabled = true;
   atools::util::UpdateCheck *updateCheck;
-  MainWindow *mainWindow = nullptr;
+  QWidget *parentWidget = nullptr;
 };
 
 #endif // LITTLENAVMAP_UPDATEHANDLER_H

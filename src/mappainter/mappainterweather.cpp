@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,16 +17,17 @@
 
 #include "mappainter/mappainterweather.h"
 
+#include "app/navapp.h"
 #include "common/symbolpainter.h"
-#include "fs/weather/metarparser.h"
 #include "fs/weather/metar.h"
-#include "mapgui/mapscale.h"
+#include "fs/weather/metarparser.h"
 #include "mapgui/maplayer.h"
+#include "mapgui/mapscale.h"
+#include "mappainter/paintcontext.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
-#include "util/paintercontextsaver.h"
-#include "app/navapp.h"
 #include "route/route.h"
+#include "util/paintercontextsaver.h"
 #include "weather/weatherreporter.h"
 
 #include <marble/GeoPainter.h>
@@ -58,10 +59,10 @@ void MapPainterWeather::render()
   // Get airports from cache/database for the bounding rectangle and add them to the map
   bool overflow = false;
 
-  const GeoDataLatLonAltBox& curBox = context->viewport->viewLatLonAltBox();
   const QList<MapAirport> *airportCache =
-    queries->getMapQuery()->getAirports(curBox, context->mapLayer, context->lazyUpdate, context->objectTypes, overflow);
+    queries->getMapQuery()->getAirports(context->viewportBox, context->mapLayer, context->lazyUpdate, context->objectTypes, overflow);
   context->setQueryOverflow(overflow);
+  float size = context->szF(context->symbolSizeAirportWeather, context->mapLayer->getAirportWeatherSymbolSize());
 
   // Collect all airports that are visible from cache ======================================
   QList<AirportPaintData> visibleAirportWeather;
@@ -71,7 +72,7 @@ void MapPainterWeather::render()
   {
     for(const MapAirport& airport : *airportCache)
     {
-      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding), &hidden);
+      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding, size), &hidden);
 
       if(!hidden && visibleOnMap)
         visibleAirportWeather.append(AirportPaintData(airport, x, y));
@@ -84,7 +85,7 @@ void MapPainterWeather::render()
     if(context->route->getDepartureAirportLeg().isAirport())
     {
       const MapAirport& airport = context->route->getDepartureAirportLeg().getAirport();
-      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding), &hidden);
+      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding, size), &hidden);
       if(!hidden && visibleOnMap)
         visibleAirportWeather.append(AirportPaintData(airport, x, y));
     }
@@ -92,15 +93,15 @@ void MapPainterWeather::render()
     if(context->route->getDestinationAirportLeg().isAirport())
     {
       const MapAirport& airport = context->route->getDestinationAirportLeg().getAirport();
-      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding), &hidden);
+      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding, size), &hidden);
       if(!hidden && visibleOnMap)
         visibleAirportWeather.append(AirportPaintData(airport, x, y));
     }
 
-    QVector<MapAirport> alternates = context->route->getAlternateAirports();
-    for(const map::MapAirport& airport : qAsConst(alternates))
+    QList<MapAirport> alternates = context->route->getAlternateAirports();
+    for(const map::MapAirport& airport : std::as_const(alternates))
     {
-      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding), &hidden);
+      visibleOnMap = wToS(airport.position, x, y, scale->getScreeenSizeForRect(airport.bounding, size), &hidden);
       if(!hidden && visibleOnMap)
         visibleAirportWeather.append(AirportPaintData(airport, x, y));
     }
@@ -129,18 +130,17 @@ void MapPainterWeather::render()
   std::sort(visibleAirportWeather.begin(), visibleAirportWeather.end(), std::bind(&MapPainter::sortAirportFunction, this, _1, _2));
 
   WeatherReporter *reporter = NavApp::getWeatherReporter();
-  for(const AirportPaintData& airportPaintData : qAsConst(visibleAirportWeather))
+  for(const AirportPaintData& airportPaintData : std::as_const(visibleAirportWeather))
   {
     const atools::fs::weather::Metar& metar = reporter->getAirportWeather(airportPaintData.getAirport(), true /* stationOnly */);
 
     if(metar.hasStationMetar())
-      drawAirportWeather(metar.getStation(), airportPaintData.getPoint());
+      drawAirportWeather(metar.getStation(), airportPaintData.getPoint(), size);
   }
 }
 
-void MapPainterWeather::drawAirportWeather(const atools::fs::weather::MetarParser& metar, const QPointF& point)
+void MapPainterWeather::drawAirportWeather(const atools::fs::weather::MetarParser& metar, const QPointF& point, float size)
 {
-  float size = context->szF(context->symbolSizeAirportWeather, context->mapLayer->getAirportSymbolSize());
   bool windBarbs = context->mapLayer->isAirportWeatherDetails();
 
   symbolPainter->drawAirportWeather(context->painter, metar,

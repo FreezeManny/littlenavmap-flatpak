@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -72,8 +72,8 @@ void FlightplanEntryBuilder::entryFromUserpoint(const map::MapUserpoint& userpoi
     ident = userpoint.ident;
   else if(!userpoint.name.isEmpty())
     ident = userpoint.name.toUpper();
-  else if(!userpoint.type.isEmpty())
-    ident = userpoint.type.toUpper();
+  else if(!userpoint.userpointType.isEmpty())
+    ident = userpoint.userpointType.toUpper();
 
   if(!ident.isEmpty())
     entry.setIdent(ident);
@@ -146,7 +146,7 @@ void FlightplanEntryBuilder::entryFromWaypoint(const map::MapWaypoint& waypoint,
   map::MapVor vor;
   map::MapNdb ndb;
 
-  if(resolveWaypoints && waypoint.type == "V")
+  if(resolveWaypoints && waypoint.waypointType == "V")
   {
     // Convert waypoint to underlying VOR for airway routes
     if(vorForWaypoint(waypoint, vor))
@@ -155,7 +155,7 @@ void FlightplanEntryBuilder::entryFromWaypoint(const map::MapWaypoint& waypoint,
       entryFromVor(vor, entry);
     }
   }
-  else if(resolveWaypoints && waypoint.type == "N")
+  else if(resolveWaypoints && waypoint.waypointType == "N")
   {
     // Convert waypoint to underlying NDB for airway routes
 
@@ -218,7 +218,7 @@ void FlightplanEntryBuilder::buildFlightplanEntry(const atools::geo::Pos& userPo
   else if(moType == map::USERPOINT)
     entryFromUserpoint(result.userpoints.constFirst(), entry);
   else if(moType == map::USERPOINTROUTE)
-    entryFromUserPos(userPos, entry, QString(), QString(), QString());
+    entryFromUserPos(userPos, entry, QStringLiteral(), QStringLiteral(), QStringLiteral());
   else
     qWarning() << "Unknown Map object type" << moType;
 }
@@ -241,7 +241,7 @@ void FlightplanEntryBuilder::buildFlightplanEntry(const proc::MapProcedureLeg& l
   else if(leg.navaids.hasNdb())
     entryFromNdb(leg.navaids.ndbs.constFirst(), entry);
   else
-    entryFromUserPos(leg.line.getPos2(), entry, leg.fixIdent, leg.fixRegion, QString());
+    entryFromUserPos(leg.line.getPos2(), entry, leg.fixIdent, leg.fixRegion, QStringLiteral());
 
   // Position is not correct for some leg types
   // entry.setPosition(leg.line.getPos2());

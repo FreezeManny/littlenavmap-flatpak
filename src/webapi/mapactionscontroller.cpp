@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ WebApiResponse MapActionsController::imageAction(WebApiRequest request)
                                 // Now using exact width and height of 256x256
                                 request.parameters.value("height").toInt(),
                                 rect, detailFactor,
-                                QString(), false /* ignoreUiScale */);
+                                QStringLiteral(), false /* ignoreUiScale */);
 
   QString format = QString(request.parameters.value("format"));
   int quality = request.parameters.value("quality").toInt();
@@ -116,7 +116,7 @@ WebApiResponse MapActionsController::featuresAction(WebApiRequest request)
 
   // Init dummy image request
   WebApiRequest *imageRequest = new WebApiRequest();
-  imageRequest->parameters = QMap<QByteArray, QByteArray>();
+  imageRequest->parameters = QMultiMap<QByteArray, QByteArray>();
   imageRequest->parameters.insert("leftlon", request.parameters.value("leftlon"));
   imageRequest->parameters.insert("toplat", request.parameters.value("toplat"));
   imageRequest->parameters.insert("rightlon", request.parameters.value("rightlon"));
@@ -218,8 +218,7 @@ WebApiResponse MapActionsController::featureAction(WebApiRequest request)
 
 MapActionsController::~MapActionsController()
 {
-  qDebug() << Q_FUNC_INFO;
-  deInit();
+
 }
 
 void MapActionsController::init()
@@ -256,7 +255,7 @@ MapPixmap MapActionsController::getPixmap(int width, int height)
     qDebug() << Q_FUNC_INFO << width << "x" << height;
 
   return getPixmapPosDistance(width, height, atools::geo::EMPTY_POS,
-                              static_cast<float>(mapPaintWidget->distance()), QLatin1String(""));
+                              static_cast<float>(mapPaintWidget->distance()), QStringLiteral());
 }
 
 MapPixmap MapActionsController::getPixmapPosDistance(int width, int height, atools::geo::Pos pos, float distanceKm,
@@ -378,6 +377,7 @@ MapPixmap MapActionsController::getPixmapRect(int width, int height, atools::geo
       // Disable copyright note and wind
       mapPaintWidget->setPaintCopyright(false);
       mapPaintWidget->setPaintWindHeader(false);
+      mapPaintWidget->setPaintNavigation(false);
 
       MapPixmap mapPixmap;
 

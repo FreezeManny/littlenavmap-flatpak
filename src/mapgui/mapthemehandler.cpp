@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 #include "ui_mainwindow.h"
 #include "util/htmlbuilder.h"
 #include "util/simplecrypt.h"
-#include "util/xmlstream.h"
+#include "util/xmlstreamreader.h"
 
 #include <QActionGroup>
 #include <QCoreApplication>
@@ -61,7 +61,7 @@ MapThemeHandler::MapThemeHandler(QWidget *mainWindowParam)
   : QObject(mainWindowParam), mainWindow(mainWindowParam)
 {
   // Load list of themes to reject from configuration file
-  QSettings settings(atools::settings::Settings::getOverloadedPath(":/littlenavmap/resources/config/mapthemes.cfg"), QSettings::IniFormat);
+  QSettings settings(atools::settings::Settings::getOverloadedPath(lnm::MAPTHEMES_CONFIG), QSettings::IniFormat);
   settings.beginGroup("RejectDownloadUrl");
   const QStringList keys = settings.childKeys();
   for(const QString& key : keys)
@@ -136,14 +136,21 @@ void MapThemeHandler::loadThemes()
       {
         // Get a list of themes using the same source dirs
         QList<MapTheme> otherThemes;
-        for(auto it = conflictSourceDirKeys.begin(); it != conflictSourceDirKeys.end(); ++it)
-          otherThemes.append(sourceDirs.values(*it));
+        for(auto conflictIt = conflictSourceDirKeys.begin(); conflictIt != conflictSourceDirKeys.end(); ++conflictIt)
+        {
+          auto foundIt = sourceDirs.constFind(*conflictIt);
+          while(foundIt != sourceDirs.end() && foundIt.key() == *conflictIt)
+          {
+            otherThemes.append(foundIt.value());
+            ++foundIt;
+          }
+        }
 
         // Get file paths for DGML
         QStringList otherDgmlFilepaths;
         for(const MapTheme& t : otherThemes)
           otherDgmlFilepaths.append(t.displayPath());
-        otherDgmlFilepaths.removeAll(QString());
+        otherDgmlFilepaths.removeAll(QStringLiteral());
         otherDgmlFilepaths.removeDuplicates();
 
         QStringList otherDgmlFilepathsText;
@@ -193,9 +200,9 @@ void MapThemeHandler::loadThemes()
       }
 
       bool rejected = false;
-      for(const QString& host : qAsConst(theme.downloadHosts))
+      for(const QString& host : std::as_const(theme.downloadHosts))
       {
-        for(const QRegularExpression& rejectExpr : qAsConst(rejectDownloadUrlList))
+        for(const QRegularExpression& rejectExpr : std::as_const(rejectDownloadUrlList))
         {
           if(rejectExpr.match(host).hasMatch())
           {
@@ -241,7 +248,7 @@ void MapThemeHandler::loadThemes()
       }
 
       ids.insert(theme.theme, theme);
-      for(const QString& dir : qAsConst(theme.sourceDirs))
+      for(const QString& dir : std::as_const(theme.sourceDirs))
         sourceDirs.insert(dir, theme);
 
       qInfo() << Q_FUNC_INFO << "Found" << theme.theme << theme.name;
@@ -250,8 +257,8 @@ void MapThemeHandler::loadThemes()
       themes.append(theme);
 
       // Collect all keys and insert with empty value
-      for(const QString& key : qAsConst(theme.keys))
-        mapThemeKeys.insert(key, QString());
+      for(const QString& key : std::as_const(theme.keys))
+        mapThemeKeys.insert(key, QStringLiteral());
     }
     else
       qInfo() << Q_FUNC_INFO << "Theme" << theme.theme << "not visible";
@@ -331,7 +338,7 @@ QString MapThemeHandler::currentThemeId() const
   if(actionGroupMapTheme->checkedAction() == nullptr)
   {
     qWarning() << Q_FUNC_INFO << "checkedAction is null";
-    return QString();
+    return QStringLiteral();
   }
   else
     return actionGroupMapTheme->checkedAction()->data().toString();
@@ -485,8 +492,7 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
   QFile dgmlFile(dgml.filePath());
   if(dgmlFile.open(QIODevice::ReadOnly | QIODevice::Text))
   {
-    atools::util::XmlStream xmlStream(&dgmlFile);
-    QXmlStreamReader& reader = xmlStream.getReader();
+    atools::util::XmlStreamReader xmlStream(&dgmlFile);
 
     // Skip to more important parts
     xmlStream.readUntilElement("dgml");
@@ -495,37 +501,37 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
     while(xmlStream.readNextStartElement())
     {
       // head ====================================================================
-      if(reader.name() == "head")
+      if(xmlStream.name() == QStringLiteral("head"))
       {
         while(xmlStream.readNextStartElement())
         {
-          if(reader.name() == "license")
+          if(xmlStream.name() == QStringLiteral("license"))
           {
-            theme.copyright = reader.attributes().value("short").toString().simplified();
+            theme.copyright = xmlStream.readAttributeStr("short").simplified();
             xmlStream.skipCurrentElement();
           }
-          else if(reader.name() == "name")
-            theme.name = reader.readElementText().simplified();
-          else if(reader.name() == "target")
-            theme.target = reader.readElementText().simplified();
-          else if(reader.name() == "theme")
-            theme.theme = reader.readElementText().simplified();
-          else if(reader.name() == "visible")
-            theme.visible = reader.readElementText().simplified().toLower() == "true";
-          else if(reader.name() == "shortcut")
-            theme.shortcut = reader.readElementText().simplified();
-          else if(reader.name() == "url")
+          else if(xmlStream.name() == QStringLiteral("name"))
+            theme.name = xmlStream.readElementTextStr().simplified();
+          else if(xmlStream.name() == QStringLiteral("target"))
+            theme.target = xmlStream.readElementTextStr().simplified();
+          else if(xmlStream.name() == QStringLiteral("theme"))
+            theme.theme = xmlStream.readElementTextStr().simplified();
+          else if(xmlStream.name() == QStringLiteral("visible"))
+            theme.visible = xmlStream.readElementTextStr().simplified().toLower() == QStringLiteral("true");
+          else if(xmlStream.name() == QStringLiteral("shortcut"))
+            theme.shortcut = xmlStream.readElementTextStr().simplified();
+          else if(xmlStream.name() == QStringLiteral("url"))
           {
-            theme.urlRef = reader.attributes().value("href").toString();
-            theme.urlName = reader.readElementText().simplified();
+            theme.urlRef = xmlStream.readAttributeStr(QStringLiteral("href"));
+            theme.urlName = xmlStream.readElementTextStr().simplified();
           }
           // head/zoom ============================
-          else if(reader.name() == "zoom")
+          else if(xmlStream.name() == QStringLiteral("zoom"))
           {
             while(xmlStream.readNextStartElement())
             {
-              if(reader.name() == "discrete")
-                theme.discrete = reader.readElementText().simplified().toLower() == "true";
+              if(xmlStream.name() == QStringLiteral("discrete"))
+                theme.discrete = xmlStream.readElementTextBool();
               else
                 xmlStream.skipCurrentElement();
             }
@@ -537,27 +543,28 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
         theme.dgmlFilepath = dgml.canonicalFilePath();
       }
       // map ====================================================================
-      else if(reader.name() == "map")
+      else if(xmlStream.name() == QStringLiteral("map"))
       {
         while(xmlStream.readNextStartElement())
         {
-          if(reader.name() == "layer")
+          if(xmlStream.name() == QStringLiteral("layer"))
           {
             while(xmlStream.readNextStartElement())
             {
               // map/layer/texture ===================
-              if(reader.name() == "texture")
+              if(xmlStream.name() == QStringLiteral("texture"))
               {
                 theme.textureLayer = true;
 
                 while(xmlStream.readNextStartElement())
                 {
-                  if(reader.name() == "downloadUrl")
+                  if(xmlStream.name() == QStringLiteral("downloadUrl"))
                   {
-                    QString host = reader.attributes().value("host").toString();
+                    QString host = xmlStream.readAttributeStr(QStringLiteral("host"));
 
                     // Put all attributes of the download URL into one string
-                    QString atts = reader.attributes().value("protocol").toString() % host % reader.attributes().value("path").toString();
+                    QString atts = xmlStream.readAttributeStr(QStringLiteral("protocol")) % host %
+                                   xmlStream.readAttributeStr(QStringLiteral("path"));
 
                     // Extract keywords from download URL
                     QRegularExpressionMatchIterator regexpIter = KEYSREGEXP.globalMatch(atts);
@@ -576,14 +583,14 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
                     // Online theme of download URL is given
                     theme.online = true;
                   }
-                  else if(reader.name() == "sourcedir")
-                    theme.sourceDirs.append(atools::nativeCleanPath(reader.readElementText().trimmed()));
+                  else if(xmlStream.name() == QStringLiteral("sourcedir"))
+                    theme.sourceDirs.append(atools::nativeCleanPath(xmlStream.readElementTextStr().trimmed()));
                   else
                     xmlStream.skipCurrentElement();
                 }
               }
               // map/layer/geodata ===================
-              else if(reader.name() == "geodata")
+              else if(xmlStream.name() == QStringLiteral("geodata"))
               {
                 // Offline theme of geodata is given
                 theme.geodataLayer = true;
@@ -592,7 +599,7 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
               else
                 xmlStream.skipCurrentElement();
             } // while(xmlStream.readNextStartElement())
-          } // if(reader.name() == "layer")
+          } // if(xmlStream.name() == "layer")
           else
             xmlStream.skipCurrentElement();
         }
@@ -610,7 +617,7 @@ MapTheme MapThemeHandler::loadTheme(const QFileInfo& dgml)
   qDebug() << Q_FUNC_INFO << theme;
 #endif
 
-  theme.sourceDirs.removeAll(QString());
+  theme.sourceDirs.removeAll(QStringLiteral());
   theme.sourceDirs.sort();
   return theme;
 }
@@ -741,7 +748,7 @@ void MapThemeHandler::setupMapThemesUi()
   bool online = true;
   int index = 0;
   // Sort order is always online/offline and then alphabetical
-  for(const MapTheme& theme : qAsConst(themes))
+  for(const MapTheme& theme : std::as_const(themes))
   {
     // Check if offline map come after online and add separators
     if(!theme.isOnline() && online)
@@ -853,7 +860,7 @@ void MapThemeHandler::changeMapTheme()
                      tr("<p>The map theme \"%1\" requires additional information.</p>"
                           "<p>You have to create an user account at the related website and then create an username, an access key or a token.<br/>"
                           "Most of these services offer a free plan for hobbyists.</p>"
-                          "<p>Then go to menu \"Tools\" -> \"Options\" and to page \"Map Keys\" in Little Navmap and "
+                          "<p>Then go to menu \"Tools\" -> \"Options\" and to page \"Map Theme Keys\" in Little Navmap and "
                             "enter the information for the key(s) below:</p>"
                             "<ul><li>%2</li></ul>"
                               "<p>The map will not show correctly until this is done.</p>%3").
@@ -896,37 +903,42 @@ void MapThemeHandler::changeMapProjection()
   NavApp::setStatusMessage(tr("Map projection changed to %1.").arg(projectionText));
 }
 
-void MapThemeHandler::optionsChanged()
+void MapThemeHandler::optionsChanged(const optc::OptionChangeFlags& changeFlags)
 {
   qDebug() << Q_FUNC_INFO;
 
-  // Remember current theme id like "openstreetmap"
-  QString curThemeId = currentThemeId();
-
-  // Save key to avoid deletion
-  saveKeyfile();
-
-  // Now load all themes from all available folders
-  loadThemes();
-
-  // Reload keys and apply them to the themes
-  restoreKeyfile();
-
-  // Rebuild menu
-  setupMapThemesUi();
-
-  if(!getTheme(curThemeId).isValid())
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_MAPTHEMES))
   {
-    // Assign the default theme if the current one was removed
-    curThemeId = defaultTheme.getThemeId();
-    NavApp::getMapWidgetGui()->setTheme(defaultTheme);
+    mapThemeKeys = OptionData::instance().getMapThemeKeys();
 
-    if(NavApp::getMapPaintWidgetWeb() != nullptr)
-      NavApp::getMapPaintWidgetWeb()->setTheme(defaultTheme);
+    // Remember current theme id like "openstreetmap"
+    QString curThemeId = currentThemeId();
+
+    // Save key to avoid deletion
+    saveKeyfile();
+
+    // Now load all themes from all available folders
+    loadThemes();
+
+    // Reload keys and apply them to the themes
+    restoreKeyfile();
+
+    // Rebuild menu
+    setupMapThemesUi();
+
+    if(!getTheme(curThemeId).isValid())
+    {
+      // Assign the default theme if the current one was removed
+      curThemeId = defaultTheme.getThemeId();
+      NavApp::getMapWidgetGui()->setTheme(defaultTheme);
+
+      if(NavApp::getMapPaintWidgetWeb() != nullptr)
+        NavApp::getMapPaintWidgetWeb()->setTheme(defaultTheme);
+    }
+
+    // Check the theme action
+    changeMapThemeActions(curThemeId);
   }
-
-  // Check the theme action
-  changeMapThemeActions(curThemeId);
 }
 
 QString MapThemeHandler::getStatusTextForDir(const QString& path, bool& error)
@@ -976,11 +988,11 @@ void MapThemeHandler::validateMapThemeDirectories(QWidget *parent)
     msg.append(atools::checkDirMsg(mapThemeUserDir()));
 
   // Remove empty error messages
-  msg.removeAll(QString());
+  msg.removeAll(QStringLiteral());
 
   if(!msg.isEmpty())
     atools::gui::Dialog::warning(parent, tr("Base path(s) for map themes not found.\n%1\n\n"
-                                            "Go to menu \"Tools\" -> \"Options\" and then to page \"Cache and Files\". "
+                                            "Go to menu \"Tools\" -> \"Options\" and then to page \"Map Themes\". "
                                             "Clear the input field \"Directory for additional map themes\" "
                                             "with the wrong path to disable themes or "
                                             "click \"Select Themes Directory\" and select the correct folder.",

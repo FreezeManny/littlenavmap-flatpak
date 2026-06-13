@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -61,10 +61,13 @@ public:
   /* Resolve icon names, overloads and extract types*/
   void loadIcons();
 
-  const QStringList getAllTypes() const
+  /* get map with type like "Add-on" as key and icon path as value */
+  const QMap<QString, QString>& getAllTypesMap() const
   {
-    return typeMap.keys();
+    return typeMap;
   }
+
+  const QList<QIcon> getAllIcons(float size);
 
   bool hasType(const QString& type) const
   {

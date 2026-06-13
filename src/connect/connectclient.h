@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ class ConnectClient :
   Q_OBJECT
 
 public:
-  explicit ConnectClient(MainWindow *parent);
+  explicit ConnectClient(QWidget *parent);
   virtual ~ConnectClient() override;
 
   ConnectClient(const ConnectClient& other) = delete;
@@ -131,6 +131,8 @@ public:
   void pauseSimConnect();
   void resumeSimConnect();
 
+  void fontChanged(const QFont& font);
+
 signals:
   /* Emitted when new data was received from the server (Little Navconnect), SimConnect or X-Plane.
    * can be aircraft position or weather update */
@@ -150,6 +152,9 @@ signals:
 
   /* Fetch boat or aircraft AI has been changed */
   void aiFetchOptionsChanged();
+
+  /* Start installation for Little Xpconnect */
+  void installXpconnect();
 
 private:
   void readFromSocket();
@@ -196,15 +201,16 @@ private:
   QTcpSocket *socket = nullptr;
   /* Used to trigger reconnects on socket base connections */
   QTimer reconnectNetworkTimer, flushQueuedRequestsTimer;
-  MainWindow *mainWindow;
   bool verbose = false;
   atools::util::TimedCache<QString, atools::fs::weather::Metar> metarIdentCache;
+
+  QWidget *parentWidget;
 
   /* Waiting for these replies for airport idents */
   QSet<QString> outstandingReplies;
 
   /* Requests in queue */
-  QVector<atools::fs::sc::WeatherRequest> queuedRequests;
+  QList<atools::fs::sc::WeatherRequest> queuedRequests;
   QSet<QString> queuedRequestIdents;
 
   /* Cache holding all weather stations that do not allow a direct report but rather interpolated or nearest */

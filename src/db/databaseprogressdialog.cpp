@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,8 @@
 DatabaseProgressDialog::DatabaseProgressDialog(QWidget *parent, const QString& simulatorName)
   : QDialog(parent), ui(new Ui::DatabaseProgressDialog)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::NonModal);
 
   ui->setupUi(this);
@@ -73,13 +74,13 @@ void DatabaseProgressDialog::reject()
 
 void DatabaseProgressDialog::restoreState()
 {
-  atools::gui::WidgetState widgetState(lnm::OPTIONS_DIALOG_DB_PROGRESS_DLG, false);
+  atools::gui::WidgetState widgetState(lnm::OPTIONS_DIALOG_DB_PROGRESS_DLG);
   widgetState.restore(this);
 }
 
 void DatabaseProgressDialog::saveState() const
 {
-  atools::gui::WidgetState widgetState(lnm::OPTIONS_DIALOG_DB_PROGRESS_DLG, false);
+  atools::gui::WidgetState widgetState(lnm::OPTIONS_DIALOG_DB_PROGRESS_DLG);
   widgetState.save(this);
 }
 
@@ -119,6 +120,7 @@ void DatabaseProgressDialog::setFinishedState()
   cancelButton->setDefault(false);
   cancelButton->setAutoDefault(false);
 
+  setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
   raise();
   activateWindow();
 }

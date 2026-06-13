@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -32,8 +32,7 @@ class RouteCommand :
   public QUndoCommand
 {
 public:
-  RouteCommand(RouteController *routeController, const atools::fs::pln::Flightplan& flightplanBefore,
-               const QString& text = QString());
+  RouteCommand(RouteController *routeController, const atools::fs::pln::Flightplan& flightplanBefore, const QString& text);
   virtual ~RouteCommand() override;
 
   virtual void undo() override;

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -39,9 +39,9 @@ quint16 RouteExportFormatMap::version = 0;
 // Simply log warnings instead of throwing exceptions on read errors
 bool RouteExportFormatMap::exceptionOnReadError = false;
 
-const QVector<RouteExportFormat> RouteExportFormatMap::getSelected() const
+const QList<RouteExportFormat> RouteExportFormatMap::getSelected() const
 {
-  QVector<RouteExportFormat> retval;
+  QList<RouteExportFormat> retval;
   for(const RouteExportFormat& fmt : (*this))
   {
     if(fmt.isSelected())
@@ -75,6 +75,11 @@ void RouteExportFormatMap::setDebugOptions(rexp::RouteExportFormatType type)
 }
 
 #endif
+
+void RouteExportFormatMap::registerMetaTypes()
+{
+  qRegisterMetaType<RouteExportFormatMap>();
+}
 
 void RouteExportFormatMap::clearPath(rexp::RouteExportFormatType type)
 {
@@ -137,7 +142,7 @@ void RouteExportFormatMap::restoreState()
   }
 
   // Copy loaded states into stock formats ==================================================
-  for(const RouteExportFormat& loadedFmt : qAsConst(loadedFormats))
+  for(const RouteExportFormat& loadedFmt : std::as_const(loadedFormats))
   {
     if(contains(loadedFmt.getType()))
     {
@@ -236,6 +241,7 @@ void RouteExportFormatMap::initCallbacks(RouteExport *routeExport)
   (*this)[RTEMSFS      ].CB(bind(&RouteExport::routeExportRteMulti,           routeExport, _1));
   (*this)[GPX          ].CB(bind(&RouteExport::routeExportGpx,                routeExport, _1));
   (*this)[HTML         ].CB(bind(&RouteExport::routeExportHtml,               routeExport, _1));
+  (*this)[CSV          ].CB(bind(&RouteExport::routeExportCsv,                routeExport, _1));
   (*this)[FPR          ].CB(bind(&RouteExport::routeExportFprMulti,           routeExport, _1));
   (*this)[FPL          ].CB(bind(&RouteExport::routeExportFplMulti,           routeExport, _1));
   (*this)[CORTEIN      ].CB(bind(&RouteExport::routeExportCorteInMulti,       routeExport, _1));
@@ -339,6 +345,7 @@ void RouteExportFormatMap::init()
   FMT(RTEMSFS,       AIRPORTS,             S0P % "rte",     tr("Aircraft"),  tr("PMDG aircraft for MSFS")                                  );
   FMT(GPX,           NONE,                 D % "gpx",       tr("Garmin"),    tr("Garmin GPX exchange format for Google Earth and others") % gpxTooltip % mainMenu );
   FMT(HTML,          NONE,                 D % "html",      tr("Other"),     tr("HTML flight plan web page") % mainMenu                    );
+  FMT(CSV,           NONE,                 D % "csv",       tr("Other"),     tr("CSV format") % mainMenu                                   );
   FMT(FPR,           AIRPORTS,             S0P % "fpr",     tr("Aircraft"),  tr("Majestic Dash MJC8 Q400")                                 );
   FMT(FPL,           AIRPORTS,             S0P % "fpl",     tr("Aircraft"),  tr("IXEG Boeing 737")                                         );
   FMT(CORTEIN,       AIRPORTS|FILEAPP,     "corte.in",      tr("Aircraft"),  tr("FlightFactor Airbus")                                    );
@@ -424,7 +431,7 @@ void RouteExportFormatMap::updateDefaultPaths()
 
   // Get for current database selection if not X-Plane or MSFS
   if(curDb != FsPaths::XPLANE_11 && curDb != FsPaths::XPLANE_12 && curDb != FsPaths::MSFS && curDb != FsPaths::NAVIGRAPH)
-    fsxP3dBasePath = NavApp::getSimulatorFilesPathBest({curDb}, QString());
+    fsxP3dBasePath = NavApp::getSimulatorFilesPathBest({curDb}, QStringLiteral());
 
   // Get best installed simulator
   if(fsxP3dBasePath.isEmpty())
@@ -522,6 +529,7 @@ void RouteExportFormatMap::updateDefaultPaths()
   (*this)[RTEMSFS      ].DP(msfsLocalStatePath % SEP % "packages" % SEP % "pmdg-aircraft-737" % SEP % "work" % SEP % "Flightplans");
   (*this)[GPX          ].DP(documents);
   (*this)[HTML         ].DP(documents);
+  (*this)[CSV          ].DP(documents);
   (*this)[FPR          ].DP(fsxP3dBasePath % SEP % "SimObjects" % SEP % "Airplanes" % SEP % "mjc8q400" % SEP % "nav" % SEP % "routes");
   (*this)[FPL          ].DP(xpBasePath12Or11 % SEP % "Aircraft" % SEP % "X-Aviation" % SEP % "IXEG 737 Classic" % SEP % "coroutes");
   (*this)[CORTEIN      ].DP(xpBasePath12Or11 % SEP % "Aircraft");

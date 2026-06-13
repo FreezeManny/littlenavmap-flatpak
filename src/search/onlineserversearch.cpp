@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -26,9 +26,11 @@
 #include "search/columnlist.h"
 #include "gui/widgetstate.h"
 
-OnlineServerSearch::OnlineServerSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+OnlineServerSearch::OnlineServerSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("server", "server_id"), tabWidgetIndex)
 {
+  setObjectName("OnlineServerSearch");
+
   // Default view column descriptors
   // Hidden columns are part of the query and can be used as search criteria but are not shown in the table
   // Columns that are hidden are also needed to fill MapAirport object and for the icon delegate
@@ -108,6 +110,13 @@ void OnlineServerSearch::updateButtonMenu()
 
 void OnlineServerSearch::updatePushButtons()
 {
+}
+
+void OnlineServerSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_ONLINE_SERVER_VIEW_WIDGET).clear(ui->tableViewOnlineServerSearch);
+  SearchBaseTable::resetView();
 }
 
 QAction *OnlineServerSearch::followModeAction()

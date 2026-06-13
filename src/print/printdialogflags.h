@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -53,5 +53,7 @@ enum PrintFlightplanOpt : quint32
 ATOOLS_DECLARE_FLAGS_32(PrintFlightplanOpts, prt::PrintFlightplanOpt)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(prt::PrintFlightplanOpts)
 }
+
+Q_DECLARE_TYPEINFO(prt::PrintFlightplanOpts, Q_PRIMITIVE_TYPE);
 
 #endif // LNM_PRINTDIALOGFLAGS_H

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,16 @@
 #define LNM_STYLEHANDLER_H
 
 #include <QPalette>
-#include <QVector>
+#include <QList>
+#include <QObject>
 
+class QStyleHints;
 class QMenu;
 class QPalette;
 class QActionGroup;
 class QAction;
 class QMainWindow;
+class StyleDescription;
 
 /*
  * Creates additonal GUI styles and provides function and menu items to switch between them.
@@ -57,44 +60,62 @@ public:
   /* true if style requires darkening the map */
   bool isGuiStyleDark() const;
 
+  /* true if any fusion based style like Dark or Fusion */
+  bool isGuiStyleAnyFusion() const;
+
+signals:
+  /* Sent on change */
+  void preStyleChange();
+  void styleChanged();
+
+private:
+  // ============================================
+
   const static QLatin1String STYLE_FUSION; /* Fusion */
   const static QLatin1String STYLE_DARK; /* Dark / Fusion */
   const static QLatin1String STYLE_WINDOWSVISTA; /* Windows 10 and 11 */
   const static QLatin1String STYLE_WINDOWS; /* Old Windows */
 
-signals:
-  /* Sent on change */
-  void preStyleChange(const QString& name, bool dark);
-  void styleChanged(const QString& name, bool dark);
-
-private:
-  struct Style
-  {
-    Style(const QString& displayNameParam, const QString& styleNameParam, const QString& stylesheetParam,
-          const QPalette& paletteParam, bool darkParam) : displayName(displayNameParam),
-      styleName(styleNameParam), stylesheet(stylesheetParam), palette(paletteParam), dark(darkParam)
-    {
-    }
-
-    QString displayName, styleName, stylesheet;
-    QPalette palette;
-    bool dark;
-  };
-
   void applyCurrentStyle();
-  void createGrayPalette(QPalette& palette);
-  void createDarkPalette(QPalette& palette);
   void menuItemTriggered();
+  void menuItemAutoTriggered();
+  void updateMenuStatus();
 
-  /* All system and custom styles */
-  QVector<Style> styles;
+  void colorSchemeChanged(Qt::ColorScheme colorScheme);
+  void paletteChanged(const QPalette&);
+
+  /* Index to current or dark/fusion */
+  int styleIndex() const;
+
+  void logPalette(const QPalette& palette) const;
+
+  /* All system and custom styleDescriptions */
+  QList<StyleDescription> styleDescriptions;
+
   /* Currently selected as in menu order */
   int currentStyleIndex = 0;
 
+  /* Dark and light indices */
+  int darkStyleIndex = -1, fusionStyleIndex = -1;
+
   /* Menus*/
   QActionGroup *styleActionGroup = nullptr;
-  QVector<QAction *> menuItems;
+  QList<QAction *> menuItems;
+
+  QAction *menuItemAuto = nullptr;
+
   QMainWindow *mainWindow;
+
+  QStyleHints *styleHints;
+
+  QPalette systemPalette, /* Unchanged system palette. Can be dark or bright */
+           brightFusionPalette; /* Bright Fusion palette loaded from resources */
+
+  /* Switch between dark and light (Fusion) depending on os */
+  bool automaticStyle = true;
+
+  /* Avoid recursion through palette signal when applying style */
+  bool applyingStyle = false;
 };
 
 #endif // LNM_STYLEHANDLER_H

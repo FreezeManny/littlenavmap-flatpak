@@ -72,7 +72,7 @@ public:
   /*
    * @param parent can be null if only checkIncompatibleDatabases is to be called
    */
-  explicit DatabaseManager(MainWindow *parent);
+  explicit DatabaseManager(QWidget *parent, bool verbose);
 
   /* Also closes database if not already done */
   virtual ~DatabaseManager() override;
@@ -204,10 +204,10 @@ public:
 
   /* Get files path for installed simulators in order of the given list.
    * Also considers probably changed paths by user */
-  QString getSimulatorFilesPathBest(const atools::fs::FsPaths::SimulatorTypeVector& types, const QString& defaultPath) const;
+  QString getSimulatorFilesPathBest(const atools::fs::FsPaths::SimulatorTypeList& types, const QString& defaultPath) const;
 
   /* Same as above but for simulator base path */
-  QString getSimulatorBasePathBest(const atools::fs::FsPaths::SimulatorTypeVector& types) const;
+  QString getSimulatorBasePathBest(const atools::fs::FsPaths::SimulatorTypeList& types) const;
 
   navdb::Status getNavDatabaseStatus() const
   {
@@ -287,6 +287,9 @@ public:
   /* Switch to simulator database */
   void setCurrentDatabase(atools::fs::FsPaths::SimulatorType type);
 
+  /* Update database dialog */
+  void fontChanged(const QFont& font);
+
 signals:
   /* Emitted before opening the scenery database dialog, loading a database or switching to a new simulator database.
    * Recipients have to close all database connections and clear all caches. The database instance itself is not changed
@@ -334,9 +337,11 @@ private:
   void switchSimInternal(atools::fs::FsPaths::SimulatorType type);
 
   /* Navdatabase mode change from main menu */
+  /* User changed navdatabase in main menu */
   void switchNavFromMainMenu();
 
   /* Navdatabase auto mode changed from main menu */
+  /* User changed nav auto main menu */
   void switchNavAutoFromMainMenu();
 
   /* Set menus according to correction */
@@ -344,6 +349,9 @@ private:
 
   void freeActions();
   void insertSimSwitchAction(atools::fs::FsPaths::SimulatorType type, QAction *before, QMenu *menu, int index);
+
+  /* Updates the flags for installed simulators and removes all entries where neither database
+   * not simulator installation was found */
   void updateSimulatorFlags();
   void updateSimulatorPathsFromDialog();
 
@@ -388,10 +396,10 @@ private:
 
   bool showingDatabaseChangeWarning = false;
 
-  MainWindow *mainWindow = nullptr;
+  QWidget *parentWidget = nullptr;
 
   /* Switch simulator actions */
-  QActionGroup *simDbGroup = nullptr, *navDbGroup = nullptr;
+  QActionGroup *simDbActionGroup = nullptr, *navDbActionGroup = nullptr;
   QList<QAction *> simDbActions;
 
   QMenu *navDbSubMenu = nullptr;
@@ -428,6 +436,9 @@ private:
 
   /* Show hint dialog only once per session */
   bool backgroundHintShown = false;
+
+  /* Log databases only on first start up */
+  bool verbose = true;
 };
 
 #endif // LITTLENAVMAP_DATABASEMANAGER_H

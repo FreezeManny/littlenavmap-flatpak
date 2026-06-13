@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,8 @@ enum Correction : quint8
   CORRECT_FSX_P3D_UPDATED, /* Any FSX or P3D with updated cycle -> mixed or sim only mode */
   CORRECT_FSX_P3D_OUTDATED, /* Any FSX or P3D with old included AIRAC - sim only mode */
   CORRECT_XP_CYCLE_NAV_EQUAL, /* XP nav cycle is equal to sim cycle -> mixed mode */
-  CORRECT_XP_CYCLE_NAV_SMALLER, /* XP nav cycle is equal to sim cycle -> no navdatabase */
+  CORRECT_XP_CYCLE_NAV_OLDER, /* XP nav cycle is older than sim cycle -> no navdatabase */
+  CORRECT_XP_CYCLE_NAV_NEWER, /* XP nav cycle is newer than sim cycle -> mixed mode and show hint */
   CORRECT_EMPTY, /* Sim database is empty - use navdata for all */
   CORRECT_EMPTY_CHANGE, /* Sim database is empty and wrong mode */
   CORRECT_ALL /* Navdata for all selected - change mode */
@@ -66,7 +67,7 @@ QDataStream& operator<<(QDataStream& out, const FsPathType& obj);
 QDataStream& operator>>(QDataStream& in, FsPathType& obj);
 
 Q_DECLARE_METATYPE(FsPathType)
-Q_DECLARE_TYPEINFO(FsPathType, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(FsPathType, Q_RELOCATABLE_TYPE);
 
 /* Hash map for simulator type and FsPathType. Can be converted to QVariant */
 class SimulatorTypeMap :
@@ -87,7 +88,7 @@ public:
   atools::fs::FsPaths::SimulatorType getBestInstalled() const;
 
   /* Get files path for installed simulators in order of the given list */
-  atools::fs::FsPaths::SimulatorType getBestInstalled(const atools::fs::FsPaths::SimulatorTypeVector& types) const;
+  atools::fs::FsPaths::SimulatorType getBestInstalled(const atools::fs::FsPaths::SimulatorTypeList& types) const;
 
   /* Get all installed simulators */
   QList<atools::fs::FsPaths::SimulatorType> getAllInstalled() const;
@@ -107,6 +108,9 @@ public:
   using QHash::remove;
   using QHash::size;
   using QHash::operator[];
+
+  /* Register serializable objects */
+  static void registerMetaTypes();
 
 private:
   friend QDataStream& operator<<(QDataStream& out, const SimulatorTypeMap& obj);

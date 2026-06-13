@@ -129,6 +129,11 @@ enum RouteAdjustOption : quint32
 ATOOLS_DECLARE_FLAGS_32(RouteAdjustOptions, rf::RouteAdjustOption)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(rf::RouteAdjustOptions)
 
-}
+QDebug operator<<(QDebug out, rf::RouteAdjustOption type);
+QDebug operator<<(QDebug out, const rf::RouteAdjustOptions& type);
+
+} // namespace rf
+
+Q_DECLARE_TYPEINFO(rf::RouteAdjustOptions, Q_PRIMITIVE_TYPE);
 
 #endif // LNM_ROUTEFLAGS_H

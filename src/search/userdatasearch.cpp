@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 
 #include "search/userdatasearch.h"
 
+#include "app/navapp.h"
 #include "atools.h"
 #include "common/constants.h"
 #include "common/mapcolors.h"
@@ -25,9 +26,9 @@
 #include "common/maptypes.h"
 #include "common/maptypesfactory.h"
 #include "common/unit.h"
+#include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
-#include "app/navapp.h"
+#include "options/optiondata.h"
 #include "search/column.h"
 #include "search/columnlist.h"
 #include "search/sqlcontroller.h"
@@ -36,9 +37,11 @@
 #include "ui_mainwindow.h"
 #include "userdata/userdataicons.h"
 
-UserdataSearch::UserdataSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+UserdataSearch::UserdataSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("userdata", "userdata_id"), tabWidgetIndex)
 {
+  setObjectName("UserdataSearch");
+
   /* *INDENT-OFF* */
   ui->pushButtonUserdataHelp->setToolTip(
     tr("<p>All set search conditions have to match.</p>"
@@ -71,8 +74,11 @@ UserdataSearch::UserdataSearch(QMainWindow *parent, QTableView *tableView, si::T
   UserdataIcons *icons = NavApp::getUserdataIcons();
 
   int size = ui->comboBoxUserdataType->fontMetrics().height();
-  for(const QString& type : icons->getAllTypes())
-    ui->comboBoxUserdataType->addItem(QIcon(*icons->getIconPixmap(type, size - 2)), type);
+
+  const QMap<QString, QString>& allTypesMap = icons->getAllTypesMap();
+  for(auto it = allTypesMap.constBegin(); it != allTypesMap.constEnd(); ++it)
+    ui->comboBoxUserdataType->addItem(QIcon(*icons->getIconPixmap(it.key(), size - 2)), it.key());
+
   ui->comboBoxUserdataType->lineEdit()->setPlaceholderText(tr("Type"));
   ui->comboBoxUserdataType->lineEdit()->setClearButtonEnabled(true);
 
@@ -89,10 +95,10 @@ UserdataSearch::UserdataSearch(QMainWindow *parent, QTableView *tableView, si::T
   append(Column("tags", ui->lineEditUserdataTags, tr("Tags")).filter(true, ui->actionUserdataSearchShowMoreOptions)).
   append(Column("description", ui->lineEditUserdataDescription, tr("Remarks")).filter(true, ui->actionUserdataSearchShowMoreOptions)).
   append(Column("temp").hidden()).
-  append(Column("visible_from", tr("Visible from\n%dist%")).convertFunc(Unit::distNmF)).
+  append(Column("visible_from", tr("Visible from\n%dist%")).convertFunction(Unit::distNmF)).
   append(Column("lonx", tr("Longitude"))).
   append(Column("laty", tr("Latitude"))).
-  append(Column("altitude", tr("Elevation\n%alt%")).convertFunc(Unit::altFeetF)).
+  append(Column("altitude", tr("Elevation\n%alt%")).convertFunction(Unit::altFeetF)).
   append(Column("import_file_path", ui->lineEditUserdataFilepath,
                 tr("Imported\nfrom File")).filter(true, ui->actionUserdataSearchShowMoreOptions))
   ;
@@ -158,7 +164,7 @@ void UserdataSearch::connectSearchSlots()
 
 void UserdataSearch::addUserpointTriggered()
 {
-  QVector<int> ids = getSelectedIds();
+  QList<int> ids = getSelectedIds();
   emit addUserpoint(ids.isEmpty() ? -1 : ids.constFirst(), atools::geo::EMPTY_POS);
 }
 
@@ -181,7 +187,7 @@ void UserdataSearch::saveState()
 void UserdataSearch::restoreState()
 {
   atools::gui::WidgetState widgetState(lnm::SEARCHTAB_USERDATA_VIEW_WIDGET);
-  if(OptionData::instance().getFlags() & opts::STARTUP_LOAD_SEARCH && !atools::gui::Application::isSafeMode())
+  if(OptionData::instance().getFlags().testFlag(opts::STARTUP_LOAD_SEARCH) && !atools::gui::Application::isSafeMode())
   {
     widgetState.restore(userdataSearchWidgets);
 
@@ -227,9 +233,11 @@ QVariant UserdataSearch::modelDataHandler(int colIndex, int rowIndex, const Colu
 
     case Qt::TextAlignmentRole:
       if(col->getColumnName() == "ident" ||
-         displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt ||
-         displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() == QVariant::ULongLong ||
-         displayRoleValue.type() == QVariant::Double)
+         displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<unsigned int>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>() ||
+         displayRoleValue.metaType() == QMetaType::fromType<double>())
         // Align all numeric columns right
         return Qt::AlignRight;
 
@@ -258,10 +266,10 @@ QString UserdataSearch::formatModelData(const Column *col, const QVariant& displ
   // Called directly by the model for export functions
   if(col->getColumnName() == "altitude")
     return !displayRoleValue.isNull() && displayRoleValue.toFloat() < map::INVALID_ALTITUDE_VALUE ?
-           Unit::altFeet(displayRoleValue.toFloat(), false /* addUnit */, false /* narrow */, 1.f) : QString();
+           Unit::altFeet(displayRoleValue.toFloat(), false /* addUnit */, false /* narrow */, 1.f) : QStringLiteral();
   else if(col->getColumnName() == "visible_from")
     return !displayRoleValue.isNull() && displayRoleValue.toFloat() < map::INVALID_DISTANCE_VALUE ?
-           Unit::distNm(displayRoleValue.toFloat(), false /* addUnit */, false /* narrow */, 1.f) : QString();
+           Unit::distNm(displayRoleValue.toFloat(), false /* addUnit */, false /* narrow */, 1.f) : QStringLiteral();
   else if(col->getColumnName() == "lonx")
     return Unit::coordsLonX(atools::geo::Pos(displayRoleValue.toFloat(), 0.f));
   else if(col->getColumnName() == "laty")
@@ -270,11 +278,13 @@ QString UserdataSearch::formatModelData(const Column *col, const QVariant& displ
     return QLocale().toString(displayRoleValue.toDateTime(), QLocale::NarrowFormat);
   else if(col->getColumnName() == "description")
     return atools::elideTextShort(displayRoleValue.toString().simplified(), 80);
-  else if(displayRoleValue.type() == QVariant::Int || displayRoleValue.type() == QVariant::UInt)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<int>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned int>())
     return QLocale().toString(displayRoleValue.toInt());
-  else if(displayRoleValue.type() == QVariant::LongLong || displayRoleValue.type() == QVariant::ULongLong)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<long long>() ||
+          displayRoleValue.metaType() == QMetaType::fromType<unsigned long long>())
     return QLocale().toString(displayRoleValue.toLongLong());
-  else if(displayRoleValue.type() == QVariant::Double)
+  else if(displayRoleValue.metaType() == QMetaType::fromType<double>())
     return QLocale().toString(displayRoleValue.toDouble());
 
   return displayRoleValue.toString();
@@ -326,8 +336,8 @@ void UserdataSearch::setCallbacks()
  * action depending on other action states */
 void UserdataSearch::updateButtonMenu()
 {
-  atools::gui::util::changeIndication(ui->actionUserdataSearchShowMoreOptions,
-                                      atools::gui::util::anyWidgetChanged({ui->horizontalLayoutUserdataMore}));
+  atools::gui::changeIndication(ui->actionUserdataSearchShowMoreOptions,
+                                atools::gui::anyWidgetChanged({ui->horizontalLayoutUserdataMore}));
 }
 
 void UserdataSearch::updatePushButtons()
@@ -340,6 +350,13 @@ void UserdataSearch::updatePushButtons()
   // Update actions and keys too
   ui->actionUserdataEdit->setEnabled(sm != nullptr && sm->hasSelection());
   ui->actionUserdataDelete->setEnabled(sm != nullptr && sm->hasSelection());
+}
+
+void UserdataSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_USERDATA_VIEW_WIDGET).clear(ui->tableViewUserdata);
+  SearchBaseTable::resetView();
 }
 
 QAction *UserdataSearch::followModeAction()

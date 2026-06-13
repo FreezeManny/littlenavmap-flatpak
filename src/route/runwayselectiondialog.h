@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ namespace Ui {
 class RunwaySelectionDialog;
 }
 
-class RunwaySelection;
+class RunwayTable;
 class QAbstractButton;
 
 /*
@@ -63,7 +63,7 @@ private:
   void doubleClicked();
 
   Ui::RunwaySelectionDialog *ui;
-  RunwaySelection *runwaySelection = nullptr;
+  RunwayTable *runwayTable = nullptr;
 };
 
 #endif // LNM_RUNWAY_SELECTION_DIALOG_H

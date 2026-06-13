@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #ifndef LITTLENAVMAP_ELEVATIONPROVIDER_H
 #define LITTLENAVMAP_ELEVATIONPROVIDER_H
 
+#include "options/optionchangeflags.h"
 #include <QMutex>
 #include <QObject>
 
@@ -63,9 +64,10 @@ public:
   float getElevationFt(const atools::geo::Pos& pos, float sampleRadiusMeter = 0.f);
 
   /* Get elevations along a great circle line. Will create a point every 500 meters and delete
-   * consecutive ones with same elevation. Elevation given in meter
+   * consecutive ones with same elevation. Elevation returned in meter
    * "sampleRadiusMeter" defines a rectangle where five points are sampled for each pos and the maximum is used.*/
-  void getElevations(atools::geo::LineString& elevations, const atools::geo::Line& line, float sampleRadiusMeter = 0.f);
+  void getElevationsMeter(atools::geo::LineString& elevations, const atools::geo::Pos& pos1, const atools::geo::Pos& pos2,
+                          float sampleRadiusMeter = 0.f, bool precision = false);
 
   /* true if the data is provided from the fast offline source */
   bool isGlobeOfflineProvider() const;
@@ -76,7 +78,7 @@ public:
   /* As above but uses the default path from settings */
   static bool isGlobeDirValid();
 
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
   /* Connect marble model or initializes GLOBE reader */
   void init(const Marble::ElevationModel *model);
@@ -88,6 +90,9 @@ public:
   {
     return isGlobeOfflineProvider() || marbleModel != nullptr;
   }
+
+  /* Clear GLOBE memory cache */
+  void clearCache();
 
 signals:
   /*  Elevation tiles loaded. You will get more accurate results when querying height

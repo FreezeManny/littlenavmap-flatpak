@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -56,22 +56,20 @@ enum MapProcedureType : quint32
   /* All leading towards destination */
   PROCEDURE_ARRIVAL_ALL = PROCEDURE_APPROACH_ALL_MISSED | PROCEDURE_STAR_ALL,
 
-  /* All from departure */
-  PROCEDURE_DEPARTURE = PROCEDURE_SID_ALL,
-
   /* Any procedure but not transitions */
   PROCEDURE_ANY_PROCEDURE = PROCEDURE_APPROACH | PROCEDURE_SID | PROCEDURE_STAR,
 
   /* Any transition */
   PROCEDURE_ANY_TRANSITION = PROCEDURE_TRANSITION | PROCEDURE_SID_TRANSITION | PROCEDURE_STAR_TRANSITION,
 
-  PROCEDURE_ALL = PROCEDURE_ARRIVAL_ALL | PROCEDURE_DEPARTURE,
+  PROCEDURE_ALL = PROCEDURE_ARRIVAL_ALL | PROCEDURE_SID_ALL,
   PROCEDURE_ALL_BUT_MISSED = PROCEDURE_ALL & ~PROCEDURE_MISSED,
 };
 
 ATOOLS_DECLARE_FLAGS_32(MapProcedureTypes, proc::MapProcedureType)
 ATOOLS_DECLARE_OPERATORS_FOR_FLAGS(proc::MapProcedureTypes)
 
+QDebug operator<<(QDebug out, const proc::MapProcedureType& type);
 QDebug operator<<(QDebug out, const proc::MapProcedureTypes& type);
 
 // =====================================================================
@@ -142,5 +140,7 @@ enum LegSpecialType
 };
 
 } // namespace types
+
+Q_DECLARE_TYPEINFO(proc::MapProcedureTypes, Q_PRIMITIVE_TYPE);
 
 #endif // LITTLENAVMAP_PROCFLAGS_H

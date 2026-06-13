@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -82,6 +82,7 @@ public:
   void fillIls(const atools::sql::SqlRecord& record, map::MapIls& ils, float runwayHeadingTrue = map::INVALID_HEADING_VALUE);
   void fillHolding(const atools::sql::SqlRecord& record, map::MapHolding& holding);
   void fillAirportMsa(const atools::sql::SqlRecord& record, map::MapAirportMsa& airportMsa);
+  void correctAirportMsa(const map::MapVor& vor, map::MapAirportMsa& airportMsa);
 
   void fillParking(const atools::sql::SqlRecord& record, map::MapParking& parking);
   void fillStart(const atools::sql::SqlRecord& record, map::MapStart& start);

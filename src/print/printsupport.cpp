@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -63,15 +63,19 @@ void PrintSupport::printMap()
   qDebug() << Q_FUNC_INFO;
 
   buildPrinter();
+  MapWidget *mapWidget = NavApp::getMapWidgetGui();
 
-  NavApp::getMapWidgetGui()->showOverlays(false, true /* show scale */);
+  mapWidget->showOverlays(false, true /* show scale */);
+  mapWidget->setPaintNavigation(false);
+
   QPrintPreviewDialog *print = buildPreviewDialog();
   connect(print, &QPrintPreviewDialog::paintRequested, this, &PrintSupport::paintRequestedMap);
   NavApp::setStayOnTop(print);
   print->exec();
   disconnect(print, &QPrintPreviewDialog::paintRequested, this, &PrintSupport::paintRequestedMap);
 
-  NavApp::getMapWidgetGui()->showOverlays(true, true /* show scale */);
+  mapWidget->showOverlays(true, true /* show scale */);
+  mapWidget->setPaintNavigation(true);
   deletePreviewDialog(print);
 }
 
@@ -210,8 +214,7 @@ void PrintSupport::createFlightplanDocuments()
 
     float fontPointSize = static_cast<float>(printDocumentFont.pointSizeF()) *
                           printDialog->getPrintTextSizeFlightplan() / 100.f;
-    NavApp::getRouteController()->flightplanTableAsTextTable(cursor, printDialog->getSelectedRouteTableColumns(),
-                                                             fontPointSize);
+    NavApp::getRouteController()->flightplanTableAsTextTable(cursor, printDialog->getSelectedRouteTableColumns(), fontPointSize);
     if(newPage)
       cursor.insertBlock(pageBreakBlock);
   }
@@ -261,13 +264,14 @@ void PrintSupport::addAirport(QTextCursor& cursor, const map::MapAirport& airpor
       cursor.insertBlock(pageBreakBlock);
   }
 
+  const Route *route = &NavApp::getRouteConst();
   if(departure ? (opts& prt::DEPARTURE_RUNWAYS) : (opts & prt::DESTINATION_RUNWAYS))
   {
     html.clear();
     if(!newPage)
       html.hr();
     html.h3(tr("%1 Airport Runways").arg(prefix));
-    builder.runwayText(airport, html,
+    builder.runwayText(airport, html, route,
                        departure ? (opts& prt::DEPARTURE_RUNWAYS_DETAIL) : (opts & prt::DESTINATION_RUNWAYS_DETAIL),
                        departure ? (opts& prt::DEPARTURE_RUNWAYS_SOFT) : (opts & prt::DESTINATION_RUNWAYS_SOFT));
     cursor.insertHtml(html.getHtml());
@@ -281,7 +285,7 @@ void PrintSupport::addAirport(QTextCursor& cursor, const map::MapAirport& airpor
     if(!newPage)
       html.hr();
     html.h3(tr("%1 Airport COM Frequencies").arg(prefix));
-    builder.comText(airport, html);
+    builder.comText(airport, html, route);
     cursor.insertHtml(html.getHtml());
     if(newPage)
       cursor.insertBlock(pageBreakBlock);
@@ -293,7 +297,7 @@ void PrintSupport::addAirport(QTextCursor& cursor, const map::MapAirport& airpor
     if(!newPage)
       html.hr();
     html.h3(tr("%1 Airport Weather").arg(prefix));
-    builder.weatherText(weatherContext, airport, html);
+    builder.weatherText(weatherContext, airport, html, route);
     cursor.insertHtml(html.getHtml());
     if(newPage)
       cursor.insertBlock(pageBreakBlock);
@@ -305,7 +309,7 @@ void PrintSupport::addAirport(QTextCursor& cursor, const map::MapAirport& airpor
     if(!newPage)
       html.hr();
     html.h3(tr("%1 Airport Procedures").arg(prefix));
-    builder.procedureText(airport, html);
+    builder.procedureText(airport, html, route);
     cursor.insertHtml(html.getHtml());
     if(newPage)
       cursor.insertBlock(pageBreakBlock);
@@ -329,7 +333,9 @@ void PrintSupport::buildPrinter()
   if(printer == nullptr)
   {
     printer = new QPrinter(QPrinter::HighResolution);
-    printer->setOrientation(QPrinter::Landscape);
+    QPageLayout layout = printer->pageLayout();
+    layout.setOrientation(QPageLayout::Landscape);
+    printer->setPageLayout(layout);
 
     qDebug() << Q_FUNC_INFO << "printer resolution" << printer->resolution();
   }
@@ -369,16 +375,16 @@ void PrintSupport::paintRequestedMap(QPrinter *)
   QPainter painter;
 
   // Calculate best ratio
-  double xscale = printer->pageRect().width() / static_cast<double>(mapWidget->width());
-  double yscale = printer->pageRect().height() / static_cast<double>(mapWidget->height());
+  double xscale = printer->pageRect(QPrinter::DevicePixel).width() / static_cast<double>(mapWidget->width());
+  double yscale = printer->pageRect(QPrinter::DevicePixel).height() / static_cast<double>(mapWidget->height());
   double scale = std::min(xscale, yscale);
 
   painter.begin(printer);
   painter.setRenderHint(QPainter::Antialiasing, true);
   painter.setRenderHint(QPainter::TextAntialiasing, true);
   painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-  painter.translate(printer->paperRect().x() + printer->pageRect().width() / 2,
-                    printer->paperRect().y() + printer->pageRect().height() / 2);
+  painter.translate(printer->paperRect(QPrinter::DevicePixel).x() + printer->pageRect(QPrinter::DevicePixel).width() / 2,
+                    printer->paperRect(QPrinter::DevicePixel).y() + printer->pageRect(QPrinter::DevicePixel).height() / 2);
 
   // Scale to printer resolution for better images
   painter.scale(scale, scale);

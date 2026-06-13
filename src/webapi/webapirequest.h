@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2020 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -24,17 +24,18 @@
 /**
  * @brief Generic WebApiRequest POD object
  */
-class WebApiRequest {
+class WebApiRequest
+{
 public:
-    /**
-     * @brief API request path
-     * without WebApiController.webApiPathPrefix
-     */
-    QByteArray path;
-    QByteArray method;
-    QMultiMap<QByteArray, QByteArray> headers;
-    QMultiMap<QByteArray, QByteArray> parameters;
-    QByteArray body;
+  /**
+   * @brief API request path
+   * without WebApiController.webApiPathPrefix
+   */
+  QByteArray path;
+  QByteArray method;
+  QMultiMap<QByteArray, QByteArray> headers;
+  QMultiMap<QByteArray, QByteArray> parameters;
+  QByteArray body;
 };
 
 #endif // WEBAPIREQUEST_H

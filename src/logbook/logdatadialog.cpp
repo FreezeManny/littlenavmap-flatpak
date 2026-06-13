@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 *****************************************************************************/
 
 #include "logbook/logdatadialog.h"
+#include "options/optiondata.h"
 #include "ui_logdatadialog.h"
 
 #include "app/navapp.h"
@@ -44,7 +45,8 @@
 LogdataDialog::LogdataDialog(QWidget *parent, ld::LogdataDialogMode mode)
   : QDialog(parent), ui(new Ui::LogdataDialog), editMode(mode)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
 
   ui->setupUi(this);
@@ -149,7 +151,7 @@ LogdataDialog::LogdataDialog(QWidget *parent, ld::LogdataDialogMode mode)
   });
 
   // Show checkboxes when editing more than one entry
-  for(QCheckBox *checkBox : qAsConst(editCheckBoxList))
+  for(QCheckBox *checkBox : std::as_const(editCheckBoxList))
   {
     checkBox->setVisible(showCheckbox);
     connect(checkBox, &QCheckBox::toggled, this, &LogdataDialog::updateWidgets);
@@ -242,7 +244,7 @@ void LogdataDialog::resetClicked()
   if(editMode == ld::EDIT_MULTIPLE)
   {
     // Reset checkboxes to unchecked
-    for(QCheckBox *checkBox : qAsConst(editCheckBoxList))
+    for(QCheckBox *checkBox : std::as_const(editCheckBoxList))
       checkBox->setChecked(false);
   }
 
@@ -341,7 +343,7 @@ void LogdataDialog::airportUpdated(QLineEdit *lineEdit, QLabel *label)
         label->setText(tr("%1,   elevation %2%3").
                        arg(airports.constFirst().name).
                        arg(Unit::altFeet(airports.constFirst().position.getAltitude())).
-                       arg(airports.size() > 1 ? tr(" (more found)") : QString()));
+                       arg(airports.size() > 1 ? tr(" (more found)") : QStringLiteral()));
       else
         label->setText(atools::util::HtmlBuilder::errorMessage(tr("No airport found.").arg(ident)));
     }
@@ -362,11 +364,11 @@ void LogdataDialog::flightplanFileClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  QString filepath = atools::gui::Dialog(this).openFileDialog(
-    tr("Open Flight Plan"),
-    tr("Flight Plan Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_FLIGHTPLAN_LOAD),
-    "Route/" + NavApp::getCurrentSimulatorShortName(),
-    NavApp::getCurrentSimulatorFilesPath());
+  QString filepath =
+    atools::gui::Dialog(this).openFileDialog(tr("Open Flight Plan"),
+                                             tr("Flight Plan Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_LOAD_FLIGHTPLAN),
+                                             "Route/" + NavApp::getCurrentSimulatorShortName(),
+                                             NavApp::getCurrentSimulatorFilesPath());
 
   if(!filepath.isEmpty())
   {
@@ -677,7 +679,7 @@ void LogdataDialog::updateWidgets()
     ui->comboBoxFuelType->setEnabled(ui->checkBoxFuelType->isChecked());
 
     bool enable = false;
-    for(const QCheckBox *checkBox : qAsConst(editCheckBoxList))
+    for(const QCheckBox *checkBox : std::as_const(editCheckBoxList))
       enable |= checkBox->isChecked();
 
     // Disable dialog OK button if nothing is checked

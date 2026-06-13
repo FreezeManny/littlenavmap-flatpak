@@ -42,7 +42,6 @@ class Dialog;
 }
 }
 
-class MainWindow;
 class Route;
 class RouteExportData;
 class QTextStream;
@@ -61,7 +60,7 @@ class RouteExport :
   Q_OBJECT
 
 public:
-  explicit RouteExport(MainWindow *parent = nullptr);
+  explicit RouteExport(QWidget *parent = nullptr);
   virtual ~RouteExport() override;
 
   RouteExport(const RouteExport& other) = delete;
@@ -94,7 +93,7 @@ public:
   bool routeExportPln(const RouteExportFormat& format);
   bool routeExportPlnMsfs(const RouteExportFormat& format);
 
-  /* New X-Plane FMS 11 */
+  /* FMS 11 for X-Plane 11 and X-Plane 12 */
   /* Also used for manual export */
   void routeExportFms11Man(); /* Called by action */
   bool routeExportFms11(const RouteExportFormat& format);
@@ -125,6 +124,11 @@ public:
   void routeExportHtmlMan(); /* Called by action */
   bool routeExportHtml(const RouteExportFormat& format);
 
+  /* Export as CSV */
+  /* Also used for manual export */
+  void routeExportCsvMan(); /* Called by action */
+  bool routeExportCsv(const RouteExportFormat& format);
+
   /* Methods for multiexport ========================================================= */
 
   /* Save as above but with annotations for proceduresas used by LNM before 2.4.5 */
@@ -146,12 +150,15 @@ public:
   bool routeExportFlpCrjMulti(const RouteExportFormat& format);
 
   /* Flight plan export functions */
+  /* Called from menu or toolbar by action */
   bool routeExportGfpMulti(const RouteExportFormat& format);
 
   /* TDS GTNXi - GFP */
+  /* Called from menu or toolbar by action */
   bool routeExportTdsGtnXiMulti(const RouteExportFormat& format);
 
   /* Rotate MD-80 and others */
+  /* Called from menu or toolbar by action */
   bool routeExportTxtMulti(const RouteExportFormat& format);
 
   /* PMDG RTE format */
@@ -170,6 +177,7 @@ public:
   bool routeExportRxpGnsMulti(const RouteExportFormat& format);
 
   /* Reality XP GTN - GFP */
+  /* Called from menu or toolbar by action */
   bool routeExportRxpGtnMulti(const RouteExportFormat& format);
 
   /* iFly */
@@ -222,7 +230,7 @@ public:
   /* Check if route has valid departure  and destination and departure parking.
    * Also updates the navdata cycle properties in the global route before checking.
    *  @return true if route can be saved anyway */
-  bool routeValidate(const QVector<RouteExportFormat>& formats, bool multi = false);
+  bool routeValidate(const QList<RouteExportFormat>& formats, bool multi = false);
 
   /* Validates only if this is a manual save */
   bool routeValidateMulti(const RouteExportFormat& format);
@@ -253,6 +261,9 @@ signals:
   /* Number of selected has changed */
   void  optionsUpdated();
 
+  /* Called from the export if LNMPLN was bulk exported */
+  void routeSaveLnmExported(const QString& filename);
+
 private:
   /* Warning dialog when changing export options */
   void warnExportOptions();
@@ -268,14 +279,15 @@ private:
   bool routeExportInternalFlp(const RouteExportFormat& format, bool crj, bool msfs);
 
   /* Formats that have no export method in FlightplanIO */
-  bool exportFlighplanAsGfp(const QString& filename, bool saveAsUserWaypoints, bool procedures, bool gfpCoordinates);
+  bool exportFlighplanAsGfp(const QString& filename, bool saveAsUserWaypoints, bool procedures, bool gfpCoordinates,
+                            bool departDestAsCoords);
   bool exportFlighplanAsTxt(const QString& filename);
   bool exportFlighplanAsCorteIn(const QString& filename);
   bool exportFlighplanAsProSim(const QString& filename);
   bool exportFlighplanAsUFmc(const QString& filename);
   bool exportFlightplanAsGpx(const QString& filename);
   bool exportFlighplanAsRxpGns(const QString& filename, bool saveAsUserWaypoints);
-  bool exportFlighplanAsRxpGtn(const QString& filename, bool saveAsUserWaypoints, bool gfpCoordinates);
+  bool exportFlighplanAsRxpGtn(const QString& filename, bool saveAsUserWaypoints, bool gfpCoordinates, bool departDestAsCoords);
 
   /* Generic export using callback and also doing exception handling. */
   bool exportFlighplan(const QString& filename, rf::RouteAdjustOptions options,
@@ -323,9 +335,9 @@ private:
   /* Create a list of backups */
   void rotateFile(const QString& filename);
 
-  bool routeExportCheckDatabase(const QString& exportSimulatorName, const QVector<atools::fs::FsPaths::SimulatorType> requiredDbTypes);
+  bool routeExportCheckDatabase(const QString& exportSimulatorName, const QList<atools::fs::FsPaths::SimulatorType> requiredDbTypes);
 
-  MainWindow *mainWindow;
+  QWidget *parentWidget;
   atools::gui::Dialog *dialog;
   RouteMultiExportDialog *multiExportDialog;
   RouteExportFormatMap *exportFormatMap;

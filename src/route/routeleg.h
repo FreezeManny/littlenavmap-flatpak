@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -282,6 +282,11 @@ public:
     return !isAnyProcedure() && !isAlternate();
   }
 
+  bool canEditComment() const
+  {
+    return isRoute();
+  }
+
   /* Alterante airport */
   bool isAlternate() const
   {
@@ -403,8 +408,10 @@ public:
   atools::fs::pln::FlightplanEntry *getFlightplanEntry();
 
   /* Build leg labels also depending on procedure flags. Uses start course and normal declination (not VOR) */
-  QStringList buildLegText(bool dist, bool magCourseFlag, bool trueCourseFlag, bool narrow) const;
-  static QStringList buildLegText(float distance, float courseMag, float courseTrue, bool narrow);
+  QStringList buildLegText(bool dist, bool magCourseFlag, bool trueCourseFlag, bool narrow,
+                           int distPrecision = 0, int degPrecision = 0) const;
+  static QStringList buildLegText(float distance, float courseMag, float courseTrue, bool narrow,
+                                  int distPrecision = 0, int degPrecision = 0);
 
   /* Course to waypoint at end of leg. Either uses geometry course or saved course if geometry is not valid */
   float getGeometryEndCourse() const;

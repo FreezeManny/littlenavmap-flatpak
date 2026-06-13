@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,10 +21,13 @@
 #include <QObject>
 
 #include "common/tabindexes.h"
+#include "options/optionchangeflags.h"
 
 namespace Ui {
 class MainWindow;
 }
+
+class MainWindow;
 
 namespace map {
 struct MapResult;
@@ -33,11 +36,9 @@ struct MapResult;
 
 namespace atools {
 namespace gui {
-class ItemViewZoomHandler;
+class WidgetZoomHandler;
 }
 }
-
-class QMainWindow;
 
 class AbstractSearch :
   public QObject
@@ -45,7 +46,7 @@ class AbstractSearch :
   Q_OBJECT
 
 public:
-  explicit AbstractSearch(QMainWindow *parent, si::TabSearchId tabWidgetIndex);
+  explicit AbstractSearch(MainWindow *parent, QWidget *resultWidgetParam, si::TabSearchId tabWidgetIndex);
   virtual ~AbstractSearch() override;
 
   /* Disconnect and reconnect queries on database change */
@@ -60,7 +61,7 @@ public:
   virtual void getSelectedMapObjects(map::MapResult& result) const = 0;
 
   /* Options dialog has changed some options */
-  virtual void optionsChanged() = 0;
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags) = 0;
 
   /* GUI style has changed */
   virtual void styleChanged() = 0;
@@ -86,18 +87,28 @@ public:
   /* Zoom to first in the list */
   virtual void showFirstEntry() = 0;
 
+  /* Reset view sort order, column width and column order back to default values */
+  virtual void resetView() = 0;
+
   si::TabSearchId getTabIndex() const
   {
     return tabIndex;
   }
 
+  virtual void fontChanged(const QFont&);
+
 protected:
-  /* Used to make the table rows smaller and also used to adjust font size */
-  atools::gui::ItemViewZoomHandler *zoomHandler = nullptr;
   /* Tab index of this search tab on the search dock window */
   si::TabSearchId tabIndex;
-  QMainWindow *mainWindow = nullptr;
+  MainWindow *mainWindow = nullptr;
+  QWidget *parentWidget = nullptr; // Avoid unneeded inclusion of MainWindow
+
   Ui::MainWindow *ui = nullptr;
+
+private:
+  /* Used to make the table rows smaller and also used to adjust font size */
+  atools::gui::WidgetZoomHandler *zoomHandler = nullptr;
+  QWidget *resultWidget = nullptr;
 };
 
 #endif // LITTLENAVMAP_ABSTRACTSEARCH_H

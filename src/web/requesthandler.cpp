@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -88,8 +88,8 @@ void RequestHandler::service(HttpRequest& request, HttpResponse& response)
 
   if(verbose)
     qDebug() << "RequestHandler::service(): path" << path << request.getMethod()
-             << "header" << endl << request.getHeaderMap()
-             << "parameter" << endl << request.getParameterMap();
+             << "header" << Qt::endl << request.getHeaderMap()
+             << "parameter" << Qt::endl << request.getParameterMap();
 
   if(path == QLatin1String("/mapimage"))
     // ===========================================================================
@@ -437,7 +437,7 @@ inline void RequestHandler::handleHtmlFileRequest(HttpRequest& request, HttpResp
 
       {
         HtmlInfoBuilderLocker locker(htmlInfoBuilder);
-        htmlInfoBuilder->aircraftProgressText(userAircraft, html, route);
+        htmlInfoBuilder->aircraftProgressText(userAircraft, html, &route);
       }
       t.setVariable(QStringLiteral(u"aircraftProgressText"), html.getHtml());
     }
@@ -583,7 +583,7 @@ QString RequestHandler::buildRefreshSelect(int defaultValue)
 {
   // Build the dowp down box to insert into the form.
   // Needed since there is no easy way in JS to set the default
-  static const QVector<std::pair<int, QString> > rates(
+  static const QList<std::pair<int, QString> > rates(
   {
     {0, tr("Manual Reload")},
     {1, tr("1 Second")},
@@ -598,8 +598,8 @@ QString RequestHandler::buildRefreshSelect(int defaultValue)
   QString retval;
   retval.append("<select id=\"refreshselect\" onchange=\"refreshPage()\">");
   for(const std::pair<int, QString>& rate : rates)
-    retval.append(QString("<option value=\"%1\" %2>%3</option>").
-                  arg(rate.first).arg(rate.first == defaultValue ? "selected" : QString()).arg(rate.second));
+    retval.append(QStringLiteral("<option value=\"%1\" %2>%3</option>").
+                  arg(rate.first).arg(rate.first == defaultValue ? "selected" : QStringLiteral()).arg(rate.second));
   retval.append("</select>");
   return retval;
 }

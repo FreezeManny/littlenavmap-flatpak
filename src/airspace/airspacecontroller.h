@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,6 @@ class GeoDataLatLonBox;
 class AirspaceQuery;
 class MapLayer;
 class AirspaceToolBarHandler;
-class MainWindow;
 
 /*
  * Wraps the airspace queries for nav, sim, user and online airspaces.
@@ -60,7 +59,7 @@ class AirspaceController
   Q_OBJECT
 
 public:
-  explicit AirspaceController(MainWindow *mainWindowParam);
+  explicit AirspaceController(QWidget *mainWindowParam);
   virtual ~AirspaceController() override;
 
   AirspaceController(const AirspaceController& other) = delete;
@@ -112,10 +111,10 @@ private:
   void loadAirspace(atools::fs::userdata::AirspaceReaderBase& reader, const QString& file, int fileId, int& nextAirspaceId,
                     int& numReadFile);
   void collectErrors(QStringList& errors, const atools::fs::userdata::AirspaceReaderBase& reader, const QString& basePath);
-  atools::geo::Pos fetchAirportCoordinates(const QString& airportIdent);
+  static atools::geo::Pos fetchAirportCoordinates(const QByteArray& airportIdent, void *object);
 
   AirspaceToolBarHandler *airspaceHandler = nullptr;
-  MainWindow *mainWindow;
+  QWidget *parentWidget;
 };
 
 #endif // LNM_AIRSPACECONTROLLER_H

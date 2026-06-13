@@ -18,9 +18,8 @@
 #ifndef LITTLENAVMAP_CONSTANTS_H
 #define LITTLENAVMAP_CONSTANTS_H
 
-#include "gui/dataexchange.h"
+#include "gui/dataexchangeflags.h"
 
-#include <QLatin1String>
 #include <QSize>
 
 /* Define to skip caching of approaches when loading */
@@ -70,7 +69,8 @@ void loadHelpUrls();
 // ======== Options ================================================================
 // Some options are versioned using a numeric suffix to ignore old settings on update
 
-/* State of "do not show again" dialog buttons */
+/* State of "do not show again" dialog buttons.
+ * Also register in messages::resetAllMessages() */
 const QLatin1String ACTIONS_SHOW_DISCONNECT_INFO("Actions/ShowDisconnectInfo");
 const QLatin1String ACTIONS_SHOW_LOAD_FLP_WARN("Actions/ShowLoadFlpWarn");
 const QLatin1String ACTIONS_SHOW_LOAD_ALT_WARN("Actions/ShowLoadAltitudeWarn2");
@@ -80,6 +80,7 @@ const QLatin1String ACTIONS_SHOW_QUIT_LOADING("Actions/ShowQuitLoading");
 const QLatin1String ACTIONS_SHOW_INVALID_PROC_WARNING("Actions/ShowInvalidProcedure");
 const QLatin1String ACTIONS_SHOW_ROUTE_PARKING_WARNING("Actions/ShowRouteParkingWarning");
 const QLatin1String ACTIONS_SHOW_ROUTE_AIRPORT_WARNING("Actions/ShowRouteAirportWarning");
+const QLatin1String ACTIONS_SHOW_ROUTE_ZERO_CRUISE_WARNING("Actions/ShowRouteZeroCruiseWarning");
 const QLatin1String ACTIONS_SHOW_ROUTE_VFR_WARNING("Actions/ShowRouteVfrWarning");
 const QLatin1String ACTIONS_SHOW_ROUTE_NO_CYCLE_WARNING("Actions/ShowRouteNoCycleWarning");
 const QLatin1String ACTIONS_SHOW_ROUTE_NAVDATA_ALL_WARNING("Actions/ShowRouteNavdataAllWarning");
@@ -90,10 +91,19 @@ const QLatin1String ACTIONS_SHOW_UPDATE_FAILED("Actions/ShowUpdateFailed");
 const QLatin1String ACTIONS_SHOW_SSL_FAILED("Actions/ShowSslFailed");
 const QLatin1String ACTIONS_SHOW_INSTALL_GLOBE("Actions/ShowInstallGlobe");
 const QLatin1String ACTIONS_SHOW_MISSING_SIMULATORS("Actions/ShowMissingSimulators");
+const QLatin1String ACTIONS_SHOW_APPLE_TRANSLOCATION("Actions/ShowAppleTranslocation");
 const QLatin1String ACTIONS_SHOW_INSTALL_DIRS("Actions/ShowInstallDirs");
 const QLatin1String ACTIONS_SHOW_OVERWRITE_DATABASE("Actions/ShowOverwriteDatabase");
 const QLatin1String ACTIONS_SHOW_DELETE_TRAIL("Actions/DeleteTrail");
-const QLatin1String ACTIONS_SHOW_DELETE_MARKS("Actions/DeleteMarks");
+const QLatin1String ACTIONS_SHOW_DELETE_USERPOINT("Actions/DeleteUserpoint");
+const QLatin1String ACTIONS_SHOW_DELETE_LOGBOOKENTRY("Actions/LogbookEntry");
+const QLatin1String ACTIONS_SHOW_DELETE_MARKS("Actions/DeleteMarkers");
+const QLatin1String ACTIONS_SHOW_DELETE_RANGEMARKS("Actions/DeleteRangeMarkers");
+const QLatin1String ACTIONS_SHOW_DELETE_DISTANCEMARKS("Actions/DeleteDistanceMarkers");
+const QLatin1String ACTIONS_SHOW_DELETE_HOLDINGMARKS("Actions/DeleteHoldingMarkers");
+const QLatin1String ACTIONS_SHOW_DELETE_PATTERNMARKS("Actions/DeletePatternMarkers");
+const QLatin1String ACTIONS_SHOW_DELETE_MSAMARKS("Actions/DeleteMsaMarkers");
+
 const QLatin1String ACTIONS_SHOW_RESET_PERF("Actions/ResetPerformanceColl");
 const QLatin1String ACTIONS_SHOW_SEARCH_CENTER_NULL("Actions/SearchCenterNull");
 const QLatin1String ACTIONS_SHOW_WEATHER_DOWNLOAD_FAIL("Actions/DownloadFailed");
@@ -109,12 +119,12 @@ const QLatin1String ACTIONS_SHOW_XP12_WEATHER_FILE_INVALID("Actions/Xplane12Weat
 const QLatin1String ACTIONS_SHOW_XP11_WEATHER_FILE_NO_SIM("Actions/Xplane11WeatherFileNoSim");
 const QLatin1String ACTIONS_SHOW_XP12_WEATHER_FILE_NO_SIM("Actions/Xplane12WeatherFileNoSim");
 const QLatin1String ACTIONS_SHOW_REPLACE_TRAIL("Actions/ReplaceTrail");
+const QLatin1String ACTIONS_SHOW_REPLACE_MARKERS("Actions/ReplaceMarkers");
 const QLatin1String ACTIONS_SHOW_TRAIL_POINTS("Actions/TrailPoints");
 const QLatin1String ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY("Actions/SimSceneryLibraryWarn");
 const QLatin1String ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_FSXP3D("Actions/SimSceneryLibraryFsxP3DWarn");
 const QLatin1String ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_HINT("Actions/SimSceneryLibraryWarnHint");
 const QLatin1String ACTIONS_SHOW_CONNECTION_SCENERYLIBRARY_HINT_NO_DB("Actions/SimSceneryLibraryWarnHintNoDb");
-
 const QLatin1String ACTIONS_SHOW_DATABASE_HINTS("Actions/DatabaseLoadShowHints");
 const QLatin1String ACTIONS_SHOW_DATABASE_OLD("Actions/DatabaseOld");
 const QLatin1String ACTIONS_SHOW_DATABASE_SIMCONNECT("Actions/DatabaseSimConnect");
@@ -128,24 +138,22 @@ const QLatin1String ACTIONS_SHOW_DATABASE_BACKGROUND_HINT("Actions/DatabaseBackg
 const QLatin1String ACTIONS_SHOW_DATABASE_MSFS2024_HINT("Actions/DatabaseMsfs2024Hint");
 const QLatin1String ACTIONS_SHOW_DATABASE_MSFS_NAVIGRAPH_ALL("Actions/DatabaseMsfsNavigraphAll");
 const QLatin1String ACTIONS_SHOW_EXPORT_WRONG_DATABASE("Actions/ExportWrongDatabase");
-
 const QLatin1String ACTIONS_SHOW_SSL_WARNING_ONLINE("Actions/SslWarningOnline");
 const QLatin1String ACTIONS_SHOW_SSL_WARNING_WIND("Actions/SslWarningWind");
 const QLatin1String ACTIONS_SHOW_SSL_WARNING_TRACK("Actions/SslWarningTrack");
 const QLatin1String ACTIONS_SHOW_SSL_WARNING_WEATHER("Actions/SslWarningWeather");
 const QLatin1String ACTIONS_SHOW_SSL_WARNING_SIMBRIEF("Actions/SslWarningSimBrief");
-
 const QLatin1String ACTIONS_SHOW_NAVDATA_WARNING("Actions/ShowNavdataWarning");
 const QLatin1String ACTIONS_SHOW_CRUISE_ZERO_WARNING("Actions/ShowCruiseZeroWarning");
-
 const QLatin1String ACTIONS_SHOW_SAVE_LNMPLN_WARNING("Actions/ShowSaveLnmplnWarning");
 const QLatin1String ACTIONS_SHOW_SAVE_WARNING("Actions/ShowSaveWarning");
 const QLatin1String ACTIONS_SHOW_ZOOM_WARNING("Actions/ShowZoomsWarning");
-
 const QLatin1String ACTIONS_SHOW_INSTALL_XPCONNECT_WARN_XPL("Actions/ShowInstallXpconnectXplWarning");
 const QLatin1String ACTIONS_SHOW_INSTALL_XPCONNECT_INFO("Actions/ShowInstallXpconnectInfo");
+const QLatin1String ACTIONS_SHOW_OPTIONS_RELOAD_SCENERY_LIBRARY("Actions/ShowOptionsReloadSceneryLibrary");
+const QLatin1String ACTIONS_SHOW_CUSTOM_PROCEDURE_DIALOG("Actions/ShowCustomProcedureDialog");
 
-/* Other setting key names */
+/* Other setting key names =============================================================== */
 const QLatin1String DATABASE_BASEPATH("Database/BasePath");
 const QLatin1String DATABASE_LOADINGSIMULATOR("Database/LoadingSimulator");
 const QLatin1String DATABASE_PATHS("Database/Paths2");
@@ -199,29 +207,42 @@ const QLatin1String MAP_MAX_NEAREST_AI_LABELS("Map/MaxNearestAiLabels");
 const QLatin1String MAP_MAX_NEAREST_AI_LABELS_DIST_NM("Map/MaxNearestAiLabelsDistNm");
 const QLatin1String MAP_MAX_NEAREST_AI_LABELS_VERT_DIST_FT("Map/MaxNearestAiLabelsVertDistFt");
 
-/* User defined features */
-const QLatin1String MAP_DISTANCEMARKERS("Map/DistanceMarkers1");
-const QLatin1String MAP_RANGEMARKERS("Map/RangeMarkers1");
-const QLatin1String MAP_TRAFFICPATTERNS("Map/TrafficPatterns2");
-const QLatin1String MAP_HOLDINGS("Map/Holdings1");
-const QLatin1String MAP_AIRPORT_MSA("Map/AirportMsa1");
+/* Map markers =========================================== */
+const QLatin1String MAP_DISTANCEMARKERS("Map/DistanceMarkers1"); // Obsolete
+const QLatin1String MAP_RANGEMARKERS("Map/RangeMarkers1"); // Obsolete
+const QLatin1String MAP_PATTERNMARKERS("Map/TrafficPatterns2"); // Obsolete
+const QLatin1String MAP_HOLDING_MARKERS("Map/Holdings1"); // Obsolete
+const QLatin1String MAP_AIRPORT_MSA_MARKERS("Map/AirportMsa1"); // Obsolete
 
 const QLatin1String MAP_MARK_DISPLAY("Map/MarkDisplay1");
 const QLatin1String MAP_AIRPORT("Map/Airports3");
-const QLatin1String MAP_AIRPORT_RUNWAY_LENGTH("Map/AirportsRunwayLength");
+const QLatin1String MAP_AIRPORT_RUNWAY_LENGTH_MIN("Map/AirportsRunwayLengthMin");
+const QLatin1String MAP_AIRPORT_RUNWAY_LENGTH_MAX("Map/AirportsRunwayLengthMax");
 const QLatin1String MAP_DETAIL_LEVEL("Map/DetailLevel2");
 const QLatin1String MAP_DETAIL_LEVEL_TEXT("Map/DetailLevelText2");
 
 const QLatin1String LAYOUT_RECENT("WindowLayout/FilenamesRecent");
 
-const QLatin1String RANGE_MARKER_DIALOG("Map/RangeMarkerDialog");
-const QLatin1String RANGE_MARKER_DIALOG_COLOR("Map/RangeMarkerDialogColor");
-const QLatin1String RANGE_MARKER_DIALOG_RADII("Map/RangeMarkerDialogRadii");
+/* Marker dialog windows =========================================== */
+const QLatin1String RANGE_MARKER_DIALOG("Marker/RangeMarkerDialog");
+const QLatin1String RANGE_MARKER_DIALOG_COLOR("Marker/RangeMarkerDialogColor");
+const QLatin1String RANGE_MARKER_DIALOG_RADII("Marker/RangeMarkerDialogRadii");
 
+const QLatin1String DISTANCE_MARKER_DIALOG("Marker/DistanceMarkerDialog");
+const QLatin1String DISTANCE_MARKER_DIALOG_COLOR("Marker/DistanceMarkerDialogColor");
+
+const QLatin1String HOLDING_MARKER_DIALOG("Marker/HoldingMarkerDialog");
+const QLatin1String HOLDING_MARKER_DIALOG_COLOR("Marker/HoldingMarkerDialogColor");
+
+const QLatin1String PATTERN_MARKER_DIALOG("Marker/TrafficPatternDialog");
+const QLatin1String PATTERN_MARKER_DIALOG_COLOR("Marker/TrafficPatternDialogColor2");
+
+/* Connections =========================================== */
 const QLatin1String NAVCONNECT_REMOTEHOSTS("NavConnect/RemoteHosts");
 const QLatin1String NAVCONNECT_REMOTE("NavConnect/Remote");
 const QLatin1String NAVCONNECT_DIALOG("NavConnect/ConnectDialog");
 
+/* Filenames =========================================== */
 const QLatin1String ROUTE_FILENAME("Route/Filename");
 const QLatin1String ROUTE_DEFAULT_FILE_LNMPLN("Route/DefaultLnmpln");
 const QLatin1String ROUTE_HEADER_FOOTER_FLAGS("Route/HeaderFooterFlags2");
@@ -229,7 +250,7 @@ const QLatin1String ROUTE_HEADER_FOOTER_FLAGS("Route/HeaderFooterFlags2");
 const QLatin1String ROUTE_FILENAMES_RECENT("Route/FilenamesRecent");
 const QLatin1String ROUTE_FILENAMESKML_RECENT("Route/FilenamesKmlRecent");
 const QLatin1String ROUTE_VIEW("Route/View");
-const QLatin1String ROUTE_VIEW_TABLE("Route/ViewTable");
+const QLatin1String ROUTE_VIEW_TABLE("Route/ViewTable2");
 const QLatin1String ROUTE_PRINT_DIALOG("Route/PrintWidget");
 const QLatin1String ROUTE_STRING_DIALOG("Route/RouteStringDialogSplitter2");
 const QLatin1String ROUTE_STRING_DIALOG_OPTIONS("Route/StringDialogOptions");
@@ -237,11 +258,7 @@ const QLatin1String ROUTE_STRING_DIALOG_DESCR("Route/StringDialogDescr");
 const QLatin1String ACTIONS_SHOW_ROUTESTRING_BACKGROUND_HINT("Route/StringDialogBackgroundHint");
 
 const QLatin1String ROUTEWINDOW_WIDGET_TABS("Route/WidgetTabs");
-const QLatin1String TRAFFIC_PATTERN_DIALOG("Route/TrafficPatternDialog");
-const QLatin1String TRAFFIC_PATTERN_DIALOG_COLOR("Route/TrafficPatternDialogColor");
 const QLatin1String FETCH_SIMBRIEF_DIALOG("Route/FetchSimBrief");
-const QLatin1String HOLD_DIALOG("Route/HoldDialog");
-const QLatin1String HOLD_DIALOG_COLOR("Route/HoldDialogColor");
 const QLatin1String CUSTOM_APPROACH_DIALOG("Route/CustomApproachDialog");
 const QLatin1String CUSTOM_DEPARTURE_DIALOG("Route/CustomDepartureDialog");
 const QLatin1String RUNWAY_SELECTION_DIALOG("Route/RunwaySelectionDialog");
@@ -249,25 +266,32 @@ const QLatin1String ROUTE_CALC_DIALOG("Route/RouteCalcDialog");
 const QLatin1String SEARCHTAB_WIDGET_TABS("SearchPaneAirport/WidgetTabs");
 
 const QLatin1String SEARCHTAB_AIRPORT_WIDGET("SearchPaneAirport/Widget");
-const QLatin1String SEARCHTAB_AIRPORT_VIEW_WIDGET("SearchPaneAirport/WidgetView");
+const QLatin1String SEARCHTAB_AIRPORT_VIEW_WIDGET("SearchPaneAirport/WidgetView2");
 const QLatin1String SEARCHTAB_AIRPORT_VIEW_DIST_WIDGET("SearchPaneAirport/WidgetDistView");
-const QLatin1String SEARCHTAB_AIRPORT_RANDOM("SearchPaneLogdata/RandomPlan");
+const QLatin1String SEARCHTAB_AIRPORT_RANDOM("SearchPaneAirport/RandomPlan");
+const QLatin1String SEARCHTAB_AIRPORT_IDENT_COMBOBOX_HISTORY("SearchPaneAirport/SearchIdentComboHistory");
 
 const QLatin1String SEARCHTAB_NAV_WIDGET("SearchPaneNav/Widget");
-const QLatin1String SEARCHTAB_NAV_VIEW_WIDGET("SearchPaneNav/WidgetView");
+const QLatin1String SEARCHTAB_NAV_VIEW_WIDGET("SearchPaneNav/WidgetView2");
 const QLatin1String SEARCHTAB_NAV_VIEW_DIST_WIDGET("SearchPaneNav/WidgetDistView");
+const QLatin1String SEARCHTAB_NAV_ICAO_COMBOBOX_HISTORY("SearchPaneNav/SearchIcaoComboHistory");
 
-const QLatin1String SEARCHTAB_USERDATA_VIEW_WIDGET("SearchPaneUserdata/WidgetView");
+const QLatin1String SEARCHTAB_USERDATA_VIEW_WIDGET("SearchPaneUserdata/WidgetView2");
 const QLatin1String SEARCHTAB_USERDATA_CLEANUP_DIALOG("SearchPaneUserdata/CleanupDialog");
 const QLatin1String SEARCHTAB_USERDATA_CLEANUP_PREVIEW("SearchPaneUserdata/CleanupPreview");
 
-const QLatin1String SEARCHTAB_LOGDATA_VIEW_WIDGET("SearchPaneLogdata/WidgetView2");
+const QLatin1String SEARCHTAB_LOGDATA_VIEW_WIDGET("SearchPaneLogdata/WidgetView3");
 const QLatin1String SEARCHTAB_LOGDATA_CLEANUP_DIALOG("SearchPaneLogdata/CleanupDialog");
 const QLatin1String SEARCHTAB_LOGDATA_CLEANUP_PREVIEW("SearchPaneLogdata/CleanupPreview");
+
+const QLatin1String SEARCHTAB_EXPORT_CHOICE_DIALOG("SearchPane/CsvChoiceDialog");
+
+const QLatin1String MAP_MARKER_LOAD_SELECTION("Map/MapMarkerLoadSelection");
 
 const QLatin1String ROUTE_EXPORT_DIALOG("RouteExport/RouteExportDialog");
 const QLatin1String ROUTE_EXPORT_DIALOG_ZOOM("RouteExport/RouteExportDialogZoom");
 const QLatin1String ROUTE_EXPORT_FORMATS("RouteExport/RouteExportFormats");
+const QLatin1String ROUTE_EXPORT_SIMBRIEF_DIALOG("RouteExport/RouteExportSimBriefDialog");
 const QLatin1String ROUTE_EXPORT_SIMBRIEF_DISPATCH_URL("RouteExport/RouteExportSimBriefDispatchUrl");
 const QLatin1String ROUTE_EXPORT_SIMBRIEF_FETCHER_URL("RouteExport/RouteExportSimBriefFetcherUrl");
 
@@ -280,12 +304,12 @@ const QLatin1String RESET_FOR_NEW_FLIGHT_DIALOG("Route/ResetAllDialog2");
 const QLatin1String ROUTE_FLIGHTPLAN_COLUMS_DIALOG("Route/FlightPlanTableColumns");
 
 const QLatin1String PROFILE_WINDOW_OPTIONS("Profile/Options");
-const QLatin1String PROFILE_DISPLAY_OPTIONS("Profile/DisplayOptions3");
+const QLatin1String PROFILE_DISPLAY_OPTIONS("Profile/DisplayOptions4");
 const QLatin1String PROFILE_DISPLAY_OPTIONS_DIALOG("Profile/DisplayOptionsDlg3");
 
-const QLatin1String SEARCHTAB_ONLINE_CLIENT_VIEW_WIDGET("SearchPaneOnlineClient/WidgetView");
-const QLatin1String SEARCHTAB_ONLINE_CENTER_VIEW_WIDGET("SearchPaneOnlineCenter/WidgetView");
-const QLatin1String SEARCHTAB_ONLINE_SERVER_VIEW_WIDGET("SearchPaneOnlineServer/WidgetView");
+const QLatin1String SEARCHTAB_ONLINE_CLIENT_VIEW_WIDGET("SearchPaneOnlineClient/WidgetView2");
+const QLatin1String SEARCHTAB_ONLINE_CENTER_VIEW_WIDGET("SearchPaneOnlineCenter/WidgetView2");
+const QLatin1String SEARCHTAB_ONLINE_SERVER_VIEW_WIDGET("SearchPaneOnlineServer/WidgetView2");
 
 const QLatin1String AIRCRAFT_PERF_FILENAME("AircraftPerformance/Filename");
 const QLatin1String AIRCRAFT_PERF_WIDGETS("AircraftPerformance/Widget");
@@ -302,6 +326,9 @@ const QLatin1String SETTINGS_DATABASE("Settings/Database");
 
 /* Aircraft trail densisity settings */
 const QLatin1String SETTINGS_AIRCRAFT_TRAIL("Settings/AircraftTrail2");
+
+const QLatin1String MAINWINDOW_STATUSBAR("StatusBar/Label");
+const QLatin1String MAINWINDOW_STATUSBAR_TIME_TYPE("StatusBar/TimeType");
 
 const QLatin1String APPROACHTREE_WIDGET("ApproachTree/Widget2");
 const QLatin1String APPROACHTREE_STATE("ApproachTree/TreeState2");
@@ -322,12 +349,13 @@ const QLatin1String FLIGHTPLAN_ONLINE_EXPORT("Route/FlightplanOnlineExport");
 const QLatin1String ROUTE_PARKING_DIALOG("Route/ParkingDialog");
 
 const QLatin1String LOGDATA_EDIT_ADD_DIALOG("LogdataDialog/Widget");
-const QLatin1String LOGDATA_STATS_DIALOG("LogdataStatsDialog/Widget");
+const QLatin1String LOGDATA_STATS_DIALOG("LogdataStatsDialog/Widget2");
 const QLatin1String LOGDATA_EXPORT_CSV("Logdata/CsvExport");
 const QLatin1String LOGDATA_ENTRY_ID("Logdata/LogEntryIdTakeoff");
 const QLatin1String LOGDATA_TAKEOFF_LANDING_DISTANCE("Logdata/TakeoffLandingDistance");
 
 /* Options dialog */
+const QLatin1String OPTIONS_DIALOG("OptionsDialog/Dialog");
 const QLatin1String OPTIONS_DIALOG_WIDGET("OptionsDialog/Widget");
 const QLatin1String OPTIONS_DIALOG_AS_FILE_DLG("OptionsDialog/WeatherFileDialogAsn");
 const QLatin1String OPTIONS_DIALOG_XPLANE_DLG("OptionsDialog/WeatherFileDialogXplane");
@@ -345,7 +373,6 @@ const QLatin1String OPTIONS_DIALOG_FLIGHTPLAN_PROCEDURE_COLOR("OptionsDialog/Fli
 const QLatin1String OPTIONS_DIALOG_FLIGHTPLAN_ACTIVE_COLOR("OptionsDialog/FlightplanActiveColor");
 const QLatin1String OPTIONS_DIALOG_FLIGHTPLAN_PASSED_COLOR("OptionsDialog/FlightplanPassedColor");
 const QLatin1String OPTIONS_DIALOG_TRAIL_COLOR("OptionsDialog/TrailColor");
-const QLatin1String OPTIONS_DIALOG_MEASUREMENT_COLOR("OptionsDialog/MeasurementColor");
 
 const QLatin1String OPTIONS_DIALOG_FLIGHTPLAN_HIGHLIGHT_COLOR("OptionsDialog/MapHighlightFlightplanColor");
 const QLatin1String OPTIONS_DIALOG_SEARCH_HIGHLIGHT_COLOR("OptionsDialog/MapHighlightSearchColor");
@@ -360,6 +387,7 @@ const QLatin1String OPTIONS_DIALOG_DISPLAY_OPTIONS_ROUTE("OptionsDialog/DisplayO
 const QLatin1String OPTIONS_DIALOG_DISPLAY_OPTIONS_NAVAID("OptionsDialog/DisplayOptionsNavAid");
 const QLatin1String OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRSPACE("OptionsDialog/DisplayOptionsAirspace");
 const QLatin1String OPTIONS_DIALOG_GUI_STYLE_INDEX("OptionsDialog/GuiStyleIndex");
+const QLatin1String OPTIONS_DIALOG_GUI_STYLE_AUTO("OptionsDialog/GuiStyleAuto");
 const QLatin1String OPTIONS_DIALOG_WEB_DOCROOT_DLG("OptionsDialog/WebDocroot");
 const QLatin1String OPTIONS_DIALOG_SHOW_SPLASH("OptionsDialog/Widget_checkBoxOptionsStartupShowSplash");
 
@@ -368,8 +396,9 @@ const QLatin1String OPTIONS_APPLICATION("Little Navmap");
 const QLatin1String OPTIONS_APPLICATION_ORGANIZATION("ABarthel");
 const QLatin1String OPTIONS_APPLICATION_DOMAIN("littlenavmap.org");
 const QLatin1String OPTIONS_DIALOG_LANGUAGE("OptionsDialog/Language");
-const QLatin1String OPTIONS_DIALOG_FONT("OptionsDialog/Font");
+const QLatin1String OPTIONS_DIALOG_GUI_FONT("OptionsDialog/Font");
 const QLatin1String OPTIONS_DIALOG_MAP_FONT("OptionsDialog/MapFont");
+const QLatin1String OPTIONS_DIALOG_PROFILE_FONT("OptionsDialog/ProfileFont");
 const QLatin1String OPTIONS_PIXMAP_CACHE("Options/PixmapCache");
 const QLatin1String OPTIONS_MULTIEXPORT_DEBUG_PATH("Options/MultexporDebugPath");
 const QLatin1String OPTIONS_MARBLE_DEBUG("Options/MarbleDebug");
@@ -387,7 +416,6 @@ const QLatin1String OPTIONS_WEATHER_DEBUG("Options/WeatherDebug");
 const QLatin1String OPTIONS_MAP_JUMP_BACK_DEBUG("Options/MapJumpBackDebug");
 const QLatin1String OPTIONS_PROFILE_JUMP_BACK_DEBUG("Options/ProfileJumpBackDebug");
 const QLatin1String OPTIONS_MAP_LAYER_DEBUG("Options/MapLayerDebug");
-const QLatin1String OPTIONS_MAP_LAYER_DEBUG_DRAW("Options/MapLayerDebugDraw");
 const QLatin1String OPTIONS_MAP_LAYER_DEBUG_TILE_SIZE("Options/MapLayerDebugTileSize");
 
 const QLatin1String OPTIONS_DEBUG_MENU("Options/DebugMenu");
@@ -409,7 +437,7 @@ const QLatin1String OPTIONS_NO_USER_AGENT("Options/NoUserAgent");
 const QLatin1String OPTIONS_WEATHER_UPDATE("Options/WeatherUpdate");
 const QLatin1String OPTIONS_WEATHER_UPDATE_RATE_SIM("Options/WeatherUpdateRateSim");
 
-/* Track download URLs */
+/* Track download URLs from track.cfg */
 const QLatin1String OPTIONS_TRACK_NAT_URL("Track/NatUrl");
 const QLatin1String OPTIONS_TRACK_NAT_PARAM("Track/NatUrlParam");
 const QLatin1String OPTIONS_TRACK_PACOTS_URL("Track/PacotsUrl");
@@ -428,14 +456,16 @@ const QLatin1String OPTIONS_UPDATE_RATE("OptionsDialog/Widget_comboBoxOptionsSta
 /* These have to be loaded before the options dialog instantiation */
 const QLatin1String OPTIONS_GUI_OVERRIDE_LOCALE("OptionsDialog/Widget_checkBoxOptionsGuiOverrideLocale");
 
-/* File dialog patterns */
+/* File dialog patterns ======================================================================== */
 const QLatin1String FILE_PATTERN_SCENERYCONFIG("(*.cfg)");
-const QLatin1String FILE_PATTERN_FLIGHTPLAN_LOAD("(*.lnmpln *.pln *.flp *.fms *.fgfp *.fpl *.fpl.bin *.gfp)");
+const QLatin1String FILE_PATTERN_LOAD_ANY("(*.lnmpln *.pln *.flp *.fms *.fgfp *.fpl *.fpl.bin *.gfp *.gpx *.lnmperf *.lnmlayout)");
+const QLatin1String FILE_PATTERN_LOAD_FLIGHTPLAN("(*.lnmpln *.pln *.flp *.fms *.fgfp *.fpl *.fpl.bin *.gfp)");
 const QLatin1String FILE_PATTERN_LNMPLN("(*.lnmpln)");
 const QLatin1String FILE_PATTERN_KML("(*.kml *.kmz)");
 const QLatin1String FILE_PATTERN_GPX("(*.gpx)");
+const QLatin1String FILE_PATTERN_LNM_MAPMARKERS("(*.lnmmarker)");
 
-const QLatin1String FILE_PATTERN_USERDATA_CSV("(*.csv)");
+const QLatin1String FILE_PATTERN_CSV("(*.csv)");
 const QLatin1String FILE_PATTERN_USER_FIX_DAT("(user_fix.dat)");
 const QLatin1String FILE_PATTERN_DAT("(*.dat)");
 const QLatin1String FILE_PATTERN_USER_WPT("(user.wpt)");
@@ -462,43 +492,82 @@ const QLatin1String PERF_COLLECTED_SUFFIX("_collected.lnmperf");
 
 const QLatin1String ROUTE_LNMPLN_EXPORTDIR("Route/LnmPlnFileDialogDir");
 
+/* Configuration files ================================================================================= */
 /* This is the default configuration file for reading the scenery library.
  * It can be overridden by placing a  file with the same name into
  * the configuration directory. */
-const QLatin1String DATABASE_NAVDATAREADER_CONFIG(":/littlenavmap/resources/config/navdatareader.cfg");
+const QLatin1String NAVDATAREADER_CONFIG(":/littlenavmap/resources/config/navdatareader.cfg");
 
 /* Configuration for online networks */
 const QLatin1String NETWORKS_CONFIG(":/littlenavmap/resources/config/networks.cfg");
 
-/* Configuration for online networks */
+/* Configuration for help and other web URLs */
 const QLatin1String URLS_CONFIG(":/littlenavmap/resources/config/urls.cfg");
+
+/* Configuration for logging files and channels */
+const QLatin1String LOGGING_CONFIG(":/littlenavmap/resources/config/logging.cfg");
+
+/* Window state binary for undockable map window and dockable map window. %1 = "dock" or "nodock" */
+const QLatin1String MAINWINDOW_STATE_BIN(":/littlenavmap/resources/config/mainwindow_state_%1.bin");
+const QLatin1String MAINWINDOW_STATE_DOCK("dock");
+const QLatin1String MAINWINDOW_STATE_NODOCK("nodock");
+
+/* Oceanic track configuration */
+const QLatin1String TRACK_CONFIG(":/littlenavmap/resources/config/track.cfg");
+
+/* Themes reject list */
+const QLatin1String MAPTHEMES_CONFIG(":/littlenavmap/resources/config/mapthemes.cfg");
+
+/* Configuration for web server */
+const QLatin1String WEBSERVER_CONFIG(":/littlenavmap/resources/config/webserver.cfg");
+
+/* Web server default self signed keys */
+const QLatin1String WEBSERVER_SSL_CERT(":/littlenavmap/resources/config/ssl/lnm.cert");
+const QLatin1String WEBSERVER_SSL_KEY(":/littlenavmap/resources/config/ssl/lnm.key");
 
 /* Map display configuration */
 const QLatin1String MAP_LAYER_CONFIG(":/littlenavmap/resources/config/maplayers.xml");
 
+/* Timezones */
+const QLatin1String TIMEZONE_DATABASE("timezone/timezone21");
+
 /* Main window state for first startup. Generated in MainWindow::writeSettings() */
 extern const QSize DEFAULT_MAINWINDOW_SIZE;
 
+/* Commands and startup options ========================================================================= */
 /* Startup options from command line. Used as long option names and keys in NavApp::startupOptions. */
 const QLatin1String STARTUP_FLIGHTPLAN("flight-plan");
 const QLatin1String STARTUP_FLIGHTPLAN_DESCR("flight-plan-descr");
 const QLatin1String STARTUP_AIRCRAFT_PERF("aircraft-perf");
 const QLatin1String STARTUP_LAYOUT("layout");
-const QLatin1String STARTUP_QUIT("quit"); /* Exit application */
+const QLatin1String STARTUP_GPX("gpx");
+const QLatin1String STARTUP_MARKER("marker");
+const QLatin1String STARTUP_FORCE_LOADING("force"); /* Force overwriting of files */
+
+/* Restart options - not visible for user */
+const QLatin1String STARTUP_NO_DATA_EXCHANGE("no-data-exchange"); /* Do not start other instance through data exchange */
+const QLatin1String STARTUP_RESET_LAYOUT("reset-layout"); /* Reset window layout after restart */
+
+/* Commands also through data exchange */
+const QLatin1String STARTUP_COMMAND_QUIT(atools::gui::dataexchange::STARTUP_COMMAND_QUIT); /* Exit application. Also long option. */
+const QLatin1String STARTUP_COMMAND_ACTIVATE(atools::gui::dataexchange::STARTUP_COMMAND_ACTIVATE); /* Bring window to front */
 
 /* Not used as long options */
 const QLatin1String STARTUP_OTHER_ARGUMENTS("others"); /* Positional arguments not found after option - string list */
-const QLatin1String STARTUP_COMMAND_ACTIVATE(atools::gui::DataExchange::STARTUP_COMMAND_ACTIVATE); /* Bring window to front */
-const QLatin1String STARTUP_COMMAND_QUIT(atools::gui::DataExchange::STARTUP_COMMAND_QUIT); /* Exit application */
 
-/* Suffixes for common configuration files.
+/* Style suffixes and resource names ========================================================================= */
+const QLatin1String DARKSTYLE_INI_SUFFIX("_darkstyle.ini");
+const QLatin1String DARKSTYLE_INI(":/littlenavmap/resources/config/little_navmap_darkstyle.ini");
+const QLatin1String FUSIONSTYLE_INI_SUFFIX("_fusionstyle.ini");
+const QLatin1String FUSIONSTYLE_INI(":/littlenavmap/resources/config/little_navmap_fusionstyle.ini");
+
+/* Suffixes for common configuration files. =========================================================================
  * Used for atools::settings::Settings::getConfigFilename() */
 const QLatin1String AIRCRAFT_TRACK_SUFFIX(".track");
 const QLatin1String PROFILE_TRACK_SUFFIX("_profile.track");
 const QLatin1String LOGBOOK_TRACK_SUFFIX(".logbooktrack");
-const QLatin1String DARKSTYLE_INI_SUFFIX("_nightstyle.ini");
 
-/* Crash/issue report paths and file suffixes */
+/* Crash/issue report paths and file suffixes ========================================================================= */
 const QLatin1String STACKTRACE_SUFFIX("_stacktrace.txt");
 const QLatin1String CRASHREPORTS_DIR("crashreports");
 const QLatin1String CRASHREPORT_SUFFIX("_crashreport.zip");
@@ -506,6 +575,8 @@ const QLatin1String ISSUEREPORT_SUFFIX("_issuereport.zip");
 
 const QLatin1String MAPSTYLE_INI_SUFFIX("_mapstyle.ini");
 const QLatin1String MAPSTYLE_CONFIG(":/littlenavmap/resources/config/little_navmap_mapstyle.ini");
+
+const QLatin1String MAP_MARKERS_FILE_SUFFIX(".lnmmarker");
 
 // The 2020 SimConnect is used to connect to MSFS 2020 and 2024 for user aircraft and environment updates
 // SimConnect from 2024 has to be used to load the airport facilities from the simulator

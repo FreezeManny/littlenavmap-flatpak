@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@
 
 #include <QDialog>
 #include <QMap>
+#include <QSortFilterProxyModel>
+#include <QStyledItemDelegate>
+#include <QTableView>
 
 namespace Ui {
 class RouteMultiExportDialog;
@@ -29,19 +32,19 @@ class RouteMultiExportDialog;
 
 namespace atools {
 namespace gui {
-class ItemViewZoomHandler;
+class WidgetZoomHandler;
 }
 }
 
 class QAbstractButton;
-class QStandardItem;
-class QStandardItemModel;
 class QCheckBox;
 class QItemSelection;
 class QStandardItem;
-class TableSortProxyModel;
-class RouteExportFormatMap;
+class QStandardItem;
+class QStandardItemModel;
 class RouteExportFormat;
+class RouteExportFormatMap;
+class TableSortProxyModel;
 
 /*
  * Dialog for multiexport. Allows to modify selection status and custom paths of export formats.
@@ -98,7 +101,6 @@ private:
   void resetPath(rexp::RouteExportFormatType type, int row);
 
   /* Reset from action */
-  void actionResetExportPatternTriggered();
   void resetPattern(rexp::RouteExportFormatType type, int row);
 
   /* Save now in list clicked */
@@ -136,11 +138,12 @@ private:
   /* Called from context menu method */
   void resetPathsAndSelection();
 
+  /* Called by connected actions affecting selected item only */
+  void actionEditTriggered();
+  void actionResetTriggered();
+
   /* Called by connected actions */
-  void actionEditPathTriggered();
-  void actionEditPatternTriggered();
   void actionExportFileNowTriggered();
-  void actionResetExportPathTriggered();
   void actionSelectExportPathTriggered();
   void actionSelectTriggered();
 
@@ -155,6 +158,7 @@ private:
   /* Get elements, indexes and row for current selection or -1 if nothing selected */
   QModelIndex selectedIndex();
   int selectedRow();
+  int selectedColumn();
   QStandardItem *selectedItem(int col);
   rexp::RouteExportFormatType selectedType();
 
@@ -165,7 +169,7 @@ private:
   TableSortProxyModel *proxyModel = nullptr;
 
   /* Used to fix excessive default margins in table */
-  atools::gui::ItemViewZoomHandler *zoomHandler = nullptr;
+  atools::gui::WidgetZoomHandler *zoomHandler = nullptr;
 
   RouteExportFormatMap *formatMapDialog = nullptr, /* Map that will be modified in the dialog */
                        *formatMapSystem = nullptr; /* Map backup that will be used to restore in case of cancel */
@@ -183,6 +187,52 @@ private:
   ExportOptions exportOptions = FILEDIALOG;
 
   Ui::RouteMultiExportDialog *ui;
+};
+
+/* Delegate to paint errors in normal and selected state in red */
+class TableItemDelegate :
+  public QStyledItemDelegate
+{
+  Q_OBJECT
+
+public:
+  explicit TableItemDelegate(QObject *parent, const RouteExportFormatMap *formatMap)
+    : QStyledItemDelegate(parent), formats(formatMap)
+  {
+  }
+
+  virtual ~TableItemDelegate() override
+  {
+
+  }
+
+private:
+  virtual void paint(QPainter *painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+
+  const RouteExportFormatMap *formats;
+};
+
+/* Proxy is needed to allow sorting by checkbox state */
+class TableSortProxyModel
+  : public QSortFilterProxyModel
+{
+  Q_OBJECT
+
+public:
+  explicit TableSortProxyModel(QTableView *tableView)
+    : QSortFilterProxyModel(tableView)
+  {
+
+  }
+
+  virtual ~TableSortProxyModel() override
+  {
+
+  }
+
+private:
+  virtual bool lessThan(const QModelIndex& leftIndex, const QModelIndex& rightIndex) const override;
+
 };
 
 #endif // LNM_ROUTEEXPORTALLDIALOG_H

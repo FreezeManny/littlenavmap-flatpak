@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 #include "mapgui/mappaintwidget.h"
 #include "mapgui/mapscale.h"
 #include "mapgui/mapscreenindex.h"
+#include "mappainter/paintcontext.h"
 
 #include <marble/GeoPainter.h>
 
@@ -83,9 +84,6 @@ void MapPainterVehicle::paintAiVehicle(const SimConnectAircraft& vehicle, float 
     float size = std::max(context->szF(context->symbolSizeAircraftAi, minSize),
                           scale->getPixelForFeet(std::min(vehicle.getModelSize(), 1000)));
 
-    if(mapPaintWidget->isWeb())
-      size *= context->symbolSizeWeb;
-
     float offset = -(size / 2.f);
 
     // Draw symbol
@@ -105,12 +103,10 @@ void MapPainterVehicle::paintAiVehicle(const SimConnectAircraft& vehicle, float 
 
 void MapPainterVehicle::paintUserAircraft(const SimConnectUserAircraft& userAircraft, float x, float y) const
 {
-  int size = std::max(context->sz(context->symbolSizeAircraftUser, 32), scale->getPixelIntForFeet(userAircraft.getModelSize()));
-  if(mapPaintWidget->isWeb())
-    size *= context->symbolSizeWeb;
+  float size = std::max(context->szF(context->symbolSizeAircraftUser, 32.f), scale->getPixelForFeet(userAircraft.getModelSize()));
 
   context->szFont(context->textSizeAircraftUser);
-  int offset = -(size / 2);
+  float offset = -(size / 2.f);
 
   if(context->dOptUserAc(optsac::ITEM_USER_AIRCRAFT_TRACK_LINE) && userAircraft.getGroundSpeedKts() > 30 &&
      userAircraft.getTrackDegTrue() < atools::fs::sc::SC_INVALID_FLOAT)
@@ -119,7 +115,7 @@ void MapPainterVehicle::paintUserAircraft(const SimConnectUserAircraft& userAirc
     float rotate = scale->getScreenRotation(userAircraft.getTrackDegTrue(), userAircraft.getPosition(), context->zoomDistanceMeter);
 
     if(rotate < map::INVALID_COURSE_VALUE)
-      symbolPainter->drawTrackLine(context->painter, x, y, size * 2, rotate);
+      symbolPainter->drawTrackLine(context->painter, x, y, size * 2.f, rotate);
   }
 
   // Position is visible
@@ -132,7 +128,7 @@ void MapPainterVehicle::paintUserAircraft(const SimConnectUserAircraft& userAirc
     context->painter->rotate(atools::geo::normalizeCourse(rotate));
 
     // Draw symbol
-    context->painter->drawPixmap(offset, offset, *NavApp::getVehicleIcons()->pixmapFromCache(userAircraft, size, 0));
+    context->painter->drawPixmap(QPointF(offset, offset), *NavApp::getVehicleIcons()->pixmapFromCache(userAircraft, size, 0));
     context->painter->resetTransform();
 
     // Build text label
@@ -162,7 +158,7 @@ void MapPainterVehicle::paintTurnPath(const atools::fs::sc::SimConnectUserAircra
         double curDistance = 0.f;
         double curHeading = userAircraft.getTrackDegTrue() + turnStep;
 
-        double lineWidth = context->szF(context->thicknessUserFeature, mapcolors::markTurnPathPen.width());
+        double lineWidth = context->szF(context->thicknessMapMarker, mapcolors::markTurnPathPen.width());
         context->painter->setPen(mapcolors::adjustWidth(mapcolors::markTurnPathPen, static_cast<float>(lineWidth)));
         context->painter->setBrush(QBrush(mapcolors::markTurnPathPen.color()));
 
@@ -313,7 +309,7 @@ void MapPainterVehicle::paintTextLabelAi(float x, float y, float size, const Sim
       // Actual altitude ====================================================================================
       if(aiDisp(hidden, optsac::ITEM_AI_AIRCRAFT_ALTITUDE, detail1,
                 aircraft.getActualAltitudeFt()) && aircraft.isActualAltitudeFullyValid())
-        altTexts.append(tr("ALT %1%2").arg(Unit::altFeet(aircraft.getActualAltitudeFt())).arg(QString()));
+        altTexts.append(tr("ALT %1%2").arg(Unit::altFeet(aircraft.getActualAltitudeFt())).arg(QStringLiteral()));
 
       QString upDown;
       if(!aiDisp(hidden, optsac::ITEM_AI_AIRCRAFT_CLIMB_SINK, detail1, aircraft.getVerticalSpeedFeetPerMin()))
@@ -343,7 +339,7 @@ void MapPainterVehicle::paintTextLabelAi(float x, float y, float size, const Sim
       texts.prepend(tr("ID %1").arg(aircraft.getObjectId()));
 
 #ifdef DEBUG_INFORMATION_AI
-    texts.prepend(QString("[%1%2%3%4%5]").
+    texts.prepend(QStringLiteral("[%1%2%3%4%5]").
                   arg(forceLabelNearby ? "F" : "").arg(text ? "T" : "-").
                   arg(detail ? "D" : "-").arg(detail2 ? "2" : "").arg(detail3 ? "3" : ""));
 #endif
@@ -360,7 +356,7 @@ void MapPainterVehicle::paintTextLabelAi(float x, float y, float size, const Sim
 
       // Draw text label
       symbolPainter->textBoxF(context->painter, texts, mapcolors::aircraftAiLabelColor, x + size / 2.f, y + size / 2.f,
-                              textatt::NONE, transparency, mapcolors::aircraftAiLabelColorBg);
+                              text::NO_ATTRIBUTE, transparency, mapcolors::aircraftAiLabelColorBg);
     }
   } // if((!flying && layer->isAiAircraftGroundText()) ||
 }
@@ -439,13 +435,13 @@ void MapPainterVehicle::paintTextLabelUser(float x, float y, int size, const Sim
     {
       ice.prepend(tr("Ice %"));
       symbolPainter->textBoxF(context->painter, ice, mapcolors::aircraftUserLabelColor, x - size * 3 / 4, y,
-                              textatt::ERROR_COLOR | textatt::LEFT, 255, mapcolors::aircraftUserLabelColorBg);
+                              text::ERROR_COLOR | text::LEFT, 255, mapcolors::aircraftUserLabelColorBg);
     }
   }
 
   // Draw text label
   symbolPainter->textBoxF(context->painter, texts, mapcolors::aircraftUserLabelColor, x + size * 3 / 4, y,
-                          textatt::NONE, transparency, mapcolors::aircraftUserLabelColorBg);
+                          text::NO_ATTRIBUTE, transparency, mapcolors::aircraftUserLabelColorBg);
 }
 
 void MapPainterVehicle::climbSinkPointer(QString& upDown, const SimConnectAircraft& aircraft) const
@@ -540,7 +536,6 @@ void MapPainterVehicle::paintTextLabelWind(float x, float y, float size, const S
     float xs, ys;
     QStringList texts;
 
-    textatt::TextAttributes atts = textatt::ROUTE_BG_COLOR;
     if(aircraft.getWindSpeedKts() >= 1.f)
     {
       if(context->dOptUserAc(optsac::ITEM_USER_AIRCRAFT_WIND))
@@ -555,13 +550,12 @@ void MapPainterVehicle::paintTextLabelWind(float x, float y, float size, const S
     }
     else
     {
-      atts |= textatt::CENTER | textatt::BELOW;
       texts.append(tr("No wind"));
       xs = x;
       ys = y;
     }
 
     // Draw text label
-    symbolPainter->textBoxF(context->painter, texts, QPen(Qt::black), xs, ys, atts, 255);
+    symbolPainter->textBoxF(context->painter, texts, QPen(Qt::black), xs, ys, text::PLACE_BELOW_CENTER, 255);
   }
 }

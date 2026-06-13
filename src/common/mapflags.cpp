@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,10 +22,10 @@
 
 namespace map {
 
-const QVector<map::MapAirspaceSource> MAP_AIRSPACE_SRC_VALUES({AIRSPACE_SRC_SIM, AIRSPACE_SRC_NAV, AIRSPACE_SRC_ONLINE, AIRSPACE_SRC_USER});
-const QVector<map::MapAirspaceSource> MAP_AIRSPACE_SRC_NO_ONLINE_VALUES({AIRSPACE_SRC_SIM, AIRSPACE_SRC_NAV, AIRSPACE_SRC_USER});
+const QList<map::MapAirspaceSource> MAP_AIRSPACE_SRC_VALUES({AIRSPACE_SRC_SIM, AIRSPACE_SRC_NAV, AIRSPACE_SRC_ONLINE, AIRSPACE_SRC_USER});
+const QList<map::MapAirspaceSource> MAP_AIRSPACE_SRC_NO_ONLINE_VALUES({AIRSPACE_SRC_SIM, AIRSPACE_SRC_NAV, AIRSPACE_SRC_USER});
 
-QDebug operator<<(QDebug out, const map::MapAirspaceSource& type)
+QDebug operator<<(QDebug out, map::MapAirspaceSource type)
 {
   out << map::MapAirspaceSources(type);
   return out;
@@ -60,152 +60,200 @@ QDebug operator<<(QDebug out, const map::MapType& type)
   return out;
 }
 
+map::MapTypes mapTypeFromString(const QStringList& flags)
+{
+  map::MapTypes type = NONE;
+
+  for(const QString& str : flags)
+  {
+    if(str == QStringLiteral("AIRPORT"))
+      type.setFlag(AIRPORT);
+    if(str == QStringLiteral("RUNWAY"))
+      type.setFlag(RUNWAY);
+    if(str == QStringLiteral("VOR"))
+      type.setFlag(VOR);
+    if(str == QStringLiteral("NDB"))
+      type.setFlag(NDB);
+    if(str == QStringLiteral("ILS"))
+      type.setFlag(ILS);
+    if(str == QStringLiteral("MARKER"))
+      type.setFlag(MARKER);
+    if(str == QStringLiteral("WAYPOINT"))
+      type.setFlag(WAYPOINT);
+    if(str == QStringLiteral("AIRWAY"))
+      type.setFlag(AIRWAY);
+    if(str == QStringLiteral("AIRWAYV"))
+      type.setFlag(AIRWAYV);
+    if(str == QStringLiteral("AIRWAYJ"))
+      type.setFlag(AIRWAYJ);
+    if(str == QStringLiteral("AIRCRAFT"))
+      type.setFlag(AIRCRAFT);
+    if(str == QStringLiteral("AIRCRAFT_AI"))
+      type.setFlag(AIRCRAFT_AI);
+    if(str == QStringLiteral("AIRCRAFT_AI_SHIP"))
+      type.setFlag(AIRCRAFT_AI_SHIP);
+    if(str == QStringLiteral("AIRPORT_MSA"))
+      type.setFlag(AIRPORT_MSA);
+    if(str == QStringLiteral("USERPOINTROUTE"))
+      type.setFlag(USERPOINTROUTE);
+    if(str == QStringLiteral("PARKING"))
+      type.setFlag(PARKING);
+    if(str == QStringLiteral("START"))
+      type.setFlag(START);
+    if(str == QStringLiteral("RUNWAYEND"))
+      type.setFlag(RUNWAYEND);
+    if(str == QStringLiteral("INVALID"))
+      type.setFlag(INVALID);
+    if(str == QStringLiteral("MISSED_APPROACH"))
+      type.setFlag(MISSED_APPROACH);
+    if(str == QStringLiteral("PROCEDURE"))
+      type.setFlag(PROCEDURE);
+    if(str == QStringLiteral("AIRSPACE"))
+      type.setFlag(AIRSPACE);
+    if(str == QStringLiteral("HELIPAD"))
+      type.setFlag(HELIPAD);
+    if(str == QStringLiteral("HOLDING"))
+      type.setFlag(HOLDING);
+    if(str == QStringLiteral("USERPOINT"))
+      type.setFlag(USERPOINT);
+    if(str == QStringLiteral("TRACK"))
+      type.setFlag(TRACK);
+    if(str == QStringLiteral("AIRCRAFT_ONLINE"))
+      type.setFlag(AIRCRAFT_ONLINE);
+    if(str == QStringLiteral("LOGBOOK"))
+      type.setFlag(LOGBOOK);
+    if(str == QStringLiteral("MARK_RANGE"))
+      type.setFlag(MARK_RANGE);
+    if(str == QStringLiteral("MARK_DISTANCE"))
+      type.setFlag(MARK_DISTANCE);
+    if(str == QStringLiteral("MARK_HOLDING"))
+      type.setFlag(MARK_HOLDING);
+    if(str == QStringLiteral("MARK_PATTERNS"))
+      type.setFlag(MARK_PATTERNS);
+    if(str == QStringLiteral("MARK_MSA"))
+      type.setFlag(MARK_MSA);
+    if(str == QStringLiteral("AIRPORT_HARD"))
+      type.setFlag(AIRPORT_HARD);
+    if(str == QStringLiteral("AIRPORT_SOFT"))
+      type.setFlag(AIRPORT_SOFT);
+    if(str == QStringLiteral("AIRPORT_WATER"))
+      type.setFlag(AIRPORT_WATER);
+    if(str == QStringLiteral("AIRPORT_HELIPAD"))
+      type.setFlag(AIRPORT_HELIPAD);
+    if(str == QStringLiteral("AIRPORT_EMPTY"))
+      type.setFlag(AIRPORT_EMPTY);
+    if(str == QStringLiteral("AIRPORT_UNLIGHTED"))
+      type.setFlag(AIRPORT_UNLIGHTED);
+    if(str == QStringLiteral("AIRPORT_NO_PROCS"))
+      type.setFlag(AIRPORT_NO_PROCS);
+    if(str == QStringLiteral("AIRPORT_CLOSED"))
+      type.setFlag(AIRPORT_CLOSED);
+    if(str == QStringLiteral("AIRPORT_MILITARY"))
+      type.setFlag(AIRPORT_MILITARY);
+    if(str == QStringLiteral("PROCEDURE_POINT"))
+      type.setFlag(PROCEDURE_POINT);
+    if(str == QStringLiteral("AIRCRAFT_TRAIL"))
+      type.setFlag(AIRCRAFT_TRAIL);
+    if(str == QStringLiteral("AIRPORT_ADDON_ZOOM"))
+      type.setFlag(AIRPORT_ADDON_ZOOM);
+    if(str == QStringLiteral("AIRPORT_ADDON_ZOOM_FILTER"))
+      type.setFlag(AIRPORT_ADDON_ZOOM_AND_FILTER);
+  }
+  return type;
+}
+
+QStringList mapTypeToString(const map::MapTypes& flags)
+{
+  ATOOLS_FLAGS_TO_STR_BEGIN(NONE);
+  ATOOLS_FLAGS_TO_STR(AIRPORT);
+  ATOOLS_FLAGS_TO_STR(RUNWAY);
+  ATOOLS_FLAGS_TO_STR(VOR);
+  ATOOLS_FLAGS_TO_STR(NDB);
+  ATOOLS_FLAGS_TO_STR(ILS);
+  ATOOLS_FLAGS_TO_STR(MARKER);
+  ATOOLS_FLAGS_TO_STR(WAYPOINT);
+  ATOOLS_FLAGS_TO_STR(AIRWAY);
+  ATOOLS_FLAGS_TO_STR(AIRWAYV);
+  ATOOLS_FLAGS_TO_STR(AIRWAYJ);
+  ATOOLS_FLAGS_TO_STR(AIRCRAFT);
+  ATOOLS_FLAGS_TO_STR(AIRCRAFT_AI);
+  ATOOLS_FLAGS_TO_STR(AIRCRAFT_AI_SHIP);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_MSA);
+  ATOOLS_FLAGS_TO_STR(USERPOINTROUTE);
+  ATOOLS_FLAGS_TO_STR(PARKING);
+  ATOOLS_FLAGS_TO_STR(START);
+  ATOOLS_FLAGS_TO_STR(RUNWAYEND);
+  ATOOLS_FLAGS_TO_STR(INVALID);
+  ATOOLS_FLAGS_TO_STR(MISSED_APPROACH);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE);
+  ATOOLS_FLAGS_TO_STR(HELIPAD);
+  ATOOLS_FLAGS_TO_STR(HOLDING);
+  ATOOLS_FLAGS_TO_STR(USERPOINT);
+  ATOOLS_FLAGS_TO_STR(TRACK);
+  ATOOLS_FLAGS_TO_STR(AIRCRAFT_ONLINE);
+  ATOOLS_FLAGS_TO_STR(LOGBOOK);
+  ATOOLS_FLAGS_TO_STR(MARK_RANGE);
+  ATOOLS_FLAGS_TO_STR(MARK_DISTANCE);
+  ATOOLS_FLAGS_TO_STR(MARK_HOLDING);
+  ATOOLS_FLAGS_TO_STR(MARK_PATTERNS);
+  ATOOLS_FLAGS_TO_STR(MARK_MSA);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_HARD);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_SOFT);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_WATER);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_HELIPAD);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_EMPTY);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_UNLIGHTED);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_NO_PROCS);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_CLOSED);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_MILITARY);
+  ATOOLS_FLAGS_TO_STR(PROCEDURE_POINT);
+  ATOOLS_FLAGS_TO_STR(AIRCRAFT_TRAIL);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_ADDON_ZOOM);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_ADDON_ZOOM_AND_FILTER);
+  ATOOLS_FLAGS_TO_STR_END;
+}
+
+QDebug operator<<(QDebug out, map::MapType type)
+{
+  out << map::MapTypes(type);
+  return out;
+}
+
 QDebug operator<<(QDebug out, const map::MapTypes& type)
 {
   QDebugStateSaver saver(out);
+  out.nospace().noquote() << mapTypeToString(type).join("|");
+  return out;
+}
 
-  QStringList flags;
-  if(type == NONE)
-    flags.append("NONE");
-  else
-  {
-    if(type.testFlag(AIRPORT))
-      flags.append("AIRPORT");
-    if(type.testFlag(RUNWAY))
-      flags.append("RUNWAY");
-    if(type.testFlag(VOR))
-      flags.append("VOR");
-    if(type.testFlag(NDB))
-      flags.append("NDB");
-    if(type.testFlag(ILS))
-      flags.append("ILS");
-    if(type.testFlag(MARKER))
-      flags.append("MARKER");
-    if(type.testFlag(WAYPOINT))
-      flags.append("WAYPOINT");
-    if(type.testFlag(AIRWAY))
-      flags.append("AIRWAY");
-    if(type.testFlag(AIRWAYV))
-      flags.append("AIRWAYV");
-    if(type.testFlag(AIRWAYJ))
-      flags.append("AIRWAYJ");
-    if(type.testFlag(USER_FEATURE))
-      flags.append("USER_FEATURE");
-    if(type.testFlag(AIRCRAFT))
-      flags.append("AIRCRAFT");
-    if(type.testFlag(AIRCRAFT_AI))
-      flags.append("AIRCRAFT_AI");
-    if(type.testFlag(AIRCRAFT_AI_SHIP))
-      flags.append("AIRCRAFT_AI_SHIP");
-    if(type.testFlag(AIRPORT_MSA))
-      flags.append("AIRPORT_MSA");
-    if(type.testFlag(USERPOINTROUTE))
-      flags.append("USERPOINTROUTE");
-    if(type.testFlag(PARKING))
-      flags.append("PARKING");
-    if(type.testFlag(START))
-      flags.append("START");
-    if(type.testFlag(RUNWAYEND))
-      flags.append("RUNWAYEND");
-    if(type.testFlag(INVALID))
-      flags.append("INVALID");
-    if(type.testFlag(MISSED_APPROACH))
-      flags.append("MISSED_APPROACH");
-    if(type.testFlag(PROCEDURE))
-      flags.append("PROCEDURE");
-    if(type.testFlag(AIRSPACE))
-      flags.append("AIRSPACE");
-    if(type.testFlag(HELIPAD))
-      flags.append("HELIPAD");
-    if(type.testFlag(HOLDING))
-      flags.append("HOLDING");
-    if(type.testFlag(USERPOINT))
-      flags.append("USERPOINT");
-    if(type.testFlag(TRACK))
-      flags.append("TRACK");
-    if(type.testFlag(AIRCRAFT_ONLINE))
-      flags.append("AIRCRAFT_ONLINE");
-    if(type.testFlag(LOGBOOK))
-      flags.append("LOGBOOK");
-    if(type.testFlag(MARK_RANGE))
-      flags.append("MARK_RANGE");
-    if(type.testFlag(MARK_DISTANCE))
-      flags.append("MARK_DISTANCE");
-    if(type.testFlag(MARK_HOLDING))
-      flags.append("MARK_HOLDING");
-    if(type.testFlag(MARK_PATTERNS))
-      flags.append("MARK_PATTERNS");
-    if(type.testFlag(MARK_MSA))
-      flags.append("MARK_MSA");
-    if(type.testFlag(AIRPORT_HARD))
-      flags.append("AIRPORT_HARD");
-    if(type.testFlag(AIRPORT_SOFT))
-      flags.append("AIRPORT_SOFT");
-    if(type.testFlag(AIRPORT_WATER))
-      flags.append("AIRPORT_WATER");
-    if(type.testFlag(AIRPORT_HELIPAD))
-      flags.append("AIRPORT_HELIPAD");
-    if(type.testFlag(AIRPORT_EMPTY))
-      flags.append("AIRPORT_EMPTY");
-    if(type.testFlag(AIRPORT_UNLIGHTED))
-      flags.append("AIRPORT_UNLIGHTED");
-    if(type.testFlag(AIRPORT_NO_PROCS))
-      flags.append("AIRPORT_NO_PROCS");
-    if(type.testFlag(AIRPORT_CLOSED))
-      flags.append("AIRPORT_CLOSED");
-    if(type.testFlag(AIRPORT_MILITARY))
-      flags.append("AIRPORT_MILITARY");
-    if(type.testFlag(PROCEDURE_POINT))
-      flags.append("PROCEDURE_POINT");
-    if(type.testFlag(AIRCRAFT_TRAIL))
-      flags.append("AIRCRAFT_TRAIL");
-    if(type.testFlag(AIRPORT_ADDON_ZOOM))
-      flags.append("AIRPORT_ADDON_ZOOM");
-    if(type.testFlag(AIRPORT_ADDON_ZOOM_FILTER))
-      flags.append("AIRPORT_ADDON_ZOOM_FILTER");
-  }
-  out.nospace().noquote() << flags.join("|");
+QStringList mapDisplayTypeToString(const map::MapDisplayTypes& flags)
+{
+  ATOOLS_FLAGS_TO_STR_BEGIN(DISPLAY_TYPE_NONE);
+  ATOOLS_FLAGS_TO_STR(AIRPORT_WEATHER);
+  ATOOLS_FLAGS_TO_STR(MORA);
+  ATOOLS_FLAGS_TO_STR(WIND_BARBS);
+  ATOOLS_FLAGS_TO_STR(WIND_BARBS_ROUTE);
+  ATOOLS_FLAGS_TO_STR(LOGBOOK_DIRECT);
+  ATOOLS_FLAGS_TO_STR(LOGBOOK_ROUTE);
+  ATOOLS_FLAGS_TO_STR(LOGBOOK_TRACK);
+  ATOOLS_FLAGS_TO_STR(COMPASS_ROSE);
+  ATOOLS_FLAGS_TO_STR(COMPASS_ROSE_ATTACH);
+  ATOOLS_FLAGS_TO_STR(FLIGHTPLAN);
+  ATOOLS_FLAGS_TO_STR(FLIGHTPLAN_TOC_TOD);
+  ATOOLS_FLAGS_TO_STR_END;
+}
 
+QDebug operator<<(QDebug out, map::MapDisplayType type)
+{
+  out << map::MapDisplayTypes(type);
   return out;
 }
 
 QDebug operator<<(QDebug out, const map::MapDisplayTypes& type)
 {
   QDebugStateSaver saver(out);
-
-  QStringList flags;
-  if(type == DISPLAY_TYPE_NONE)
-    flags.append("NONE");
-  else
-  {
-    if(type.testFlag(DISPLAY_TYPE_NONE))
-      flags.append("DISPLAY_TYPE_NONE");
-    if(type.testFlag(AIRPORT_WEATHER))
-      flags.append("AIRPORT_WEATHER");
-    if(type.testFlag(MORA))
-      flags.append("MINIMUM_ALTITUDE");
-    if(type.testFlag(WIND_BARBS))
-      flags.append("WIND_BARBS");
-    if(type.testFlag(WIND_BARBS_ROUTE))
-      flags.append("WIND_BARBS_ROUTE");
-    if(type.testFlag(LOGBOOK_DIRECT))
-      flags.append("LOGBOOK_DIRECT");
-    if(type.testFlag(LOGBOOK_ROUTE))
-      flags.append("LOGBOOK_ROUTE");
-    if(type.testFlag(LOGBOOK_TRACK))
-      flags.append("LOGBOOK_TRACK");
-    if(type.testFlag(COMPASS_ROSE))
-      flags.append("COMPASS_ROSE");
-    if(type.testFlag(COMPASS_ROSE_ATTACH))
-      flags.append("COMPASS_ROSE_ATTACH");
-    if(type.testFlag(FLIGHTPLAN))
-      flags.append("FLIGHTPLAN");
-    if(type.testFlag(FLIGHTPLAN_TOC_TOD))
-      flags.append("FLIGHTPLAN_TOC_TOD");
-  }
-
-  out.nospace().noquote() << flags.join("|");
-
+  out.nospace().noquote() << mapDisplayTypeToString(type).join("|");
   return out;
 }
 
@@ -226,109 +274,79 @@ QDebug operator<<(QDebug out, const map::MapWeatherSource& type)
   return out;
 }
 
+QStringList mapAirspaceTypeToString(const map::MapAirspaceTypes& flags)
+{
+  ATOOLS_FLAGS_TO_STR_BEGIN(AIRSPACE_NONE);
+  ATOOLS_FLAGS_TO_STR(CENTER);
+  ATOOLS_FLAGS_TO_STR(CLASS_A);
+  ATOOLS_FLAGS_TO_STR(CLASS_B);
+  ATOOLS_FLAGS_TO_STR(CLASS_C);
+  ATOOLS_FLAGS_TO_STR(CLASS_D);
+  ATOOLS_FLAGS_TO_STR(CLASS_E);
+  ATOOLS_FLAGS_TO_STR(CLASS_F);
+  ATOOLS_FLAGS_TO_STR(CLASS_G);
+  ATOOLS_FLAGS_TO_STR(TOWER);
+  ATOOLS_FLAGS_TO_STR(CLEARANCE);
+  ATOOLS_FLAGS_TO_STR(GROUND);
+  ATOOLS_FLAGS_TO_STR(DEPARTURE);
+  ATOOLS_FLAGS_TO_STR(APPROACH);
+  ATOOLS_FLAGS_TO_STR(MOA);
+  ATOOLS_FLAGS_TO_STR(RESTRICTED);
+  ATOOLS_FLAGS_TO_STR(PROHIBITED);
+  ATOOLS_FLAGS_TO_STR(WARNING);
+  ATOOLS_FLAGS_TO_STR(ALERT);
+  ATOOLS_FLAGS_TO_STR(DANGER);
+  ATOOLS_FLAGS_TO_STR(NATIONAL_PARK);
+  ATOOLS_FLAGS_TO_STR(MODEC);
+  ATOOLS_FLAGS_TO_STR(RADAR);
+  ATOOLS_FLAGS_TO_STR(TRAINING);
+  ATOOLS_FLAGS_TO_STR(GLIDERPROHIBITED);
+  ATOOLS_FLAGS_TO_STR(WAVEWINDOW);
+  ATOOLS_FLAGS_TO_STR(CAUTION);
+  ATOOLS_FLAGS_TO_STR(ONLINE_OBSERVER);
+  ATOOLS_FLAGS_TO_STR(FIR);
+  ATOOLS_FLAGS_TO_STR(UIR);
+  ATOOLS_FLAGS_TO_STR(GCA);
+  ATOOLS_FLAGS_TO_STR(MCTR);
+  ATOOLS_FLAGS_TO_STR(TRSA);
+  ATOOLS_FLAGS_TO_STR_END;
+}
+
+QDebug operator<<(QDebug out, map::MapAirspaceType type)
+{
+  out << map::MapAirspaceTypes(type);
+  return out;
+}
+
 QDebug operator<<(QDebug out, const map::MapAirspaceTypes& type)
 {
   QDebugStateSaver saver(out);
+  out.nospace().noquote() << mapAirspaceTypeToString(type).join("|");
+  return out;
+}
 
-  QStringList flags;
-  if(type == AIRSPACE_NONE)
-    flags.append("AIRSPACE_NONE");
-  else
-  {
-    if(type.testFlag(CENTER))
-      flags.append("CENTER");
-    if(type.testFlag(CLASS_A))
-      flags.append("CLASS_A");
-    if(type.testFlag(CLASS_B))
-      flags.append("CLASS_B");
-    if(type.testFlag(CLASS_C))
-      flags.append("CLASS_C");
-    if(type.testFlag(CLASS_D))
-      flags.append("CLASS_D");
-    if(type.testFlag(CLASS_E))
-      flags.append("CLASS_E");
-    if(type.testFlag(CLASS_F))
-      flags.append("CLASS_F");
-    if(type.testFlag(CLASS_G))
-      flags.append("CLASS_G");
-    if(type.testFlag(TOWER))
-      flags.append("TOWER");
-    if(type.testFlag(CLEARANCE))
-      flags.append("CLEARANCE");
-    if(type.testFlag(GROUND))
-      flags.append("GROUND");
-    if(type.testFlag(DEPARTURE))
-      flags.append("DEPARTURE");
-    if(type.testFlag(APPROACH))
-      flags.append("APPROACH");
-    if(type.testFlag(MOA))
-      flags.append("MOA");
-    if(type.testFlag(RESTRICTED))
-      flags.append("RESTRICTED");
-    if(type.testFlag(PROHIBITED))
-      flags.append("PROHIBITED");
-    if(type.testFlag(WARNING))
-      flags.append("WARNING");
-    if(type.testFlag(ALERT))
-      flags.append("ALERT");
-    if(type.testFlag(DANGER))
-      flags.append("DANGER");
-    if(type.testFlag(NATIONAL_PARK))
-      flags.append("NATIONAL_PARK");
-    if(type.testFlag(MODEC))
-      flags.append("MODEC");
-    if(type.testFlag(RADAR))
-      flags.append("RADAR");
-    if(type.testFlag(TRAINING))
-      flags.append("TRAINING");
-    if(type.testFlag(GLIDERPROHIBITED))
-      flags.append("GLIDERPROHIBITED");
-    if(type.testFlag(WAVEWINDOW))
-      flags.append("WAVEWINDOW");
-    if(type.testFlag(CAUTION))
-      flags.append("CAUTION");
-    if(type.testFlag(ONLINE_OBSERVER))
-      flags.append("ONLINE_OBSERVER");
-    if(type.testFlag(FIR))
-      flags.append("FIR");
-    if(type.testFlag(UIR))
-      flags.append("UIR");
-    if(type.testFlag(GCA))
-      flags.append("GCA");
-    if(type.testFlag(MCTR))
-      flags.append("MCTR");
-    if(type.testFlag(TRSA))
-      flags.append("TRSA");
-  }
-  out.nospace().noquote() << flags.join("|");
+QStringList mapAirspaceFlagsToString(const map::MapAirspaceFlags& flags)
+{
+  ATOOLS_FLAGS_TO_STR_BEGIN(AIRSPACE_ALTITUDE_FLAG_NONE);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_ALTITUDE_ALL);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_ALTITUDE_FLIGHTPLAN);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_ALTITUDE_SET);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_ALL_ON);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_ALL_OFF);
+  ATOOLS_FLAGS_TO_STR(AIRSPACE_NO_MULTIPLE_Z);
+  ATOOLS_FLAGS_TO_STR_END;
+}
 
+QDebug operator<<(QDebug out, map::MapAirspaceFlag type)
+{
+  out << map::MapAirspaceFlags(type);
   return out;
 }
 
 QDebug operator<<(QDebug out, const map::MapAirspaceFlags& type)
 {
   QDebugStateSaver saver(out);
-
-  QStringList flags;
-  if(type == AIRSPACE_ALTITUDE_FLAG_NONE)
-    flags.append("NONE");
-  else
-  {
-    if(type.testFlag(AIRSPACE_ALTITUDE_ALL))
-      flags.append("AIRSPACE_ALTITUDE_ALL");
-    if(type.testFlag(AIRSPACE_ALTITUDE_FLIGHTPLAN))
-      flags.append("AIRSPACE_ALTITUDE_FLIGHTPLAN");
-    if(type.testFlag(AIRSPACE_ALTITUDE_SET))
-      flags.append("AIRSPACE_ALTITUDE_SET");
-    if(type.testFlag(AIRSPACE_ALL_ON))
-      flags.append("AIRSPACE_ALL_ON");
-    if(type.testFlag(AIRSPACE_ALL_OFF))
-      flags.append("AIRSPACE_ALL_OFF");
-    if(type.testFlag(AIRSPACE_NO_MULTIPLE_Z))
-      flags.append("AIRSPACE_NO_MULTIPLE_Z");
-  }
-  out.nospace().noquote() << flags.join("|");
-
+  out.nospace().noquote() << mapAirspaceFlagsToString(type).join("|");
   return out;
 }
 
@@ -382,7 +400,7 @@ QString mapWeatherSourceString(MapWeatherSource source)
     case map::WEATHER_SOURCE_IVAO:
       return QObject::tr("IVAO");
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString mapWeatherSourceStringShort(MapWeatherSource source)
@@ -407,7 +425,7 @@ QString mapWeatherSourceStringShort(MapWeatherSource source)
     case map::WEATHER_SOURCE_IVAO:
       return QObject::tr("IVAO");
   }
-  return QString();
+  return QStringLiteral();
 }
 
 } // namespace map

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #ifndef LNM_ROUTECALCWIN_H
 #define LNM_ROUTECALCWIN_H
 
+#include "options/optionchangeflags.h"
 #include <QDialog>
 #include <QObject>
 
@@ -89,10 +90,11 @@ public:
   void resetWindowLayout();
 
   /* Clear routing network cache and disconnect all queries */
-  void preDatabaseLoad();
   void postDatabaseLoad();
 
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
+
+  void fontChanged(const QFont& font);
 
   /* Airway or radionav */
   rd::RoutingType getRoutingType() const;

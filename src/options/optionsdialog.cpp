@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 
 #include "options/optionsdialog.h"
 
+#include "app/navapp.h"
 #include "atools.h"
 #include "common/constants.h"
 #include "common/elevationprovider.h"
@@ -24,22 +25,23 @@
 #include "fs/pln/flightplan.h"
 #include "fs/weather/weathertypes.h"
 #include "grib/gribreader.h"
+#include "gui/desktopservices.h"
 #include "gui/dialog.h"
 #include "gui/griddelegate.h"
 #include "gui/helphandler.h"
-#include "gui/itemviewzoomhandler.h"
+#include "gui/linktooltiphandler.h"
 #include "gui/listwidgetindex.h"
 #include "gui/texteditdialog.h"
 #include "gui/tools.h"
 #include "gui/translator.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
-#include "gui/desktopservices.h"
+#include "gui/widgetzoomhandler.h"
 #include "mapgui/mapthemehandler.h"
 #include "mapgui/mapwidget.h"
-#include "app/navapp.h"
+#include "options/optiondata.h"
+#include "qrcode/qrcodegenerator.h"
 #include "settings/settings.h"
-#include "ui_options.h"
+#include "ui_optionsdialog.h"
 #include "util/htmlbuilder.h"
 #include "weather/weatherreporter.h"
 #include "web/webcontroller.h"
@@ -55,15 +57,21 @@
 #include <QStringBuilder>
 #include <QStandardItem>
 #include <QInputDialog>
+#include <QSvgRenderer>
 
 #include <marble/MarbleModel.h>
 #include <marble/MarbleDirs.h>
 
-const int MIN_ONLINE_UPDATE = 120;
+// Show a warning if user decreases update rate for online services below this limit
+const int MIN_ONLINE_UPDATE_SECONDS = 120;
+
+// Data role for symbolic page name
+const Qt::ItemDataRole PAGE_LIST_ITEM_DATA_ID = static_cast<Qt::ItemDataRole>(Qt::UserRole + 1);
 
 using atools::settings::Settings;
 using atools::gui::HelpHandler;
 using atools::util::HtmlBuilder;
+using atools::gui::Dialog;
 
 template<typename FIELD, typename FLAG>
 inline void toFlags(FIELD& field, const QAbstractButton *button, FLAG flag)
@@ -88,96 +96,77 @@ inline void fromFlags(const FIELD& field, QAbstractButton *button, FLAG flag)
   button->setChecked(field & flag);
 }
 
+// =================================================================================================
+
+struct OptionsPrivate
+{
+  QHash<optsac::DisplayOptionsUserAircraft, QTreeWidgetItem *> displayOptItemIndexUser;
+  QHash<optsac::DisplayOptionsAiAircraft, QTreeWidgetItem *> displayOptItemIndexAi;
+  QHash<optsd::DisplayOptionsAirport, QTreeWidgetItem *> displayOptItemIndexAirport;
+  QHash<optsd::DisplayOptionsNavAid, QTreeWidgetItem *> displayOptItemIndexNavAid;
+  QHash<optsd::DisplayOptionsAirspace, QTreeWidgetItem *> displayOptItemIndexAirspace;
+  QHash<optsd::DisplayOptionsRose, QTreeWidgetItem *> displayOptItemIndexRose;
+  QHash<optsd::DisplayOptionsMeasurement, QTreeWidgetItem *> displayOptItemIndexMeasurement;
+  QHash<optsd::DisplayOptionsRoute, QTreeWidgetItem *> displayOptItemIndexRoute;
+};
+
+// =================================================================================================
 OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
-  : QDialog(parentWindow), ui(new Ui::Options), mainWindow(parentWindow)
+  : QDialog(parentWindow), ui(new Ui::OptionsDialog), mainWindow(parentWindow)
 {
   qDebug() << Q_FUNC_INFO;
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-  setWindowModality(Qt::ApplicationModal);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+  setWindowModality(Qt::NonModal);
 
+  p = new OptionsPrivate();
   ui->setupUi(this);
+
+  savedOptionData = new OptionData;
+
+  defaultSize = size();
 
 #ifndef QT_NO_DEBUG
   ui->spinBoxSimMaxTrailPoints->setMinimum(10);
 #endif
 
-  // 0 "Startup and Updates"
-  // 1 "User Interface"
-  // 2 "Display and Text"
-  // 3 "Units"
-  // 4 "Files"
-  // 5 "Map"
-  // 6 "Map Tooltips and Clicks"
-  // 7 "Map Navigation"
-  // 8 "Map Display"
-  // 9 "Map Flight Plan"
-  // 10 "Map Aircraft Trail"
-  // 11 "Map User"
-  // 12 "Map Labels"
-  // 13 "Map Keys"
-  // 14 "Map Online"
-  // 15 "Simulator Aircraft"
-  // 16 "Flight Plan"
-  // 17 "Weather"
-  // 18 "Weather Files"
-  // 19 "Online Flying"
-  // 20 "Web Server"
-  // 21 "Cache and Files"
-  // 22 "Scenery Library Database"
+  // Labels showing a hint and having a internal link to a page ============================================
+  hintLabels.append({ui->labelOptionsUpdatesHint, ui->labelOptionsUnitsHint, ui->labelOptionsGuiFontHint, ui->labelOptionsFreetypeHint,
+                     ui->labelOptionsGuiTooltipHint, ui->labelOptionsUnitsTextSizeHint, ui->labelOptionsFilePatternsHint,
+                     ui->labelOptionsResetLayoutHint, ui->labelOptionsRestartWebServer, ui->labelOptionsResetEmptyHint,
+                     ui->labelOptionsNavigationAidsHint, ui->labelOptionsAppFontHint, ui->labelOptionsAppFontHintProfile,
+                     ui->labelOptionsAirportSettingsHint, ui->labelOptionsAirspaceSettingsHint, ui->labelOptionsUserAircraftSettingsHint,
+                     ui->labelOptionsAiHint, ui->labelOptionsLabelHint, ui->labelOptionsProfileHint, ui->labelOptionsFlightPlanLabelHint,
+                     ui->labelOptionsMapScaleHint, ui->labelOptionsTrailHintOpen, ui->labelOptionsTrailHintStored,
+                     ui->labelOptionsTrailWarn, ui->labelOptionsCompassRoseHint, ui->labelOptionsMeasurmentHint, ui->labelOptionsMsaHint,
+                     ui->labelMapApiKeysHint, ui->labelOptionsMapThemesHint, ui->labelOptionsUnitsOnlineAirspaceHint,
+                     ui->labelOptionsOnlineHint, ui->labelOptionsSimUpdatesHint, ui->labelOptionsWeatherHint,
+                     ui->labelOptionsFileXplaneHint, ui->labelOptionsWeatherDefaultsHint, ui->labelOptionsCacheDiskExpirationHint,
+                     ui->labelOptionsMapThemeDirRestartHint, ui->labelOptionsAppFontRouteHint});
 
-  const static QVector<QLabel *> HINT_LABELS({
-    ui->labelOptionsUpdatesHint,
-    ui->labelOptionsUnitsHint,
-    ui->labelOptionsGuiFontHint,
-    ui->labelOptionsFreetypeHint,
-    ui->labelOptionsGuiHighDpiNoteHint,
-    ui->labelOptionsGuiTooltipHint,
-    ui->labelOptionsUnitsTextSizeHint,
-    ui->labelOptionsFilePatternsHint,
-    ui->labelOptionsResetLayoutHint,
-    ui->labelOptionsRestartWebServer,
-    ui->labelOptionsResetEmptyHint,
-    ui->labelOptionsNavigationAidsHint,
-    ui->labelOptionsAppFontHint,
-    ui->labelOptionsAirportSettingsHint,
-    ui->labelOptionsAirspaceSettingsHint,
-    ui->labelOptionsUserAircraftSettingsHint,
-    ui->labelOptionsAiHint,
-    ui->labelOptionsLabelHint,
-    ui->labelOptionsProfileHint,
-    ui->labelOptionsFlightPlanLabelHint,
-    ui->labelOptionsTrailHint,
-    ui->labelOptionsCompassRoseHint,
-    ui->labelOptionsMeasurmentHint,
-    ui->labelOptionsMsaHint,
-    ui->labelMapApiKeysHint,
-    ui->labelOptionsMapThemesHint,
-    ui->labelOptionsUnitsOnlineAirspaceHint,
-    ui->labelOptionsOnlineHint,
-    ui->labelOptionsSimUpdatesHint,
-    ui->labelOptionsWeatherHint,
-    ui->labelOptionsFileXplaneHint,
-    ui->labelOptionsWeatherDefaultsHint,
-    ui->labelOptionsCacheDiskExpirationHint,
-    ui->labelOptionsMapThemeDirRestartHint
-  });
+  // All labels having a http link ============================================
+  linkLabels.append({ui->labelMapApiKeysHint, ui->labelCacheGlobePathDownload});
 
-  ui->buttonBoxOptions->button(QDialogButtonBox::Ok)->setToolTip(tr("Apply changes and close dialog."));
-  ui->buttonBoxOptions->button(QDialogButtonBox::Cancel)->setToolTip(tr("Discard all changes and close dialog."));
+  // Button box ==========================================================
+  ui->buttonBoxOptions->button(QDialogButtonBox::Close)->setToolTip(tr("Close dialog. You will likely be prompted to apply the changes."));
+  ui->buttonBoxOptions->button(QDialogButtonBox::Apply)->setToolTip(tr("Apply changes immediately.\n"
+                                                                       "Move the dialog window aside to see changes in "
+                                                                       "the main window or the map."));
+
+  ui->buttonBoxOptions->button(QDialogButtonBox::Reset)->setToolTip(tr("Reset all changes done since opening the options dialog."));
+  ui->buttonBoxOptions->button(QDialogButtonBox::Reset)->setText(tr("Reset Changes"));
+
   ui->buttonBoxOptions->button(QDialogButtonBox::RestoreDefaults)->setToolTip(tr("Reset all settings back to default.\n"
-                                                                                 "Changes only settings that can be done with this dialog."));
-
-  ui->buttonBoxOptions->button(QDialogButtonBox::Apply)->setToolTip(tr("Apply changes.\n"
-                                                                       "Move the dialog aside to see changes in main window or map."));
+                                                                                 "Changes only settings that can be "
+                                                                                 "done with this dialog."));
+  ui->buttonBoxOptions->button(QDialogButtonBox::RestoreDefaults)->setText(tr("Restore Defaults"));
 
   // Styles cascade to children and mess up UI themes on linux - even if widget is selected by name
 #if !defined(Q_OS_LINUX) || defined(DEBUG_INFORMATION)
   ui->splitterOptions->setStyleSheet(
-    QString("QSplitter::handle { "
-            "background: %1;"
-            "image: url(:/littlenavmap/resources/icons/splitterhandhoriz.png);"
-            " }").
-    arg(QApplication::palette().color(QPalette::Window).darker(120).name()));
+    QStringLiteral("QSplitter::handle { "
+                   "background: %1;"
+                   "image: url(:/littlenavmap/resources/icons/splitterhandhoriz.png);"
+                   " }").arg(QApplication::palette().color(QPalette::Window).darker(120).name()));
 #endif
 
 #ifndef Q_OS_WIN32
@@ -202,438 +191,667 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
     ui->splitterOptions->handle(1)->setStatusTip(ui->splitterOptions->handle(1)->toolTip());
   }
 
-  zoomHandlerMapThemeKeysTable = new atools::gui::ItemViewZoomHandler(ui->tableWidgetOptionsMapKeys);
-  zoomHandlerLabelTree = new atools::gui::ItemViewZoomHandler(ui->treeWidgetOptionsDisplayTextOptions);
-  zoomHandlerDatabaseInclude = new atools::gui::ItemViewZoomHandler(ui->tableWidgetOptionsDatabaseInclude);
-  zoomHandlerDatabaseExclude = new atools::gui::ItemViewZoomHandler(ui->tableWidgetOptionsDatabaseExclude);
-  zoomHandlerDatabaseAddonExclude = new atools::gui::ItemViewZoomHandler(ui->tableWidgetOptionsDatabaseExcludeAddon);
+  // Zoom handlers for lists ==========================================================
+  zoomHandlerMapThemeKeysTable = new atools::gui::WidgetZoomHandler(ui->tableWidgetOptionsMapKeys);
+  zoomHandlerLabelTree = new atools::gui::WidgetZoomHandler(ui->treeWidgetOptionsDisplayTextOptions);
+  zoomHandlerDatabaseInclude = new atools::gui::WidgetZoomHandler(ui->tableWidgetOptionsDatabaseInclude);
+  zoomHandlerDatabaseExclude = new atools::gui::WidgetZoomHandler(ui->tableWidgetOptionsDatabaseExclude);
+  zoomHandlerDatabaseAddonExclude = new atools::gui::WidgetZoomHandler(ui->tableWidgetOptionsDatabaseExcludeAddon);
 
-  gridDelegate = new atools::gui::GridDelegate(ui->treeWidgetOptionsDisplayTextOptions);
+  gridDelegate = new atools::gui::GridDelegate(ui->treeWidgetOptionsDisplayTextOptions, 1. /* borderPenWidth */, 1 /* heightIncrease */);
   listWidgetIndex = new atools::gui::ListWidgetIndex(ui->listWidgetOptionPages, ui->stackedWidgetOptions);
   ui->treeWidgetOptionsDisplayTextOptions->setItemDelegate(gridDelegate);
 
   // Add option pages with text, icon and tooltip ========================================
-  /* *INDENT-OFF* */
-  QListWidget *list = ui->listWidgetOptionPages;
-  list->addItem(pageListItem(list, tr("Startup and Updates"), tr("Select what should be reloaded on startup and change update settings."), ":/littlenavmap/resources/icons/littlenavmap.svg"));
-  list->addItem(pageListItem(list, tr("User Interface"), tr("Change language settings, window options and other user interface behavior."), ":/littlenavmap/resources/icons/statusbar.svg"));
-  list->addItem(pageListItem(list, tr("Display and Text"), tr("Change text sizes, user interface font, tooltips and more display options."), ":/littlenavmap/resources/icons/copy.svg"));
-  list->addItem(pageListItem(list, tr("Units"), tr("Fuel, distance, speed and coordinate units as well as\noptions for course and heading display."), ":/littlenavmap/resources/icons/units.svg"));
-  list->addItem(pageListItem(list, tr("Files"), tr("Edit flight plan file pattern and more file related actions."), ":/littlenavmap/resources/icons/fileopen.svg"));
-  list->addItem(pageListItem(list, tr("Map"), tr("Change map window behavior, handling of empty airports, and general display options."), ":/littlenavmap/resources/icons/mapsettings.svg"));
-  list->addItem(pageListItem(list, tr("Map Tooltips and Clicks"), tr("Tooltip and map click settings."), ":/littlenavmap/resources/icons/mapclick.svg"));
-  list->addItem(pageListItem(list, tr("Map Navigation"), tr("Zoom, click, screen navigation and mouse wheel settings."), ":/littlenavmap/resources/icons/mapnavigation.svg"));
-  list->addItem(pageListItem(list, tr("Map Display"), tr("Change colors, symbols, texts and font for map display and elevation profile objects."), ":/littlenavmap/resources/icons/mapdisplay.svg"));
-  list->addItem(pageListItem(list, tr("Map Flight Plan"), tr("Adjust display style and colors for the flight plan on the map and the elevation profile."), ":/littlenavmap/resources/icons/mapdisplayflightplan.svg"));
-  list->addItem(pageListItem(list, tr("Map Aircraft Trail"), tr("Edit display of the user aircraft trail and number of trail points."), ":/littlenavmap/resources/icons/aircrafttrail.svg"));
-  list->addItem(pageListItem(list, tr("Map User"), tr("Change colors, symbols and texts for highlights, measurement lines and other user features for map and elevation profile."), ":/littlenavmap/resources/icons/mapdisplay2.svg"));
-  list->addItem(pageListItem(list, tr("Map Labels"), tr("Change map display and elevation profile label options for all map features."), ":/littlenavmap/resources/icons/mapdisplaylabels.svg"));
-  list->addItem(pageListItem(list, tr("Map Keys"), tr("Enter username, API keys or tokens for map services which require a login."), ":/littlenavmap/resources/icons/mapdisplaykeys.svg"));
-  list->addItem(pageListItem(list, tr("Map Online"), tr("Map display online center options."), ":/littlenavmap/resources/icons/airspaceonline.svg"));
-  list->addItem(pageListItem(list, tr("Simulator Aircraft"), tr("Update and movement options for the user aircraft."), ":/littlenavmap/resources/icons/aircraft.svg"));
-  list->addItem(pageListItem(list, tr("Flight Plan"), tr("Options for flight plan calculation and elevation profile altitude buffer."), ":/littlenavmap/resources/icons/route.svg"));
-  list->addItem(pageListItem(list, tr("Weather"), tr("Change weather sources for information and tooltips."), ":/littlenavmap/resources/icons/weather.svg"));
-  list->addItem(pageListItem(list, tr("Weather Files"), tr("Change web download addresses or file paths of weather sources."), ":/littlenavmap/resources/icons/weatherurl.svg"));
-  list->addItem(pageListItem(list, tr("Online Flying"), tr("Select online flying services like VATSIM, IVAO or custom."), ":/littlenavmap/resources/icons/aircraft_online.svg"));
-  list->addItem(pageListItem(list, tr("Web Server"), tr("Change settings for the internal web server."), ":/littlenavmap/resources/icons/web.svg"));
-  list->addItem(pageListItem(list, tr("Cache and Files"), tr("Change map cache, select elevation data source and the path for user airspaces."), ":/littlenavmap/resources/icons/filesave.svg"));
-  list->addItem(pageListItem(list, tr("Scenery Library Database"), tr("Exclude scenery files from loading and\nadd-on recognition."), ":/littlenavmap/resources/icons/database.svg"));
-  /* *INDENT-ON* */
+  // The title has to match all text references in the program
+  // The id must match all "lnm://pagename" links and is also used to refer to the options help page like
+  // "https://www.littlenavmap.org/manuals/littlenavmap/release/3.0/en/OPTIONS.html#options-page-pagename"
+  addPageListItem(QStringLiteral("startupandupdates"),
+                  tr("Startup and Updates"),
+                  tr("Select what should be reloaded on startup and change update settings."),
+                  QStringLiteral(":/littlenavmap/resources/icons/littlenavmap.svg"));
 
-#ifdef DEBUG_INFORMATION
-  for(int i = 0; i < list->count(); i++)
-    qDebug() << Q_FUNC_INFO << i << list->item(i)->text();
-#endif
+  addPageListItem(QStringLiteral("userinterface"),
+                  tr("User Interface"),
+                  tr("Change language settings, window options and other user interface behavior."),
+                  QStringLiteral(":/littlenavmap/resources/icons/statusbar.svg"));
+
+  addPageListItem(QStringLiteral("displayandtext"),
+                  tr("Display and Text"),
+                  tr("Change text sizes, user interface font, tooltips and more display options."),
+                  QStringLiteral(":/littlenavmap/resources/icons/copy.svg"));
+
+  addPageListItem(QStringLiteral("units"),
+                  tr("Units"),
+                  tr("Fuel, distance, speed and coordinate units as well as\noptions for course and heading display."),
+                  QStringLiteral(":/littlenavmap/resources/icons/units.svg"));
+
+  addPageListItem(QStringLiteral("files"),
+                  tr("Files"),
+                  tr("Edit flight plan file pattern and more file related actions."),
+                  QStringLiteral(":/littlenavmap/resources/icons/fileopen.svg"));
+
+  addPageListItem(QStringLiteral("map"),
+                  tr("Map"),
+                  tr("Change map window behavior, handling of empty airports, and general display options."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapsettings.svg"));
+
+  addPageListItem(QStringLiteral("maptooltipsandclicks"),
+                  tr("Map Tooltips and Clicks"),
+                  tr("Tooltip and map click settings."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapclick.svg"));
+
+  addPageListItem(QStringLiteral("mapnavigation"),
+                  tr("Map Navigation"),
+                  tr("Zoom, click, screen navigation and mouse wheel settings."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapnavigation.svg"));
+
+  addPageListItem(QStringLiteral("mapdisplayfont"),
+                  tr("Map Font and Scale"),
+                  tr("Change the map display font and overall scale for symbols and labels."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapfont.svg"));
+
+  addPageListItem(QStringLiteral("mapdisplayfeatures"),
+                  tr("Map Display Features"),
+                  tr("Change colors, symbols, texts and font for map display and elevation profile objects."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapdisplay.svg"));
+
+  addPageListItem(QStringLiteral("mapflightplan"),
+                  tr("Map Flight Plan"),
+                  tr("Adjust display style and colors for the flight plan on the map and the elevation profile."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapdisplayflightplan.svg"));
+
+  addPageListItem(QStringLiteral("mapaircrafttrail"),
+                  tr("Map Aircraft Trail"),
+                  tr("Edit display of the user aircraft trail and number of trail points."),
+                  QStringLiteral(":/littlenavmap/resources/icons/aircrafttrail.svg"));
+
+  addPageListItem(QStringLiteral("mapuser"),
+                  tr("Map User"),
+                  tr("Change colors, symbols and texts for highlights, measurement lines and "
+                     "other map markers for map and elevation profile."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapdisplay2.svg"));
+
+  addPageListItem(QStringLiteral("mapoptions"),
+                  tr("Map Options and Labels"),
+                  tr("Change label and other display options for map objects on the map and the elevation profile."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapdisplaylabels.svg"));
+
+  addPageListItem(QStringLiteral("mapcache"),
+                  tr("Map Cache"),
+                  tr("Change map cache and the path for user airspaces."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapcache.svg"));
+
+  addPageListItem(QStringLiteral("mapthemes"),
+                  tr("Map Themes"),
+                  tr("Change path to additional background map themes."),
+                  QStringLiteral(":/littlenavmap/resources/icons/map.svg"));
+
+  addPageListItem(QStringLiteral("mapkeys"),
+                  tr("Map Theme Keys"),
+                  tr("Enter username, API keys or tokens for map services which require a login."),
+                  QStringLiteral(":/littlenavmap/resources/icons/mapdisplaykeys.svg"));
+
+  addPageListItem(QStringLiteral("maponline"),
+                  tr("Map Online"),
+                  tr("Map display online center and airspace options."),
+                  QStringLiteral(":/littlenavmap/resources/icons/airspaceonline.svg"));
+
+  addPageListItem(QStringLiteral("elevationprofile"),
+                  tr("Elevation Profile"),
+                  tr("Change font and other settings for the elevation profile."),
+                  QStringLiteral(":/littlenavmap/resources/icons/profiledock.svg"));
+
+  addPageListItem(QStringLiteral("elevationdata"),
+                  tr("Elevation Data"),
+                  tr("Install and select elevation data."),
+                  QStringLiteral(":/littlenavmap/resources/icons/profiledata.svg"));
+
+  addPageListItem(QStringLiteral("simulatoraircraft"),
+                  tr("Simulator Aircraft"),
+                  tr("Update and movement options for the user aircraft."),
+                  QStringLiteral(":/littlenavmap/resources/icons/aircraft.svg"));
+
+  addPageListItem(QStringLiteral("flightplan"),
+                  tr("Flight Plan"),
+                  tr("Options for flight plan calculation and elevation profile altitude buffer."),
+                  QStringLiteral(":/littlenavmap/resources/icons/route.svg"));
+
+  addPageListItem(QStringLiteral("weather"),
+                  tr("Weather"),
+                  tr("Change weather sources for information and tooltips."),
+                  QStringLiteral(":/littlenavmap/resources/icons/weather.svg"));
+
+  addPageListItem(QStringLiteral("weatherfiles"),
+                  tr("Weather Files"),
+                  tr("Change web download addresses or file paths of weather sources."),
+                  QStringLiteral(":/littlenavmap/resources/icons/weatherurl.svg"));
+
+  addPageListItem(QStringLiteral("onlineflying"),
+                  tr("Online Flying"),
+                  tr("Select online flying services like VATSIM, IVAO or custom."),
+                  QStringLiteral(":/littlenavmap/resources/icons/aircraft_online.svg"));
+
+  addPageListItem(QStringLiteral("webserver"),
+                  tr("Web Server"),
+                  tr("Change settings for the internal web server."),
+                  QStringLiteral(":/littlenavmap/resources/icons/web.svg"));
+
+  addPageListItem(QStringLiteral("scenerylibrarydatabase"),
+                  tr("Scenery Library Database"),
+                  tr("Exclude scenery files from loading and\nadd-on recognition."),
+                  QStringLiteral(":/littlenavmap/resources/icons/database.svg"));
 
   // Build tree settings to map tab =====================================================
-  /* *INDENT-OFF* */
   // Top of map =====================================================
   QTreeWidgetItem *topOfMap = addTopItem(tr("Top of Map"), tr("Select information that is displayed on top of the map."));
-  addItem<optsac::DisplayOptionsUserAircraft>(topOfMap, displayOptItemIndexUser, tr("Wind Direction and Speed"), tr("Show wind direction and speed on the top center of the map."), optsac::ITEM_USER_AIRCRAFT_WIND, true);
-  addItem<optsac::DisplayOptionsUserAircraft>(topOfMap, displayOptItemIndexUser, tr("Wind Pointer"), tr("Show wind direction pointer on the top center of the map."), optsac::ITEM_USER_AIRCRAFT_WIND_POINTER, true);
+  addItem<optsac::DisplayOptionsUserAircraft>(topOfMap, p->displayOptItemIndexUser, tr("Wind Direction and Speed"),
+                                              tr("Show wind direction and speed on the top center of the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_WIND, true /* checked */);
+  addItem<optsac::DisplayOptionsUserAircraft>(topOfMap, p->displayOptItemIndexUser, tr("Wind Pointer"),
+                                              tr("Show wind direction pointer on the top center of the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_WIND_POINTER, true /* checked */);
 
   // Map Navigation Aids =====================================================
-  QTreeWidgetItem *navAids = addTopItem(tr("Map Navigation Aids"), QString());
-  addItem<optsd::DisplayOptionsNavAid>(navAids , displayOptItemIndexNavAid, tr("Center Cross"), tr("Shows the map center. Useful if \"Click map to center position\"\n"
-                                                                                                   "on page \"Map Navigation\" is enabled."), optsd::NAVAIDS_CENTER_CROSS);
-  addItem<optsd::DisplayOptionsNavAid>(navAids , displayOptItemIndexNavAid, tr("Screen Area"), tr("Highlight click- or touchable areas on screen.\nOnly shown if \"Use map areas\"\n"
-                                                                                                  "on page \"Map Navigation\" is enabled as well."), optsd::NAVAIDS_TOUCHSCREEN_REGIONS);
-  addItem<optsd::DisplayOptionsNavAid>(navAids , displayOptItemIndexNavAid, tr("Screen Areas Marks"), tr("Shows corner marks to highlight the screen areas.\n"
-                                                                                                         "Helps if map areas are used for touchscreen navigation.\n"
-                                                                                                         "Only shown if \"Use map areas\" on page \"Map Navigation\" is enabled as well."), optsd::NAVAIDS_TOUCHSCREEN_AREAS);
-  addItem<optsd::DisplayOptionsNavAid>(navAids , displayOptItemIndexNavAid, tr("Screen Area Icons"), tr("Shows icons for the screen areas.\n"
-                                                                                                        "Useful if map areas are used for touchscreen navigation.\n"
-                                                                                                        "Only shown if \"Use map areas\" on page \"Map Navigation\" is enabled as well."), optsd::NAVAIDS_TOUCHSCREEN_ICONS);
+  QTreeWidgetItem *navAids = addTopItem(tr("Map Navigation Aids"), QStringLiteral());
+  addItem<optsd::DisplayOptionsNavAid>(navAids, p->displayOptItemIndexNavAid, tr("Center Cross"),
+                                       tr("Shows the map center. Useful if \"Click map to center position\"\n"
+                                          "on page \"Map Navigation\" is enabled."),
+                                       optsd::NAVAIDS_CENTER_CROSS);
+  addItem<optsd::DisplayOptionsNavAid>(navAids, p->displayOptItemIndexNavAid, tr("Screen Area"),
+                                       tr("Highlight click- or touchable areas on screen.\nOnly shown if \"Use map areas\"\n"
+                                          "on page \"Map Navigation\" is enabled as well."),
+                                       optsd::NAVAIDS_TOUCHSCREEN_REGIONS);
+  addItem<optsd::DisplayOptionsNavAid>(navAids, p->displayOptItemIndexNavAid, tr("Screen Area Icons"),
+                                       tr("Shows icons for the screen areas.\n"
+                                          "Useful if map areas are used for touchscreen navigation.\n"
+                                          "Only shown if \"Use map areas\" on page \"Map Navigation\" is enabled as well."),
+                                       optsd::NAVAIDS_TOUCHSCREEN_ICONS);
 
   // Airport =====================================================
-  QTreeWidgetItem *airport = addTopItem(tr("Airports"), tr("Select airport labels to display on the map."));
-  addItem<optsd::DisplayOptionsAirport>(airport, displayOptItemIndexAirport, tr("Name (Ident)"), tr("Airport name and ident in brackets depending on zoom factor.\n"
-                                                                                                    "Ident can be internal, ICAO, FAA, IATA or local depending on availability."), optsd::ITEM_AIRPORT_NAME, true);
-  addItem<optsd::DisplayOptionsAirport>(airport, displayOptItemIndexAirport, tr("Tower Frequency"), QString(), optsd::ITEM_AIRPORT_TOWER, true);
-  addItem<optsd::DisplayOptionsAirport>(airport, displayOptItemIndexAirport, tr("ATIS / ASOS / AWOS Frequency"), QString(), optsd::ITEM_AIRPORT_ATIS, true);
-  addItem<optsd::DisplayOptionsAirport>(airport, displayOptItemIndexAirport, tr("Runway Information"), tr("Show runway elevation, light indicator \"L\" and length text."), optsd::ITEM_AIRPORT_RUNWAY, true);
+  QTreeWidgetItem *airport = addTopItem(tr("Airport Labels"), tr("Select airport labels to display on the map."));
+  addItem<optsd::DisplayOptionsAirport>(airport, p->displayOptItemIndexAirport, tr("Name (Ident)"),
+                                        tr("Airport name and ident in brackets depending on zoom factor.\n"
+                                           "Ident can be internal, ICAO, FAA, IATA or local depending on availability."),
+                                        optsd::ITEM_AIRPORT_NAME, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airport, p->displayOptItemIndexAirport, tr("Tower Frequency"), QStringLiteral(),
+                                        optsd::ITEM_AIRPORT_TOWER, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airport, p->displayOptItemIndexAirport, tr("ATIS / ASOS / AWOS Frequency"), QStringLiteral(),
+                                        optsd::ITEM_AIRPORT_ATIS, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airport, p->displayOptItemIndexAirport, tr("Runway Information"),
+                                        tr("Show runway elevation, light indicator \"L\" and length text."),
+                                        optsd::ITEM_AIRPORT_RUNWAY, true /* checked */);
 
   // Airport details =====================================================
-  QTreeWidgetItem *airportDetails = addTopItem(tr("Airport Details"), tr("Select airport diagram elements."));
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Runways"), tr("Show runways."), optsd::ITEM_AIRPORT_DETAIL_RUNWAY, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Taxiways"), tr("Show taxiways. This applies partially to MSFS and fully to FSX and P3D.\n"
-                                                                                                       "X-Plane simulators have taxiways integrated into the apron geometry."), optsd::ITEM_AIRPORT_DETAIL_TAXI, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Taxiway Lines"), tr("Show taxiway lines."), optsd::ITEM_AIRPORT_DETAIL_TAXI_LINE, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Taxiway Names"), tr("Show taxiway names."), optsd::ITEM_AIRPORT_DETAIL_TAXI_NAME, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Aprons"), tr("Display aprons."), optsd::ITEM_AIRPORT_DETAIL_APRON, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Parking"), tr("Show fuel, tower, helipads, gates and ramp parking."), optsd::ITEM_AIRPORT_DETAIL_PARKING, true);
-  addItem<optsd::DisplayOptionsAirport>(airportDetails, displayOptItemIndexAirport, tr("Boundary"), tr("Display a white boundary around and below the airport diagram."), optsd::ITEM_AIRPORT_DETAIL_BOUNDARY);
+  QTreeWidgetItem *airportDetails = addTopItem(tr("Airport Diagram Options"), tr("Select airport diagram elements."));
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Runways"), tr("Show runways."),
+                                        optsd::ITEM_AIRPORT_DETAIL_RUNWAY, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Taxiways"),
+                                        tr("Show taxiways. This applies partially to MSFS and fully to FSX and P3D.\n"
+                                           "X-Plane simulators have taxiways integrated into the apron geometry."),
+                                        optsd::ITEM_AIRPORT_DETAIL_TAXI, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Taxiway Lines"), tr("Show taxiway lines."),
+                                        optsd::ITEM_AIRPORT_DETAIL_TAXI_LINE, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Taxiway Names"), tr("Show taxiway names."),
+                                        optsd::ITEM_AIRPORT_DETAIL_TAXI_NAME, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Aprons"), tr("Display aprons."),
+                                        optsd::ITEM_AIRPORT_DETAIL_APRON, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Parking"),
+                                        tr("Show fuel, tower, helipads, gates and ramp parking."),
+                                        optsd::ITEM_AIRPORT_DETAIL_PARKING, true /* checked */);
+  addItem<optsd::DisplayOptionsAirport>(airportDetails, p->displayOptItemIndexAirport, tr("Boundary"),
+                                        tr("Display a white boundary around and below the airport diagram."),
+                                        optsd::ITEM_AIRPORT_DETAIL_BOUNDARY);
 
   // Flight plan =====================================================
-  QTreeWidgetItem *route = addTopItem(tr("Flight Plan"), tr("Select display options for the flight plan line."));
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("Distance"), tr("Show distance along flight plan leg.\n"
-                                                                                          "The label moves to keep it visible while scrolling."), optsd::ROUTE_DISTANCE, true);
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("Airway"), tr("Show airway.\n"
-                                                                                        "The label moves to keep it visible while scrolling."), optsd::ROUTE_AIRWAY);
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("Magnetic Course"), tr("Show great circle magnetic start course at flight plan leg.\n"
-                                                                                                 "Does not consider VOR calibrated declination.\n"
-                                                                                                 "The label moves to keep it visible while scrolling."), optsd::ROUTE_MAG_COURSE);
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("True Course"), tr("Show great circle true start course at flight plan leg.\n"
-                                                                                             "The label moves to keep it visible while scrolling."), optsd::ROUTE_TRUE_COURSE);
+  QTreeWidgetItem *route = addTopItem(tr("Flight Plan Labels"), tr("Select display options for the flight plan line."));
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("Distance"),
+                                      tr("Show distance along flight plan leg.\n"
+                                         "The label moves to keep it visible while scrolling."),
+                                      optsd::ROUTE_DISTANCE, true /* checked */);
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("Airway"),
+                                      tr("Show airway.\n"
+                                         "The label moves to keep it visible while scrolling."),
+                                      optsd::ROUTE_AIRWAY);
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("Magnetic Course"),
+                                      tr("Show great circle magnetic start course at flight plan leg.\n"
+                                         "Does not consider VOR calibrated declination.\n"
+                                         "The label moves to keep it visible while scrolling."),
+                                      optsd::ROUTE_MAG_COURSE);
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("True Course"),
+                                      tr("Show great circle true start course at flight plan leg.\n"
+                                         "The label moves to keep it visible while scrolling."),
+                                      optsd::ROUTE_TRUE_COURSE);
 
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("Magnetic Start and End Course"), tr("Display great circle initial and final magnetic course\n"
-                                                                                                               "at the start and end of flight plan legs.\n"
-                                                                                                               "The label is fixed. Course also depends on\n"
-                                                                                                               "VOR calibrated declination and\n"
-                                                                                                               "is colored blue if related to VOR.\n"
-                                                                                                               "Not shown at procedure legs."), optsd::ROUTE_INITIAL_FINAL_MAG_COURSE, true);
-  addItem<optsd::DisplayOptionsRoute>(route, displayOptItemIndexRoute, tr("True Start and End Course"), tr("Display great circle initial and final true course at\n"
-                                                                                                           "the start and end of flight plan legs.\n"
-                                                                                                           "The label is fixed. Not shown at procedure legs."), optsd::ROUTE_INITIAL_FINAL_TRUE_COURSE);
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("Magnetic Start and End Course"),
+                                      tr("Display great circle initial and final magnetic course\n"
+                                         "at the start and end of flight plan legs.\n"
+                                         "The label is fixed. Course also depends on\n"
+                                         "VOR calibrated declination and\n"
+                                         "is colored blue if related to VOR.\n"
+                                         "Not shown at procedure legs."),
+                                      optsd::ROUTE_INITIAL_FINAL_MAG_COURSE, true /* checked */);
+  addItem<optsd::DisplayOptionsRoute>(route, p->displayOptItemIndexRoute, tr("True Start and End Course"),
+                                      tr("Display great circle initial and final true course at\n"
+                                         "the start and end of flight plan legs.\n"
+                                         "The label is fixed. Not shown at procedure legs."),
+                                      optsd::ROUTE_INITIAL_FINAL_TRUE_COURSE);
 
   // Airspace =====================================================
-  QTreeWidgetItem *airspaces = addTopItem(tr("Airspaces"), QString());
-  addItem<optsd::DisplayOptionsAirspace>(airspaces , displayOptItemIndexAirspace, tr("Name"), tr("Shows the airspace name."), optsd::AIRSPACE_NAME);
-  addItem<optsd::DisplayOptionsAirspace>(airspaces , displayOptItemIndexAirspace, tr("Restrictive Name"), tr("Shows the restrictive name like \"P-51\" of an airspace."), optsd::AIRSPACE_RESTRICTIVE_NAME, true);
-  addItem<optsd::DisplayOptionsAirspace>(airspaces , displayOptItemIndexAirspace, tr("Type"), tr("Type of airspace like \"Prohibited\"."), optsd::AIRSPACE_TYPE, true);
-  addItem<optsd::DisplayOptionsAirspace>(airspaces , displayOptItemIndexAirspace, tr("Altitude"), tr("Display the altitude restrictions of airspaces."), optsd::AIRSPACE_ALTITUDE, true);
-  addItem<optsd::DisplayOptionsAirspace>(airspaces , displayOptItemIndexAirspace, tr("COM Frequency"), tr("Airspace COM frequency if available."), optsd::AIRSPACE_COM, true);
+  QTreeWidgetItem *airspaces = addTopItem(tr("Airspace Labels"), QStringLiteral());
+  addItem<optsd::DisplayOptionsAirspace>(airspaces, p->displayOptItemIndexAirspace, tr("Name"),
+                                         tr("Shows the airspace name."),
+                                         optsd::AIRSPACE_NAME);
+  addItem<optsd::DisplayOptionsAirspace>(airspaces, p->displayOptItemIndexAirspace, tr("Restrictive Name"),
+                                         tr("Shows the restrictive name like \"P-51\" of an airspace."),
+                                         optsd::AIRSPACE_RESTRICTIVE_NAME,
+                                         true);
+  addItem<optsd::DisplayOptionsAirspace>(airspaces, p->displayOptItemIndexAirspace, tr("Type"),
+                                         tr("Type of airspace like \"Prohibited\"."),
+                                         optsd::AIRSPACE_TYPE, true /* checked */);
+  addItem<optsd::DisplayOptionsAirspace>(airspaces, p->displayOptItemIndexAirspace, tr("Altitude"),
+                                         tr("Display the altitude restrictions of airspaces."),
+                                         optsd::AIRSPACE_ALTITUDE, true /* checked */);
+  addItem<optsd::DisplayOptionsAirspace>(airspaces, p->displayOptItemIndexAirspace, tr("COM Frequency"),
+                                         tr("Airspace COM frequency if available."),
+                                         optsd::AIRSPACE_COM, true /* checked */);
 
   // User aircraft =====================================================
-  QTreeWidgetItem *userAircraft = addTopItem(tr("User Aircraft"), tr("Select text labels and other options for the user aircraft."));
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Registration"), tr("Aircraft registration like \"N1000A\" or \"D-MABC\"."), optsac::ITEM_USER_AIRCRAFT_REGISTRATION);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Type"), tr("Show the aircraft type, like B738, B350 or M20T."), optsac::ITEM_USER_AIRCRAFT_TYPE);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Airline"), tr("Airline like \"Orbit Airlines\"."), optsac::ITEM_USER_AIRCRAFT_AIRLINE);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Flight Number"), tr("Flight number like \"123\"."), optsac::ITEM_USER_AIRCRAFT_FLIGHT_NUMBER);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Transponder Code"), tr("Transponder code prefixed with \"XPDR\" on the map."), optsac::ITEM_USER_AIRCRAFT_TRANSPONDER_CODE);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Indicated Airspeed"), tr("Value prefixed with \"IAS\" on the map."), optsac::ITEM_USER_AIRCRAFT_IAS);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Ground Speed"), tr("Value prefixed with \"GS\" on the map."), optsac::ITEM_USER_AIRCRAFT_GS, true);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("True Airspeed"), tr("Value prefixed with \"TAS\" on the map."), optsac::ITEM_USER_AIRCRAFT_TAS);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Climb- and Sinkrate"), QString(), optsac::ITEM_USER_AIRCRAFT_CLIMB_SINK);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Heading"), tr("Aircraft magnetic heading prefixed with \"HDG\" on the map."), optsac::ITEM_USER_AIRCRAFT_HEADING);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Actual Altitude"), tr("Real aircraft altitude prefixed with \"ALT\" on the map."), optsac::ITEM_USER_AIRCRAFT_ALTITUDE, true);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Indicated Altitude"), tr("Indicated aircraft altitude prefixed with \"IND\" on the map."), optsac::ITEM_USER_AIRCRAFT_INDICATED_ALTITUDE);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Altitude above ground"), tr("Actual altitude above ground. Prefixed with \"AGL\" on the map."), optsac::ITEM_USER_AIRCRAFT_ALT_ABOVE_GROUND);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Track Line"), tr("Show the aircraft trail as a black needle at\n"
-                                                                                                          "the from of the user aircraft."), optsac::ITEM_USER_AIRCRAFT_TRACK_LINE, true);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Coordinates"), tr("Show aircraft coordinates using the format selected on\n"
-                                                                                                           "options page \"Units\"."), optsac::ITEM_USER_AIRCRAFT_COORDINATES);
-  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, displayOptItemIndexUser, tr("Icing"), tr("Show a red label \"ICE\" and icing values in percent\n"
-                                                                                                     "when aircraft icing occurs."), optsac::ITEM_USER_AIRCRAFT_ICE);
+  QTreeWidgetItem *userAircraft = addTopItem(tr("User Aircraft Options and Labels"),
+                                             tr("Select text labels and other options for the user aircraft."));
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Registration"),
+                                              tr("Aircraft registration like \"N1000A\" or \"D-MABC\"."),
+                                              optsac::ITEM_USER_AIRCRAFT_REGISTRATION);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Type"),
+                                              tr("Show the aircraft type, like B738, B350 or M20T."),
+                                              optsac::ITEM_USER_AIRCRAFT_TYPE);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Airline"),
+                                              tr("Airline like \"Orbit Airlines\"."),
+                                              optsac::ITEM_USER_AIRCRAFT_AIRLINE);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Flight Number"),
+                                              tr("Flight number like \"123\"."),
+                                              optsac::ITEM_USER_AIRCRAFT_FLIGHT_NUMBER);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Transponder Code"),
+                                              tr("Transponder code prefixed with \"XPDR\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_TRANSPONDER_CODE);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Indicated Airspeed"),
+                                              tr("Value prefixed with \"IAS\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_IAS);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Ground Speed"),
+                                              tr("Value prefixed with \"GS\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_GS, true /* checked */);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("True Airspeed"),
+                                              tr("Value prefixed with \"TAS\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_TAS);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Climb- and Sinkrate"), QStringLiteral(),
+                                              optsac::ITEM_USER_AIRCRAFT_CLIMB_SINK);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Heading"),
+                                              tr("Aircraft magnetic heading prefixed with \"HDG\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_HEADING);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Actual Altitude"),
+                                              tr("Real aircraft altitude prefixed with \"ALT\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_ALTITUDE, true /* checked */);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Indicated Altitude"),
+                                              tr("Indicated aircraft altitude prefixed with \"IND\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_INDICATED_ALTITUDE);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Altitude above ground"),
+                                              tr("Actual altitude above ground. Prefixed with \"AGL\" on the map."),
+                                              optsac::ITEM_USER_AIRCRAFT_ALT_ABOVE_GROUND);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Track Line"),
+                                              tr("Show the aircraft track as a black pin\n"
+                                                 "in front of the user aircraft."),
+                                              optsac::ITEM_USER_AIRCRAFT_TRACK_LINE, true /* checked */);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Coordinates"),
+                                              tr("Show aircraft coordinates using the format selected on\n"
+                                                 "options page \"Units\"."),
+                                              optsac::ITEM_USER_AIRCRAFT_COORDINATES);
+  addItem<optsac::DisplayOptionsUserAircraft>(userAircraft, p->displayOptItemIndexUser, tr("Icing"),
+                                              tr("Show a red label \"ICE\" and icing values in percent\n"
+                                                 "when aircraft icing occurs."),
+                                              optsac::ITEM_USER_AIRCRAFT_ICE);
 
   // AI =====================================================
-  QTreeWidgetItem *aiAircraft = addTopItem(tr("AI, Multiplayer and Online Client Aircraft"), tr("Select text labels for the AI, multiplayer and online client aircraft."));
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Registration, Number or Callsign"), tr("Aircraft registration like \"N1000A\" or \"D-MABC\"."), optsac::ITEM_AI_AIRCRAFT_REGISTRATION, true);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Type"), tr("Show the AI aircraft type, like B738, B350 or M20T."), optsac::ITEM_AI_AIRCRAFT_TYPE, true);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Airline"), tr("Airline like \"Orbit Airlines\"."), optsac::ITEM_AI_AIRCRAFT_AIRLINE, true);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Flight Number"), tr("Flight number like \"123\"."), optsac::ITEM_AI_AIRCRAFT_FLIGHT_NUMBER);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Transponder Code"), tr("Transponder code prefixed with \"XPDR\" on the map"), optsac::ITEM_AI_AIRCRAFT_TRANSPONDER_CODE);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Indicated Airspeed"), tr("Value prefixed with \"IAS\" on the map"), optsac::ITEM_AI_AIRCRAFT_IAS);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Ground Speed"), tr("Value prefixed with \"GS\" on the map"), optsac::ITEM_AI_AIRCRAFT_GS, true);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("True Airspeed"), tr("Value prefixed with \"TAS\" on the map"), optsac::ITEM_AI_AIRCRAFT_TAS);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Climb- and Sinkrate"), QString(), optsac::ITEM_AI_AIRCRAFT_CLIMB_SINK);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Heading"), tr("Aircraft magnetic heading prefixed with \"HDG\" on the map"), optsac::ITEM_AI_AIRCRAFT_HEADING);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Actual Altitude"), tr("Real aircraft altitude prefixed with \"ALT\" on the map"), optsac::ITEM_AI_AIRCRAFT_ALTITUDE, true);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Indicated Altitude"), tr("Indicated aircraft altitude prefixed with \"IND\" on the map"), optsac::ITEM_AI_AIRCRAFT_INDICATED_ALTITUDE);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Departure and Destination"), tr("Departure and destination airport idents"), optsac::ITEM_AI_AIRCRAFT_DEP_DEST);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Coordinates"), tr("Show aircraft coordinates using the format selected on\n"
-                                                                                                     "options page \"Units\"."), optsac::ITEM_AI_AIRCRAFT_COORDINATES);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Distance and Bearing from User"), tr("Distance and magnetic bearing from user aircraft\n"
-                                                                                                                        "prefixed with \"From User\"."), optsac::ITEM_AI_AIRCRAFT_DIST_BEARING_FROM_USER);
-  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, displayOptItemIndexAi, tr("Object ID"), tr("Internal object ID for traffic development or debugging.\n"
-                                                                                                   "Value is prefixed with \"ID\" and depends on simulator."), optsac::ITEM_AI_AIRCRAFT_OBJECT_ID);
+  QTreeWidgetItem *aiAircraft = addTopItem(tr("AI, Multiplayer and Online Client Aircraft Labels"),
+                                           tr("Select text labels for the AI, multiplayer and online client aircraft."));
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Registration, Number or Callsign"),
+                                            tr("Aircraft registration like \"N1000A\" or \"D-MABC\"."),
+                                            optsac::ITEM_AI_AIRCRAFT_REGISTRATION, true /* checked */);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Type"),
+                                            tr("Show the AI aircraft type, like B738, B350 or M20T."),
+                                            optsac::ITEM_AI_AIRCRAFT_TYPE, true /* checked */);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Airline"),
+                                            tr("Airline like \"Orbit Airlines\"."),
+                                            optsac::ITEM_AI_AIRCRAFT_AIRLINE, true /* checked */);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Flight Number"),
+                                            tr("Flight number like \"123\"."),
+                                            optsac::ITEM_AI_AIRCRAFT_FLIGHT_NUMBER);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Transponder Code"),
+                                            tr("Transponder code prefixed with \"XPDR\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_TRANSPONDER_CODE);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Indicated Airspeed"),
+                                            tr("Value prefixed with \"IAS\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_IAS);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Ground Speed"),
+                                            tr("Value prefixed with \"GS\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_GS, true /* checked */);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("True Airspeed"),
+                                            tr("Value prefixed with \"TAS\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_TAS);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Climb- and Sinkrate"), QStringLiteral(),
+                                            optsac::ITEM_AI_AIRCRAFT_CLIMB_SINK);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Heading"),
+                                            tr("Aircraft magnetic heading prefixed with \"HDG\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_HEADING);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Actual Altitude"),
+                                            tr("Real aircraft altitude prefixed with \"ALT\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_ALTITUDE, true /* checked */);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Indicated Altitude"),
+                                            tr("Indicated aircraft altitude prefixed with \"IND\" on the map"),
+                                            optsac::ITEM_AI_AIRCRAFT_INDICATED_ALTITUDE);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Departure and Destination"),
+                                            tr("Departure and destination airport idents"),
+                                            optsac::ITEM_AI_AIRCRAFT_DEP_DEST);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Coordinates"),
+                                            tr("Show aircraft coordinates using the format selected on\n"
+                                               "options page \"Units\"."),
+                                            optsac::ITEM_AI_AIRCRAFT_COORDINATES);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Distance and Bearing from User"),
+                                            tr("Distance and magnetic bearing from user aircraft\n"
+                                               "prefixed with \"From User\"."),
+                                            optsac::ITEM_AI_AIRCRAFT_DIST_BEARING_FROM_USER);
+  addItem<optsac::DisplayOptionsAiAircraft>(aiAircraft, p->displayOptItemIndexAi, tr("Object ID"),
+                                            tr("Internal object ID for traffic development or debugging.\n"
+                                               "Value is prefixed with \"ID\" and depends on simulator."),
+                                            optsac::ITEM_AI_AIRCRAFT_OBJECT_ID);
 
   // Compass rose =====================================================
-  QTreeWidgetItem *compassRose = addTopItem(tr("Compass Rose"), tr("Select display options for the compass rose."));
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Direction Labels"), tr("Show N, S, E and W labels."), optsd::ROSE_DIR_LABELS, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Degree Tick Marks"), tr("Show tick marks for degrees on ring."), optsd::ROSE_DEGREE_MARKS, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Degree Labels"), tr("Show degree labels on ring."), optsd::ROSE_DEGREE_LABELS, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Range Rings"), tr("Show range rings and distance labels inside."), optsd::ROSE_RANGE_RINGS, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Heading Line"), tr("Show the dashed heading line for user aircraft."), optsd::ROSE_HEADING_LINE, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Track Line"), tr("Show the solid track line for user aircraft."), optsd::ROSE_TRACK_LINE, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Track Label"), tr("Show track label for user aircraft."), optsd::ROSE_TRACK_LABEL, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Heading Indicator"), tr("Show the heading for the user aircraft as a\n"
-                                                                                                       "small magenta circle."), optsd::ROSE_CRAB_ANGLE, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("Course to Next Waypoint"), tr("Show the course to next waypoint for the user aircraft as\n"
-                                                                                                             "a small magenta line."), optsd::ROSE_NEXT_WAYPOINT, true);
-  addItem<optsd::DisplayOptionsRose>(compassRose, displayOptItemIndexRose, tr("True Heading"), tr("Show the whole circle and tick marks using true heading."), optsd::ROSE_TRUE_HEADING);
+  QTreeWidgetItem *compassRose = addTopItem(tr("Compass Rose Options and Labels"),
+                                            tr("Select display options for the compass rose."));
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Direction Labels"),
+                                     tr("Show N, S, E and W labels."),
+                                     optsd::ROSE_DIR_LABELS, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Degree Tick Marks"),
+                                     tr("Show tick marks for degrees on ring."),
+                                     optsd::ROSE_DEGREE_MARKS, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Degree Labels"),
+                                     tr("Show degree labels on ring."),
+                                     optsd::ROSE_DEGREE_LABELS, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Range Rings"),
+                                     tr("Show range rings and distance labels inside."),
+                                     optsd::ROSE_RANGE_RINGS, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Heading Line"),
+                                     tr("Show the dashed heading line for user aircraft."),
+                                     optsd::ROSE_HEADING_LINE, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Track Line"),
+                                     tr("Show the solid track line for user aircraft."),
+                                     optsd::ROSE_TRACK_LINE, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Track Label"),
+                                     tr("Show track label for user aircraft."),
+                                     optsd::ROSE_TRACK_LABEL, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Heading Indicator"),
+                                     tr("Show the heading for the user aircraft as a\n"
+                                        "small magenta circle."),
+                                     optsd::ROSE_CRAB_ANGLE, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("Course to Next Waypoint"),
+                                     tr("Show the course to next waypoint for the user aircraft as\n"
+                                        "a small magenta line."),
+                                     optsd::ROSE_NEXT_WAYPOINT, true /* checked */);
+  addItem<optsd::DisplayOptionsRose>(compassRose, p->displayOptItemIndexRose, tr("True Heading"),
+                                     tr("Show the whole circle and tick marks using true heading."),
+                                     optsd::ROSE_TRUE_HEADING);
 
   // Measurment lines =====================================================
-  QTreeWidgetItem *measurement = addTopItem(tr("Measurement Lines"), tr("Select display options for measurement lines."));
-  addItem<optsd::DisplayOptionsMeasurement>(measurement, displayOptItemIndexMeasurement, tr("Distance"), tr("Great circle distance for measurement line."), optsd::MEASUREMENT_DIST, true);
-  addItem<optsd::DisplayOptionsMeasurement>(measurement, displayOptItemIndexMeasurement, tr("Magnetic Course"), tr("Show magnetic course for start and end of line."), optsd::MEASUREMENT_MAG, true);
-  addItem<optsd::DisplayOptionsMeasurement>(measurement, displayOptItemIndexMeasurement, tr("True Course"), tr("Show true course for start and end of line."), optsd::MEASUREMENT_TRUE, true);
-  addItem<optsd::DisplayOptionsMeasurement>(measurement, displayOptItemIndexMeasurement, tr("Radial Number"), tr("Shows the radial prefixed with \"R\" for VOR, VORDME,\n"
-                                                                                                                 "VORTAC, TACAN or NDB."), optsd::MEASUREMENT_RADIAL);
-  addItem<optsd::DisplayOptionsMeasurement>(measurement, displayOptItemIndexMeasurement, tr("Navaid or airport ident"), tr("Show ident if attached to navaid or airport.\n"
-                                                                                                                           "Also show frequency if attached to a radio navaid. "), optsd::MEASUREMENT_LABEL, true);
-  /* *INDENT-ON* */
+  QTreeWidgetItem *measurement = addTopItem(tr("Measurement Line Labels"),
+                                            tr("Select display options for measurement lines."));
+  addItem<optsd::DisplayOptionsMeasurement>(measurement, p->displayOptItemIndexMeasurement, tr("Distance"),
+                                            tr("Great circle distance for measurement line."),
+                                            optsd::MEASUREMENT_DIST, true /* checked */);
+  addItem<optsd::DisplayOptionsMeasurement>(measurement, p->displayOptItemIndexMeasurement, tr("Magnetic Course"),
+                                            tr("Show magnetic course for start and end of line."),
+                                            optsd::MEASUREMENT_MAG, true /* checked */);
+  addItem<optsd::DisplayOptionsMeasurement>(measurement, p->displayOptItemIndexMeasurement, tr("True Course"),
+                                            tr("Show true course for start and end of line."),
+                                            optsd::MEASUREMENT_TRUE, true /* checked */);
+  addItem<optsd::DisplayOptionsMeasurement>(measurement, p->displayOptItemIndexMeasurement, tr("Radial Number"),
+                                            tr("Shows the radial prefixed with \"R\" for VOR, VORDME,\n"
+                                               "VORTAC, TACAN or NDB."),
+                                            optsd::MEASUREMENT_RADIAL);
+  addItem<optsd::DisplayOptionsMeasurement>(measurement, p->displayOptItemIndexMeasurement, tr("Navaid or airport ident"),
+                                            tr("Show ident if attached to navaid or airport.\n"
+                                               "Also show frequency if attached to a radio navaid. "),
+                                            optsd::MEASUREMENT_LABEL, true /* checked */);
 
   ui->treeWidgetOptionsDisplayTextOptions->resizeColumnToContents(0);
 
-  // Create widget list for state saver
+  // Create widget list for state saver ==============================================================
   // This will take over the actual saving of the settings
-  widgets.append(
-    {ui->listWidgetOptionPages,
-     ui->splitterOptions,
-     ui->checkBoxOptionsGuiCenterKml,
-     ui->checkBoxOptionsGuiWheel,
-     ui->checkBoxOptionsGuiRaiseWindows,
-     ui->checkBoxOptionsGuiRaiseDockWindows,
-     ui->checkBoxOptionsGuiRaiseMainWindow,
-     ui->checkBoxOptionsGuiCenterRoute,
-     ui->checkBoxOptionsGuiAddDeparture,
-     ui->checkBoxOptionsGuiAvoidOverwrite,
-     ui->checkBoxOptionsGuiOverrideLocale,
-     ui->checkBoxOptionsGuiHighDpi, // Read in main.cpp
-     ui->checkBoxOptionsFreetype, // Read in main.cpp
-     ui->checkBoxOptionsGuiTooltipsAll,
-     ui->checkBoxOptionsGuiTooltipsMenu,
-     ui->checkBoxOptionsGuiToolbarSize,
-     // ui->comboBoxOptionsGuiLanguage, saved directly
-
-     ui->checkBoxDisplayOnlineNameLookup,
-     ui->checkBoxDisplayOnlineFileLookup,
-     ui->checkBoxOptionsMapEmptyAirports,
-     ui->checkBoxOptionsMapEmptyAirports3D,
-     ui->checkBoxOptionsMapTooltipVerbose,
-     ui->checkBoxOptionsMapTooltipDistBrgFlightplan,
-     ui->checkBoxOptionsMapTooltipDistBrgUser,
-     ui->checkBoxOptionsMapTooltipUserAircraft,
-     ui->checkBoxOptionsMapTooltipAiAircraft,
-     ui->checkBoxOptionsMapTooltipAirport,
-     ui->checkBoxOptionsMapTooltipNavaid,
-     ui->checkBoxOptionsMapTooltipAirspace,
-     ui->checkBoxOptionsMapTooltipWind,
-     ui->checkBoxOptionsMapTooltipUser,
-     ui->checkBoxOptionsMapTooltipTrail,
-     ui->checkBoxOptionsMapClickUserAircraft,
-     ui->checkBoxOptionsMapClickAiAircraft,
-     ui->checkBoxOptionsMapClickAirport,
-     ui->checkBoxOptionsMapClickAirportProcs,
-     ui->checkBoxOptionsMapClickNavaid,
-     ui->checkBoxOptionsMapClickAirspace,
-     ui->checkBoxOptionsMapClickFlightplan,
-     ui->checkBoxOptionsMapUndock,
-     ui->checkBoxOptionsRouteEastWestRule,
-     ui->comboBoxOptionsRouteAltitudeRuleType,
-     ui->checkBoxOptionsStartupLoadKml,
-     ui->checkBoxOptionsStartupLoadMapSettings,
-     ui->checkBoxOptionsStartupLoadRoute,
-     ui->checkBoxOptionsStartupLoadPerf,
-     ui->checkBoxOptionsStartupLoadLayout,
-     ui->checkBoxOptionsStartupShowSplash,
-     ui->checkBoxOptionsStartupLoadTrail,
-     ui->checkBoxOptionsStartupLoadSearch,
-     ui->checkBoxOptionsStartupLoadInfoContent,
-     ui->checkBoxOptionsWeatherInfoAsn,
-     ui->checkBoxOptionsWeatherInfoNoaa,
-     ui->checkBoxOptionsWeatherInfoVatsim,
-     ui->checkBoxOptionsWeatherInfoIvao,
-     ui->checkBoxOptionsWeatherInfoFs,
-     ui->checkBoxOptionsWeatherTooltipAsn,
-     ui->checkBoxOptionsWeatherTooltipNoaa,
-     ui->checkBoxOptionsWeatherTooltipVatsim,
-     ui->checkBoxOptionsWeatherTooltipIvao,
-     ui->checkBoxOptionsWeatherTooltipFs,
-     // ui->lineEditOptionsMapRangeRings, // Saved separately lnm::OPTIONS_DIALOG_RANGE_DISTANCES
-     ui->lineEditOptionsWeatherAsnPath,
-     ui->lineEditOptionsWeatherXplanePath,
-     ui->lineEditOptionsWeatherXplane12Path,
-     ui->lineEditOptionsWeatherNoaaStationsUrl,
-     ui->lineEditOptionsWeatherVatsimUrl,
-     ui->lineEditOptionsWeatherIvaoUrl,
-
-     ui->lineEditOptionsWeatherXplaneWind,
-     ui->lineEditOptionsWeatherNoaaWindUrl,
-
-     ui->tableWidgetOptionsDatabaseInclude,
-     ui->tableWidgetOptionsDatabaseExclude,
-     ui->tableWidgetOptionsDatabaseExcludeAddon,
-
-     ui->comboBoxMapScrollZoomDetails,
-     ui->radioButtonOptionsSimUpdateFast,
-     ui->radioButtonOptionsSimUpdateLow,
-     ui->radioButtonOptionsSimUpdateMedium,
-
-     ui->radioButtonOptionsMapNavDragMove,
-     ui->radioButtonOptionsMapNavClickCenter,
-     ui->radioButtonOptionsMapNavTouchscreen,
-
-     ui->checkBoxOptionsSimUpdatesConstant,
-     ui->spinBoxOptionsSimUpdateBox,
-     ui->spinBoxOptionsSimCenterLegZoom,
-     ui->spinBoxSimMaxTrailPoints,
-     ui->radioButtonOptionsStartupShowHome,
-     ui->radioButtonOptionsStartupShowLast,
-     ui->radioButtonOptionsStartupShowFlightplan,
-
-     ui->spinBoxOptionsCacheDiskSize,
-     ui->spinBoxOptionsCacheMemorySize,
-     ui->radioButtonCacheUseOffineElevation,
-     ui->radioButtonCacheUseOnlineElevation,
-     ui->lineEditCacheOfflineDataPath,
-     ui->lineEditCacheMapThemeDir,
-     ui->lineEditOptionsRouteFilename,
-
-     ui->spinBoxOptionsGuiInfoText,
-     ui->spinBoxOptionsGuiAircraftPerf,
-     ui->spinBoxOptionsGuiRouteText,
-     ui->spinBoxOptionsGuiRouteRemarksText,
-     ui->spinBoxOptionsGuiRouteInfoText,
-     ui->spinBoxOptionsGuiSearchText,
-     ui->spinBoxOptionsGuiSimInfoText,
-     ui->spinBoxOptionsGuiThemeMapDimming,
-     ui->spinBoxOptionsGuiToolbarSize,
-     ui->spinBoxOptionsMapClickRect,
-     ui->spinBoxOptionsMapTooltipRect,
-     ui->doubleSpinBoxOptionsMapZoomShowMap,
-     ui->doubleSpinBoxOptionsMapZoomShowMapMenu,
-     ui->spinBoxOptionsRouteGroundBuffer,
-
-     ui->spinBoxOptionsDisplayTextSizeAircraftAi,
-     ui->spinBoxOptionsDisplaySymbolSizeNavaid,
-     ui->spinBoxOptionsDisplaySymbolSizeUserpoint,
-     ui->spinBoxOptionsDisplaySymbolSizeHighlight,
-     ui->spinBoxOptionsDisplayTextSizeNavaid,
-     ui->spinBoxOptionsDisplayTextSizeAirspace,
-     ui->spinBoxOptionsDisplayTextSizeUserpoint,
-     ui->spinBoxOptionsDisplayThicknessFlightplan,
-     ui->spinBoxOptionsDisplayThicknessFlightplanProfile,
-     ui->spinBoxOptionsDisplaySymbolSizeAirport,
-     ui->spinBoxOptionsDisplaySymbolSizeAirportWeather,
-     ui->spinBoxOptionsDisplaySymbolSizeWindBarbs,
-     ui->spinBoxOptionsDisplaySymbolSizeAircraftAi,
-     ui->spinBoxOptionsDisplayTextSizeFlightplan,
-     ui->spinBoxOptionsDisplayTextSizeFlightplanProfile,
-     ui->spinBoxOptionsDisplayTransparencyFlightplan,
-     ui->spinBoxOptionsDisplayTextSizeAircraftUser,
-     ui->spinBoxOptionsDisplaySymbolSizeAircraftUser,
-     ui->spinBoxOptionsDisplayTextSizeAirport,
-     ui->spinBoxOptionsDisplayTextSizeAirportRunway,
-     ui->spinBoxOptionsDisplayTextSizeAirportTaxiway,
-     ui->spinBoxOptionsDisplayThicknessTrail,
-     ui->spinBoxOptionsDisplayThicknessUserFeature,
-     ui->spinBoxOptionsDisplayThicknessMeasurement,
-     ui->spinBoxOptionsDisplayThicknessCompassRose,
-     ui->spinBoxOptionsDisplaySunShadeDarkness,
-     ui->comboBoxOptionsDisplayTrailType,
-     ui->comboBoxOptionsDisplayTrailGradient,
-     ui->spinBoxOptionsDisplayTextSizeCompassRose,
-     ui->spinBoxOptionsDisplayTextSizeUserFeature,
-     ui->spinBoxOptionsDisplayTextSizeMeasurement,
-
-     ui->checkBoxOptionsMapHighlightTransparent,
-     ui->spinBoxOptionsMapHighlightTransparent,
-
-     ui->checkBoxOptionsMapAirwayText,
-     ui->checkBoxOptionsMapUserAircraftText,
-     ui->checkBoxOptionsMapAiAircraftText,
-     ui->checkBoxOptionsMapAiAircraftHideGround,
-     ui->checkBoxOptionsMapAirspaceNoMultZ,
-     ui->checkBoxOptionsDisplayTrailGradient,
-     ui->spinBoxOptionsDisplayTextSizeAirway,
-     ui->spinBoxOptionsDisplayThicknessAirway,
-     ui->spinBoxOptionsDisplayThicknessAirspace,
-
-     ui->spinBoxOptionsDisplayTextSizeMora,
-     ui->spinBoxOptionsDisplayTransparencyMora,
-
-     ui->spinBoxOptionsDisplayTextSizeAirportMsa,
-     ui->spinBoxOptionsDisplayTransparencyAirportMsa,
-     ui->spinBoxOptionsDisplayTransparencyAirspace,
-
-     ui->spinBoxOptionsMapNavTouchArea,
-
-     ui->comboBoxOptionsStartupUpdateChannels,
-     ui->comboBoxOptionsStartupUpdateRate,
-
-     ui->comboBoxOptionsUnitDistance,
-     ui->comboBoxOptionsUnitAlt,
-     ui->comboBoxOptionsUnitSpeed,
-     ui->comboBoxOptionsUnitVertSpeed,
-     ui->comboBoxOptionsUnitShortDistance,
-     ui->comboBoxOptionsUnitCoords,
-     ui->comboBoxOptionsUnitFuelWeight,
-
-     ui->checkBoxOptionsMapZoomAvoidBlurred,
-
-     ui->checkBoxOptionsMapAirportText,
-     ui->checkBoxOptionsMapAirportAddon,
-     ui->checkBoxOptionsMapNavaidText,
-     ui->checkBoxOptionsMapUserpointText,
-     ui->checkBoxOptionsMapFlightplanText,
-     ui->checkBoxOptionsSimHighlightActiveTable,
-     ui->checkBoxOptionsMapFlightplanDimPassed,
-     ui->checkBoxOptionsMapFlightplanHighlightActive,
-     ui->checkBoxOptionsMapFlightplanTransparent,
-     ui->checkBoxOptionsSimCenterLeg,
-     ui->checkBoxOptionsSimCenterLegTable,
-
-     ui->checkBoxOptionsSimDoNotFollowScroll,
-     ui->spinBoxOptionsSimDoNotFollowScrollTime,
-     ui->checkBoxOptionsSimZoomOnLanding,
-     ui->doubleSpinBoxOptionsSimZoomOnLanding,
-     ui->checkBoxOptionsSimZoomOnTakeoff,
-     ui->spinBoxOptionsSimZoomOnTakeoff,
-     ui->checkBoxOptionsSimCenterLegTable,
-     ui->spinBoxOptionsSimCleanupTableTime,
-     ui->checkBoxOptionsSimClearSelection,
-     ui->checkBoxOptionsWebScale,
-
-     ui->radioButtonOptionsOnlineNone,
-     ui->radioButtonOptionsOnlineVatsim,
-     ui->radioButtonOptionsOnlineIvao,
-     ui->radioButtonOptionsOnlinePilotEdge,
-     ui->radioButtonOptionsOnlineCustomStatus,
-     ui->radioButtonOptionsOnlineCustom,
-
-     ui->lineEditOptionsOnlineStatusUrl,
-     ui->lineEditOptionsOnlineWhazzupUrl,
-     ui->spinBoxOptionsOnlineUpdate,
-     ui->comboBoxOptionsOnlineFormat,
-
-     ui->checkBoxDisplayOnlineGroundRange,
-     ui->checkBoxDisplayOnlineApproachRange,
-     ui->checkBoxDisplayOnlineObserverRange,
-     ui->checkBoxDisplayOnlineFirRange,
-     ui->checkBoxDisplayOnlineAreaRange,
-     ui->checkBoxDisplayOnlineDepartureRange,
-     ui->checkBoxDisplayOnlineTowerRange,
-     ui->checkBoxDisplayOnlineClearanceRange,
-     ui->checkBoxOptionsOnlineRemoveShadow,
-
-     ui->spinBoxDisplayOnlineClearance,
-     ui->spinBoxDisplayOnlineArea,
-     ui->spinBoxDisplayOnlineApproach,
-     ui->spinBoxDisplayOnlineDeparture,
-     ui->spinBoxDisplayOnlineFir,
-     ui->spinBoxDisplayOnlineObserver,
-     ui->spinBoxDisplayOnlineGround,
-     ui->spinBoxDisplayOnlineTower,
-
-     ui->checkBoxOptionsUnitFuelOther,
-     ui->checkBoxOptionsUnitTrueCourse,
-
-     ui->spinBoxOptionsWebPort,
-     ui->spinBoxOptionWebIconSize,
-     ui->checkBoxOptionsWebEncrypted,
-     ui->lineEditOptionsWebDocroot});
+  widgets.append({
+    ui->listWidgetOptionPages,
+    ui->splitterOptions,
+    ui->checkBoxOptionsGuiCenterKml,
+    ui->checkBoxOptionsGuiWheel,
+    ui->checkBoxOptionsGuiRaiseWindows,
+    ui->checkBoxOptionsGuiRaiseDockWindows,
+    ui->checkBoxOptionsGuiRaiseMainWindow,
+    ui->checkBoxOptionsGuiCenterRoute,
+    ui->checkBoxOptionsGuiAddDeparture,
+    ui->checkBoxOptionsGuiAvoidOverwrite,
+    ui->checkBoxOptionsGuiOverrideLocale,
+    ui->checkBoxOptionsFreetype, // Read in main.cpp
+    ui->checkBoxOptionsGuiTooltipsAll,
+    ui->checkBoxOptionsGuiTooltipsMenu,
+    ui->checkBoxOptionsGuiTooltipsLink,
+    ui->checkBoxOptionsGuiToolbarSize,
+    // ui->comboBoxOptionsGuiLanguage, saved directly
+    ui->checkBoxDisplayOnlineNameLookup,
+    ui->checkBoxDisplayOnlineFileLookup,
+    ui->checkBoxOptionsMapEmptyAirports,
+    ui->checkBoxOptionsMapEmptyAirports3D,
+    ui->checkBoxOptionsMapTooltipVerbose,
+    ui->checkBoxOptionsMapTooltipDistBrgFlightplan,
+    ui->checkBoxOptionsMapTooltipDistBrgUser,
+    ui->checkBoxOptionsMapTooltipUserAircraft,
+    ui->checkBoxOptionsMapTooltipAiAircraft,
+    ui->checkBoxOptionsMapTooltipAirport,
+    ui->checkBoxOptionsMapTooltipNavaid,
+    ui->checkBoxOptionsMapTooltipAirspace,
+    ui->checkBoxOptionsMapTooltipWind,
+    ui->checkBoxOptionsMapTooltipUser,
+    ui->checkBoxOptionsMapTooltipTrail,
+    ui->checkBoxOptionsMapClickUserAircraft,
+    ui->checkBoxOptionsMapClickAiAircraft,
+    ui->checkBoxOptionsMapClickAirport,
+    ui->checkBoxOptionsMapClickAirportProcs,
+    ui->checkBoxOptionsMapClickNavaid,
+    ui->checkBoxOptionsMapClickAirspace,
+    ui->checkBoxOptionsMapClickFlightplan,
+    ui->checkBoxOptionsMapUndock,
+    ui->checkBoxOptionsRouteEastWestRule,
+    ui->comboBoxOptionsRouteAltitudeRuleType,
+    ui->checkBoxOptionsStartupLoadKml,
+    ui->checkBoxOptionsStartupLoadMapSettings,
+    ui->checkBoxOptionsStartupLoadRoute,
+    ui->checkBoxOptionsStartupLoadPerf,
+    ui->checkBoxOptionsStartupLoadLayout,
+    ui->checkBoxOptionsStartupShowSplash,
+    ui->checkBoxOptionsStartupLoadTrail,
+    ui->checkBoxOptionsStartupLoadSearch,
+    ui->checkBoxOptionsStartupLoadInfoContent,
+    ui->checkBoxOptionsWeatherInfoAsn,
+    ui->checkBoxOptionsWeatherInfoNoaa,
+    ui->checkBoxOptionsWeatherInfoVatsim,
+    ui->checkBoxOptionsWeatherInfoIvao,
+    ui->checkBoxOptionsWeatherInfoFs,
+    ui->checkBoxOptionsWeatherTooltipAsn,
+    ui->checkBoxOptionsWeatherTooltipNoaa,
+    ui->checkBoxOptionsWeatherTooltipVatsim,
+    ui->checkBoxOptionsWeatherTooltipIvao,
+    ui->checkBoxOptionsWeatherTooltipFs,
+    // ui->lineEditOptionsMapRangeRings, // Saved separately lnm::OPTIONS_DIALOG_RANGE_DISTANCES
+    ui->lineEditOptionsWeatherAsnPath,
+    ui->lineEditOptionsWeatherXplanePath,
+    ui->lineEditOptionsWeatherXplane12Path,
+    ui->lineEditOptionsWeatherNoaaStationsUrl,
+    ui->lineEditOptionsWeatherVatsimUrl,
+    ui->lineEditOptionsWeatherIvaoUrl,
+    ui->lineEditOptionsWeatherXplaneWind,
+    ui->lineEditOptionsWeatherNoaaWindUrl,
+    ui->tableWidgetOptionsDatabaseInclude,
+    ui->tableWidgetOptionsDatabaseExclude,
+    ui->tableWidgetOptionsDatabaseExcludeAddon,
+    ui->comboBoxMapScrollZoomDetails,
+    ui->radioButtonOptionsSimUpdateFast,
+    ui->radioButtonOptionsSimUpdateLow,
+    ui->radioButtonOptionsSimUpdateMedium,
+    ui->radioButtonOptionsMapNavDragMove,
+    ui->radioButtonOptionsMapNavClickCenter,
+    ui->radioButtonOptionsMapNavTouchscreen,
+    ui->checkBoxOptionsSimUpdatesConstant,
+    ui->spinBoxOptionsSimUpdateBox,
+    ui->spinBoxOptionsSimCenterLegZoom,
+    ui->spinBoxSimMaxTrailPoints,
+    ui->radioButtonOptionsStartupShowHome,
+    ui->radioButtonOptionsStartupShowLast,
+    ui->radioButtonOptionsStartupShowFlightplan,
+    ui->spinBoxOptionsCacheDiskMap,
+    ui->spinBoxOptionsCacheMemoryMap,
+    ui->spinBoxOptionsCacheMemoryProfile,
+    ui->doubleSpinBoxOptionsProfileBuffer,
+    ui->radioButtonCacheUseOffineElevation,
+    ui->radioButtonCacheUseOnlineElevation,
+    ui->lineEditCacheOfflineDataPath,
+    ui->lineEditCacheMapThemeDir,
+    ui->lineEditOptionsRouteFilename,
+    ui->spinBoxOptionsGuiInfoText,
+    ui->spinBoxOptionsGuiAircraftPerf,
+    ui->spinBoxOptionsGuiRouteText,
+    ui->spinBoxOptionsGuiRouteRemarksText,
+    ui->spinBoxOptionsGuiRouteInfoText,
+    ui->spinBoxOptionsGuiSearchText,
+    ui->spinBoxOptionsGuiSimInfoText,
+    ui->spinBoxOptionsGuiThemeMapDimming,
+    ui->spinBoxOptionsGuiToolbarSize,
+    ui->spinBoxOptionsMapClickRect,
+    ui->spinBoxOptionsMapTooltipRect,
+    ui->doubleSpinBoxOptionsMapZoomShowMap,
+    ui->doubleSpinBoxOptionsMapZoomShowMapMenu,
+    ui->spinBoxOptionsRouteGroundBuffer,
+    ui->spinBoxOptionsDisplayTextSizeAircraftAi,
+    ui->spinBoxOptionsDisplaySymbolSizeNavaid,
+    ui->spinBoxOptionsDisplaySymbolSizeUserpoint,
+    ui->spinBoxOptionsDisplaySymbolSizeHighlight,
+    ui->spinBoxOptionsDisplayTextSizeNavaid,
+    ui->spinBoxOptionsDisplayTextSizeAirspace,
+    ui->spinBoxOptionsDisplayTextSizeUserpoint,
+    ui->spinBoxOptionsDisplayThicknessFlightplan,
+    ui->spinBoxOptionsDisplayThicknessFlightplanProfile,
+    ui->spinBoxOptionsDisplaySymbolSizeAirport,
+    ui->spinBoxOptionsDisplaySymbolSizeAirportWeather,
+    ui->spinBoxOptionsDisplaySymbolSizeWindBarbs,
+    ui->spinBoxOptionsDisplaySymbolSizeAircraftAi,
+    ui->spinBoxOptionsDisplayTextSizeFlightplan,
+    ui->spinBoxOptionsDisplaySymbolSizeFlightplan,
+    ui->spinBoxOptionsDisplayTextSizeFlightplanProfile,
+    ui->spinBoxOptionsDisplayTransparencyFlightplan,
+    ui->spinBoxOptionsDisplayTextSizeAircraftUser,
+    ui->spinBoxOptionsDisplaySymbolSizeAircraftUser,
+    ui->spinBoxOptionsDisplayTextSizeAirport,
+    ui->spinBoxOptionsDisplayTextSizeAirportRunway,
+    ui->spinBoxOptionsDisplayTextSizeAirportTaxiway,
+    ui->spinBoxOptionsDisplayThicknessTrail,
+    ui->spinBoxOptionsDisplayThicknessUserFeature,
+    ui->spinBoxOptionsDisplayThicknessMeasurement,
+    ui->spinBoxOptionsDisplayThicknessCompassRose,
+    ui->spinBoxOptionsDisplaySunShadeDarkness,
+    ui->comboBoxOptionsDisplayTrailType,
+    ui->comboBoxOptionsDisplayTrailGradient,
+    ui->spinBoxOptionsDisplayTextSizeCompassRose,
+    ui->spinBoxOptionsDisplayTextSizeUserFeature,
+    ui->spinBoxOptionsDisplayTextSizeMeasurement,
+    ui->checkBoxOptionsMapHighlightTransparent,
+    ui->spinBoxOptionsMapHighlightTransparent,
+    ui->checkBoxOptionsMapAirwayText,
+    ui->checkBoxOptionsMapUserAircraftText,
+    ui->checkBoxOptionsMapAiAircraftText,
+    ui->checkBoxOptionsMapAiAircraftHideGround,
+    ui->checkBoxOptionsMapAirspaceNoMultZ,
+    ui->checkBoxOptionsDisplayTrailGradient,
+    ui->spinBoxOptionsDisplayTextSizeAirway,
+    ui->spinBoxOptionsDisplayThicknessAirway,
+    ui->spinBoxOptionsDisplayThicknessAirspace,
+    ui->spinBoxOptionsDisplayTextSizeMora,
+    ui->spinBoxOptionsDisplayTransparencyMora,
+    ui->spinBoxOptionsDisplayTextSizeAirportMsa,
+    ui->spinBoxOptionsDisplayTransparencyAirportMsa,
+    ui->spinBoxOptionsDisplayTransparencyAirspace,
+    ui->spinBoxOptionsMapNavTouchArea,
+    ui->comboBoxOptionsStartupUpdateChannels,
+    ui->comboBoxOptionsStartupUpdateRate,
+    ui->comboBoxOptionsUnitDistance,
+    ui->comboBoxOptionsUnitAlt,
+    ui->comboBoxOptionsUnitSpeed,
+    ui->comboBoxOptionsUnitVertSpeed,
+    ui->comboBoxOptionsUnitShortDistance,
+    ui->comboBoxOptionsUnitCoords,
+    ui->comboBoxOptionsUnitFuelWeight,
+    ui->checkBoxOptionsMapZoomAvoidBlurred,
+    ui->checkBoxOptionsMapAirportText,
+    ui->checkBoxOptionsMapAirportAddon,
+    ui->checkBoxOptionsMapNavaidText,
+    ui->checkBoxOptionsMapNavaidFill,
+    ui->checkBoxOptionsMapUserpointText,
+    ui->checkBoxOptionsMapFlightplanText,
+    ui->checkBoxOptionsSimHighlightActiveTable,
+    ui->checkBoxOptionsMapFlightplanDimPassed,
+    ui->checkBoxOptionsMapFlightplanHighlightActive,
+    ui->checkBoxOptionsMapFlightplanTransparent,
+    ui->checkBoxOptionsSimCenterLeg,
+    ui->checkBoxOptionsSimCenterLegTable,
+    ui->checkBoxOptionsSimDoNotFollowScroll,
+    ui->spinBoxOptionsSimDoNotFollowScrollTime,
+    ui->checkBoxOptionsSimZoomOnLanding,
+    ui->doubleSpinBoxOptionsSimZoomOnLanding,
+    ui->checkBoxOptionsSimZoomOnTakeoff,
+    ui->spinBoxOptionsSimZoomOnTakeoff,
+    ui->checkBoxOptionsSimCenterLegTable,
+    ui->spinBoxOptionsSimCleanupTableTime,
+    ui->checkBoxOptionsSimClearSelection,
+    ui->checkBoxOptionsWebScale,
+    ui->radioButtonOptionsOnlineNone,
+    ui->radioButtonOptionsOnlineVatsim,
+    ui->radioButtonOptionsOnlineIvao,
+    ui->radioButtonOptionsOnlinePilotEdge,
+    ui->radioButtonOptionsOnlineCustomStatus,
+    ui->radioButtonOptionsOnlineCustom,
+    ui->lineEditOptionsOnlineStatusUrl,
+    ui->lineEditOptionsOnlineWhazzupUrl,
+    ui->spinBoxOptionsOnlineUpdate,
+    ui->comboBoxOptionsOnlineFormat,
+    ui->checkBoxDisplayOnlineGroundRange,
+    ui->checkBoxDisplayOnlineApproachRange,
+    ui->checkBoxDisplayOnlineObserverRange,
+    ui->checkBoxDisplayOnlineFirRange,
+    ui->checkBoxDisplayOnlineAreaRange,
+    ui->checkBoxDisplayOnlineDepartureRange,
+    ui->checkBoxDisplayOnlineTowerRange,
+    ui->checkBoxDisplayOnlineClearanceRange,
+    ui->checkBoxOptionsOnlineRemoveShadow,
+    ui->spinBoxDisplayOnlineClearance,
+    ui->spinBoxDisplayOnlineArea,
+    ui->spinBoxDisplayOnlineApproach,
+    ui->spinBoxDisplayOnlineDeparture,
+    ui->spinBoxDisplayOnlineFir,
+    ui->spinBoxDisplayOnlineObserver,
+    ui->spinBoxDisplayOnlineGround,
+    ui->spinBoxDisplayOnlineTower,
+    ui->checkBoxOptionsUnitFuelOther,
+    ui->checkBoxOptionsUnitTrueCourse,
+    ui->checkBoxOptionsUnitEnhancedAccuracy,
+    ui->spinBoxOptionsDisplayScaleAllWeb,
+    ui->spinBoxOptionsDisplayScaleAll,
+    ui->spinBoxOptionsWebPort,
+    ui->checkBoxOptionsWebEncrypted,
+    ui->lineEditOptionsWebDocroot});
 
   connect(ui->listWidgetOptionPages, &QListWidget::currentItemChanged, this, &OptionsDialog::changePage);
 
@@ -703,6 +921,9 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
   connect(ui->pushButtonOptionsDisplaySelectFont, &QPushButton::clicked, this, &OptionsDialog::selectMapFontClicked);
   connect(ui->pushButtonOptionsDisplayResetFont, &QPushButton::clicked, this, &OptionsDialog::resetMapFontClicked);
 
+  connect(ui->pushButtonOptionsProfileSelectFont, &QPushButton::clicked, this, &OptionsDialog::selectProfileFontClicked);
+  connect(ui->pushButtonOptionsProfileResetFont, &QPushButton::clicked, this, &OptionsDialog::resetProfileFontClicked);
+
   connect(ui->pushButtonOptionsMapboxUser, &QPushButton::clicked, this, &OptionsDialog::mapboxUserMapClicked);
 
   // ===========================================================================
@@ -724,10 +945,14 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
 
   // ===========================================================================
   // Cache
-  connect(ui->pushButtonOptionsCacheClearMemory, &QPushButton::clicked, this, &OptionsDialog::clearMemCachedClicked);
+  connect(ui->pushButtonOptionsCacheClearMemory, &QPushButton::clicked, this, &OptionsDialog::clearMemCacheMapClicked);
   connect(ui->pushButtonOptionsCacheShow, &QPushButton::clicked, this, &OptionsDialog::showDiskCacheClicked);
 
   connect(ui->checkBoxOptionsSimUpdatesConstant, &QCheckBox::toggled, this, &OptionsDialog::updateWhileFlyingWidgets);
+
+  // ===========================================================================
+  // Cache
+  connect(ui->pushButtonOptionsCacheClearProfile, &QPushButton::clicked, this, &OptionsDialog::clearMemCacheProfileClicked);
 
   // ===========================================================================
   // Map settings
@@ -743,7 +968,6 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
           &OptionsDialog::mapHighlightFlightplanColorClicked);
   connect(ui->pushButtonOptionsMapHighlightSearchColor, &QPushButton::clicked, this, &OptionsDialog::mapHighlightSearchColorClicked);
   connect(ui->pushButtonOptionsMapHighlightProfileColor, &QPushButton::clicked, this, &OptionsDialog::mapHighlightProfileColorClicked);
-  connect(ui->pushButtonOptionsMapMeasurementColor, &QPushButton::clicked, this, &OptionsDialog::mapMeasurementColorClicked);
 
   connect(ui->checkBoxOptionsMapFlightplanDimPassed, &QCheckBox::toggled, this, &OptionsDialog::updateFlightplanColorWidgets);
   connect(ui->checkBoxOptionsMapFlightplanHighlightActive, &QCheckBox::toggled, this, &OptionsDialog::updateFlightplanColorWidgets);
@@ -752,8 +976,8 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
   connect(ui->checkBoxOptionsMapHighlightTransparent, &QCheckBox::toggled, this, &OptionsDialog::updateHighlightWidgets);
 
   connect(ui->lineEditOptionsRouteFilename, &QLineEdit::textEdited, this, &OptionsDialog::updateFlightplanExample);
-  connect(ui->pushButtonOptionsRouteFilenameShort, &QPushButton::clicked, this, &OptionsDialog::flightplanPatterShortClicked);
-  connect(ui->pushButtonOptionsRouteFilenameLong, &QPushButton::clicked, this, &OptionsDialog::flightplanPatterLongClicked);
+  connect(ui->pushButtonOptionsRouteFilenameShort, &QPushButton::clicked, this, &OptionsDialog::flightplanPatternShortClicked);
+  connect(ui->pushButtonOptionsRouteFilenameLong, &QPushButton::clicked, this, &OptionsDialog::flightplanPatternLongClicked);
 
   connect(ui->radioButtonCacheUseOffineElevation, &QRadioButton::clicked, this, &OptionsDialog::updateCacheElevationStates);
   connect(ui->radioButtonCacheUseOnlineElevation, &QRadioButton::clicked, this, &OptionsDialog::updateCacheElevationStates);
@@ -801,8 +1025,21 @@ OptionsDialog::OptionsDialog(QMainWindow *parentWindow)
   connect(ui->lineEditOptionSearch, &QLineEdit::textEdited, this, &OptionsDialog::searchTextEdited);
 
   // Hint widgets with anchors ===========================================================================
-  for(QLabel *label :HINT_LABELS)
+  linkTooltipHandler = new atools::gui::LinkTooltipHandler(this);
+  for(QLabel *label : std::as_const(linkLabels))
+    linkTooltipHandler->addWidget(label);
+
+  // Add hint label tooltips for internal links
+  for(QLabel *label : std::as_const(hintLabels))
+  {
     connect(label, &QLabel::linkActivated, this, &OptionsDialog::hintLinkActivated);
+    linkTooltipHandler->addWidget(label); // "lnm://units"
+  }
+
+  // Add tooltip text for internal page links
+  for(auto it = listWidgetItemIndex.begin(); it != listWidgetItemIndex.end(); ++it)
+    // "lnm://units": key is "units" and tooltip is "Open options page "Units""
+    linkTooltipHandler->addUrlTooltip(it.key(), tr("Open options page \"%1\"").arg(it.value()->text()));
 }
 
 /* called at program end */
@@ -818,39 +1055,48 @@ OptionsDialog::~OptionsDialog()
   ATOOLS_DELETE_LOG(zoomHandlerDatabaseAddonExclude);
   ATOOLS_DELETE_LOG(zoomHandlerMapThemeKeysTable);
   ATOOLS_DELETE_LOG(units);
-  ATOOLS_DELETE_LOG(ui);
   ATOOLS_DELETE_LOG(fontDialog);
+  ATOOLS_DELETE_LOG(linkTooltipHandler);
+  ATOOLS_DELETE_LOG(savedOptionData);
+  ATOOLS_DELETE_LOG(p);
+  ATOOLS_DELETE_LOG(ui);
 }
 
 void OptionsDialog::hintLinkActivated(const QString& link)
 {
   qDebug() << Q_FUNC_INFO << link;
-  if(link.startsWith("lnm://"))
+  if(link.startsWith(QStringLiteral("lnm://")))
   {
-    bool ok;
-    int index = link.midRef(6).toInt(&ok);
-    if(ok && index < ui->listWidgetOptionPages->count())
+    const QString id = link.mid(6);
+    QListWidgetItem *item = listWidgetItemIndex.value(id, nullptr);
+    if(item != nullptr)
     {
       ui->lineEditOptionSearch->clear();
-      searchTextEdited(QString());
-      ui->listWidgetOptionPages->setCurrentRow(index);
+      searchTextEdited(QStringLiteral());
+      ui->listWidgetOptionPages->setCurrentItem(item);
     }
+    else
+      qWarning() << Q_FUNC_INFO << "Page list item id not found in link" << link;
   }
+  else
+    qWarning() << Q_FUNC_INFO << "Unknown link format" << link;
 }
 
 void OptionsDialog::styleChanged()
 {
   // Remember text, clear label and set text again to force update after style changes
-  atools::gui::util::labelForcedUpdate(ui->labelMapApiKeysHint);
-  atools::gui::util::labelForcedUpdate(ui->labelCacheGlobePathDownload);
-  atools::gui::util::labelForcedUpdate(ui->labelOptionsWebStatus);
+  atools::gui::labelForcedUpdate(ui->labelMapApiKeysHint);
+  atools::gui::labelForcedUpdate(ui->labelCacheGlobePathDownload);
+  atools::gui::labelForcedUpdate(ui->labelOptionsWebStatus);
 
   gridDelegate->styleChanged();
 
   // Update potential search hightlights with new color
   listWidgetIndex->setHighlightColor(NavApp::isGuiStyleDark() ? QColor(200, 0, 0, 200) : QColor(255, 255, 0, 200));
-  listWidgetIndex->find(QString());
+  listWidgetIndex->find(QStringLiteral());
   listWidgetIndex->find(ui->lineEditOptionSearch->text());
+
+  atools::gui::updateAllPalette(this, QApplication::palette());
 }
 
 void OptionsDialog::setCacheMapThemeDir(const QString& mapThemesDir)
@@ -859,7 +1105,7 @@ void OptionsDialog::setCacheMapThemeDir(const QString& mapThemesDir)
   QString& cacheMapThemeDir = OptionData::instanceInternal().cacheMapThemeDir;
   if(cacheMapThemeDir.isEmpty() && atools::checkDir(Q_FUNC_INFO, mapThemesDir, true /* warn */))
   {
-    Settings::instance().setValue("OptionsDialog/Widget_lineEditCacheMapThemeDir", mapThemesDir);
+    Settings::instance().setValue(QStringLiteral("OptionsDialog/Widget_lineEditCacheMapThemeDir"), mapThemesDir);
     Settings::syncSettings();
     cacheMapThemeDir = mapThemesDir;
     ui->lineEditCacheMapThemeDir->setText(mapThemesDir);
@@ -872,7 +1118,7 @@ void OptionsDialog::setCacheOfflineDataPath(const QString& globeDir)
   QString& cacheOfflineElevationPath = OptionData::instanceInternal().cacheOfflineElevationPath;
   if(cacheOfflineElevationPath.isEmpty() && atools::checkDir(Q_FUNC_INFO, globeDir, true /* warn */))
   {
-    Settings::instance().setValue("OptionsDialog/Widget_lineEditCacheOfflineDataPath", globeDir);
+    Settings::instance().setValue(QStringLiteral("OptionsDialog/Widget_lineEditCacheOfflineDataPath"), globeDir);
     Settings::syncSettings();
     cacheOfflineElevationPath = globeDir;
     ui->lineEditCacheOfflineDataPath->setText(globeDir);
@@ -881,8 +1127,10 @@ void OptionsDialog::setCacheOfflineDataPath(const QString& globeDir)
 
 void OptionsDialog::fontChanged(const QFont& font)
 {
-  atools::gui::updateAllFonts(this, font);
+  // Update all except the widgets which are updated by the zoom handler
+  atools::gui::updateAllFonts(this, font, atools::gui::WidgetZoomHandler::getRegisteredWidgets());
 
+  // Zoom handler updates font here
   zoomHandlerMapThemeKeysTable->zoomPercent();
   zoomHandlerLabelTree->zoomPercent();
   zoomHandlerDatabaseInclude->zoomPercent();
@@ -890,13 +1138,23 @@ void OptionsDialog::fontChanged(const QFont& font)
   zoomHandlerDatabaseAddonExclude->zoomPercent();
 }
 
-void OptionsDialog::open()
+void OptionsDialog::webserverStatusChanged(bool)
+{
+  updateWebServerStatus();
+}
+
+void OptionsDialog::showEvent(QShowEvent *)
 {
   qDebug() << Q_FUNC_INFO;
+
+  QTimer::singleShot(50, this, &OptionsDialog::restoreDialogState);
+
   // Fetch keys from handler
   OptionData::instanceInternal().mapThemeKeys = NavApp::getMapThemeHandler()->getMapThemeKeys();
 
   optionDataToWidgets(OptionData::instanceInternal());
+  *savedOptionData = OptionData::instance();
+
   updateCacheElevationStates();
   updateCacheMapThemeDir();
   updateDatabaseButtonState();
@@ -915,67 +1173,113 @@ void OptionsDialog::open()
   toolbarSizeClicked();
   styleChanged();
 
-  QDialog::open();
+  ui->labelOptionsTrailHintStored->setText(ui->labelOptionsTrailHintStored->text().arg(NavApp::getMaxStoredTrailEntries()));
+}
+
+void OptionsDialog::hideEvent(QHideEvent *)
+{
+  saveDialogState();
 }
 
 void OptionsDialog::buttonBoxClicked(QAbstractButton *button)
 {
   qDebug() << "Clicked" << button->text();
-  if(button == ui->buttonBoxOptions->button(QDialogButtonBox::Apply))
+  buttonBoxHandler(ui->buttonBoxOptions->standardButton(button), false /* fromReject */);
+}
+
+void OptionsDialog::buttonBoxHandler(QDialogButtonBox::StandardButton button, bool fromReject)
+{
+  qDebug() << "Clicked" << button;
+
+  buttonBoxHandlerActive = true;
+  OptionData& optionDataRef = OptionData::instanceInternal();
+
+  if(button == QDialogButtonBox::Apply)
   {
+    // Apply changes without closing ==================================================================================
+    qDebug() << Q_FUNC_INFO << "Apply";
+
     // Test if user uses a too low update rate for well known URLs of official networks
     checkOfficialOnlineUrls();
-
-    widgetsToOptionData();
-    saveState();
-
-    updateTooltipOption();
-
-    NavApp::getMapThemeHandler()->setMapThemeKeys(OptionData::instanceInternal().mapThemeKeys);
-
-    NavApp::updateChannels(OptionData::instance().getUpdateChannels());
-    emit optionsChanged();
-
-    // Update dialog internal stuff
-    updateWidgetStates();
-    updateWebOptionsFromData();
-    updateWebServerStatus();
+    widgetsToOptionData(optionDataRef);
+    emitOptionsChanged();
   }
-  else if(button == ui->buttonBoxOptions->button(QDialogButtonBox::Ok))
+  else if(button == QDialogButtonBox::Close)
   {
-    // Test if user uses a too low update rate for well known URLs of official networks
-    checkOfficialOnlineUrls();
+    // Ask for changes and close ==================================================================================
+    qDebug() << Q_FUNC_INFO << "Close";
 
-    widgetsToOptionData();
-    saveState();
-    updateWidgetUnits();
-    updateWebOptionsFromData();
-    updateTooltipOption();
+    // Get data from widgets and compare to last saved when opening
+    OptionData currentOptionData;
+    widgetsToOptionData(currentOptionData);
+    restoreNetworkSettings(currentOptionData);
 
-    NavApp::getMapThemeHandler()->setMapThemeKeys(OptionData::instanceInternal().mapThemeKeys);
+    if(currentOptionData != *savedOptionData)
+    {
+      // User has changed data ========================================
+      const QString text = tr("Apply option changes?");
 
-    NavApp::updateChannels(OptionData::instance().getUpdateChannels());
-    emit optionsChanged();
+      const QMessageBox::StandardButton defaultButton = fromReject ? QMessageBox::Yes : QMessageBox::Cancel;
+      const QMessageBox::StandardButtons buttons = fromReject ?
+                                                   QMessageBox::No | QMessageBox::Yes :
+                                                   QMessageBox::No | QMessageBox::Yes | QMessageBox::Cancel;
 
-    // Close dialog
-    accept();
+      int result = Dialog::question(this, text, buttons, defaultButton);
+      if(result == QMessageBox::Yes)
+      {
+        // Test if user uses a too low update rate for well known URLs of official networks
+        checkOfficialOnlineUrls();
+        widgetsToOptionData(optionDataRef);
+        emitOptionsChanged();
+        accept();
+      }
+      else if(result == QMessageBox::No)
+      {
+        // Widgets and others are updated in showEvent() when opening next time
+        optionDataRef = *savedOptionData;
+        optionDataToWidgets(optionDataRef);
+        updateTooltipOption();
+        updateWebOptionsFromData();
+        reject();
+      }
+      // else if(result == QMessageBox::Cancel)
+    }
+    else
+      // Nothing changed simply close ========================================
+      accept();
   }
-  else if(button == ui->buttonBoxOptions->button(QDialogButtonBox::Help))
-    HelpHandler::openHelpUrlWeb(this,
-                                lnm::helpOnlineUrl + QString("OPTIONS.html#page%1").arg(ui->stackedWidgetOptions->currentIndex() + 1),
-                                lnm::helpLanguageOnline());
-  else if(button == ui->buttonBoxOptions->button(QDialogButtonBox::Cancel))
-    reject();
-  else if(button == ui->buttonBoxOptions->button(QDialogButtonBox::RestoreDefaults))
+  else if(button == QDialogButtonBox::Reset)
   {
-    qDebug() << "OptionsDialog::resetDefaultClicked";
+    // Reset to the state when the dialog was opened =================================================================
+    qDebug() << Q_FUNC_INFO << "Reset";
 
-    int result = atools::gui::Dialog::question(this, tr("Reset all options to default?"),
-                                               QMessageBox::No | QMessageBox::Yes, QMessageBox::No);
+    int result = Dialog::question(this, tr("Reset all option changes?"), QMessageBox::No | QMessageBox::Yes, QMessageBox::No);
 
     if(result == QMessageBox::Yes)
     {
-      // Do reset - this can be undone with cancel
+      optionDataRef = *savedOptionData;
+      optionDataToWidgets(optionDataRef);
+
+      // Update dialog internals
+      updateWidgetUnits();
+      updateTooltipOption();
+      updateLinkTooltipHandler();
+      updateWidgetStates();
+      updateWebOptionsFromData();
+      updateWebServerStatus();
+    }
+  }
+  else if(button == QDialogButtonBox::RestoreDefaults)
+  {
+    // Restore all back to defauls =================================================================
+    qDebug() << Q_FUNC_INFO << "RestoreDefaults";
+
+    int result = Dialog::question(this, tr("Reset all options back to default?"),
+                                  QMessageBox::No | QMessageBox::Yes, QMessageBox::No);
+
+    if(result == QMessageBox::Yes)
+    {
+      // Do reset - this can be undone with close and answering no
 
       // Create data object with default options
       OptionData defaultOpts;
@@ -986,33 +1290,179 @@ void OptionsDialog::buttonBoxClicked(QAbstractButton *button)
         it.value().clear();
 
       // Keep the undock map window state to avoid a messed up layout after restart
-      defaultOpts.flags2.setFlag(opts2::MAP_ALLOW_UNDOCK, OptionData::instanceInternal().getFlags2().testFlag(opts2::MAP_ALLOW_UNDOCK));
+      defaultOpts.flags2.setFlag(opts2::MAP_ALLOW_UNDOCK, optionDataRef.getFlags2().testFlag(opts2::MAP_ALLOW_UNDOCK));
 
       optionDataToWidgets(defaultOpts);
       updateWidgetStates();
-
       updateWebOptionsFromData();
-      updateFontFromData();
+      updateGuiFontFromData();
       updateWebServerStatus();
-
       updateTooltipOption();
       resetGuiFontClicked();
       resetMapFontClicked();
-      flightplanPatterLongClicked();
-      NavApp::updateChannels(OptionData::instance().getUpdateChannels());
+      flightplanPatternLongClicked();
     }
   }
+  else if(button == QDialogButtonBox::Help)
+  {
+    // Help button =================================================================
+    qDebug() << Q_FUNC_INFO << "Help";
+
+    HelpHandler::openHelpUrlWeb(this,
+                                lnm::helpOnlineUrl %
+                                QStringLiteral("OPTIONS.html#options-page-%1").
+                                arg(ui->listWidgetOptionPages->currentItem()->data(PAGE_LIST_ITEM_DATA_ID).toString()),
+                                lnm::helpLanguageOnline());
+  }
+
+  buttonBoxHandlerActive = false;
 }
 
 void OptionsDialog::reject()
 {
   qDebug() << Q_FUNC_INFO;
 
+  if(!buttonBoxHandlerActive)
+    buttonBoxHandler(QDialogButtonBox::Close, true /* fromReject */);
+
   // Need to catch this here since dialog is owned by main window and kept alive
-  updateFontFromData();
+  updateGuiFontFromData();
   updateWebOptionsFromData();
 
   QDialog::reject();
+}
+
+optc::OptionChangeFlags OptionsDialog::buildFlagsFromChange(const OptionData& saved, const OptionData& changed)
+{
+  optc::OptionChangeFlags changeFlags = optc::OPTION_CHANGE_NONE;
+
+  // OPTION_CHANGE_OTHER = 1 << 1,
+  // OPTION_CHANGE_UI_FONT = 1 << 2, /* User interface font */
+  // OPTION_CHANGE_LANGUAGE = 1 << 3, /* User interface language */
+  // OPTION_CHANGE_UNITS = 1 << 4, /* Units */
+  // OPTION_CHANGE_UNDOCKMAP = 1 << 5, /* Map window undock status */
+  // OPTION_CHANGE_MAPTHEMES = 1 << 6, /* Map theme directory or keys changed */
+  // OPTION_CHANGE_SCENERY = 1 << 7, /* Scenery library includes or excludes */
+  // OPTION_CHANGE_WEBSERVER = 1 << 8, /* Webserver root directory */
+  // OPTION_CHANGE_TEXT_SIZES = 1 << 9, /* Info or table text sizes */
+  // OPTION_CHANGE_ELEVATION = 1 << 10, /* Elevation source or path change */
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_OTHER, saved != changed);
+  changeFlags.setFlag(optc::OPTION_CHANGE_UI_FONT, saved.guiFont != changed.guiFont);
+  changeFlags.setFlag(optc::OPTION_CHANGE_LANGUAGE, saved.guiLanguage != changed.guiLanguage);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_UNITS,
+                      saved.unitDist != changed.unitDist ||
+                      saved.unitShortDist != changed.unitShortDist ||
+                      saved.unitAlt != changed.unitAlt ||
+                      saved.unitSpeed != changed.unitSpeed ||
+                      saved.unitVertSpeed != changed.unitVertSpeed ||
+                      saved.unitCoords != changed.unitCoords ||
+                      saved.unitFuelWeight != changed.unitFuelWeight);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_UNDOCKMAP,
+                      saved.flags2.testFlag(opts2::MAP_ALLOW_UNDOCK) != changed.flags2.testFlag(opts2::MAP_ALLOW_UNDOCK));
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_MAPTHEMES,
+                      saved.cacheMapThemeDir != changed.cacheMapThemeDir ||
+                      saved.mapThemeKeys != changed.mapThemeKeys);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_SCENERY,
+                      saved.databaseExclude != changed.databaseExclude ||
+                      saved.databaseExcludeAddon != changed.databaseExcludeAddon ||
+                      saved.databaseInclude != changed.databaseInclude);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_TEXT_SIZES,
+                      saved.guiInfoTextSize != changed.guiInfoTextSize ||
+                      saved.guiPerfReportTextSize != changed.guiPerfReportTextSize ||
+                      saved.guiRouteTableTextSize != changed.guiRouteTableTextSize ||
+                      saved.guiRouteRemarksTextSize != changed.guiRouteRemarksTextSize ||
+                      saved.guiRouteInfoTextSize != changed.guiRouteInfoTextSize ||
+                      saved.guiSearchTableTextSize != changed.guiSearchTableTextSize ||
+                      saved.guiInfoSimSize != changed.guiInfoSimSize);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_ELEVATION,
+                      saved.flags.testFlag(opts::CACHE_USE_ONLINE_ELEVATION) != changed.flags.testFlag(opts::CACHE_USE_ONLINE_ELEVATION) ||
+                      saved.cacheOfflineElevationPath != changed.cacheOfflineElevationPath ||
+                      saved.cacheSizeMemoryProfile != changed.cacheSizeMemoryProfile ||
+                      saved.profileBuffer != changed.profileBuffer);
+
+  changeFlags.setFlag(optc::OPTION_CHANGE_WEBSERVER, saved.webDocumentRoot != changed.webDocumentRoot);
+
+  return changeFlags;
+}
+
+void OptionsDialog::emitOptionsChanged()
+{
+  saveState();
+  updateWidgetUnits();
+  updateTooltipOption();
+
+  optc::OptionChangeFlags changeFlags = buildFlagsFromChange(*savedOptionData, OptionData::instance());
+  qDebug() << Q_FUNC_INFO << changeFlags;
+
+  Dialog dialog(this);
+  if(changeFlags != optc::OPTION_CHANGE_NONE)
+  {
+    bool load = false, restart = false, resetLayout = false;
+
+    if(changeFlags.testFlag(optc::OPTION_CHANGE_UNDOCKMAP))
+    {
+      int retval = dialog.question(tr("You changed the option \"Allow to undock the map window\".\n\n"
+                                      "This will reset the window layout back to default after a restart.\n"
+                                      "You window layout might break if you do not restart now."
+                                      "Restart %1 now?").arg(QCoreApplication::applicationName()),
+                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+      resetLayout = restart = retval == QDialogButtonBox::Yes;
+    }
+
+    if(!restart && changeFlags.testAnyFlag(optc::OPTION_CHANGE_RESTART_NEEDED))
+    {
+      int retval = dialog.question(tr("You changed options that require a restart.\n"
+                                      "Restart %1 now?").arg(QCoreApplication::applicationName()),
+                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+      restart = retval == QDialogButtonBox::Yes;
+    }
+
+    if(changeFlags.testFlag(optc::OPTION_CHANGE_SCENERY))
+    {
+      int retval = 0;
+      if(restart)
+        dialog.showInfoMsgBox(lnm::ACTIONS_SHOW_OPTIONS_RELOAD_SCENERY_LIBRARY,
+                              tr("You changed options that need to reload the scenery library.\n\n"
+                                 "Reload the scenery library later after restarting."),
+                              tr("Do not &show this dialog again."));
+      else
+      {
+        retval = dialog.showQuestionMsgBox(lnm::ACTIONS_SHOW_OPTIONS_RELOAD_SCENERY_LIBRARY,
+                                           tr("You changed options that need to reload the scenery library.\n\n"
+                                              "Open the dialog window \"Load Scenery Library\" now?"),
+                                           tr("Do not &show this dialog again."),
+                                           QMessageBox::Yes | QMessageBox::No, QMessageBox::No, QMessageBox::No);
+
+        load = retval == QDialogButtonBox::Yes;
+      }
+    }
+
+    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    emit optionsChanged(changeFlags);
+    QGuiApplication::restoreOverrideCursor();
+
+    // Update dialog internals
+    updateLinkTooltipHandler();
+    updateWidgetStates();
+    updateWebOptionsFromData();
+    updateWebServerStatus();
+
+    *savedOptionData = OptionData::instance();
+
+    if(load)
+      emit loadSceneryLibrary();
+
+    if(restart)
+      emit restartApplication(resetLayout);
+  }
 }
 
 void OptionsDialog::eastWestRuleClicked()
@@ -1022,7 +1472,7 @@ void OptionsDialog::eastWestRuleClicked()
 
 void OptionsDialog::checkOfficialOnlineUrls()
 {
-  if(ui->spinBoxOptionsOnlineUpdate->value() < MIN_ONLINE_UPDATE)
+  if(ui->spinBoxOptionsOnlineUpdate->value() < MIN_ONLINE_UPDATE_SECONDS)
   {
     QUrl url;
     if(ui->radioButtonOptionsOnlineCustom->isChecked())
@@ -1035,17 +1485,18 @@ void OptionsDialog::checkOfficialOnlineUrls()
     if(!url.isEmpty() && !url.isLocalFile())
     {
       QString host = url.host().toLower();
-      if(host.endsWith("ivao.aero") || host.endsWith("vatsim.net") || host.endsWith("littlenavmap.org") || host.endsWith("pilotedge.net"))
+      if(host.endsWith(QStringLiteral("ivao.aero")) || host.endsWith(QStringLiteral("vatsim.net")) ||
+         host.endsWith(QStringLiteral("littlenavmap.org")) || host.endsWith(QStringLiteral("pilotedge.net")))
       {
         qWarning() << Q_FUNC_INFO << "Update of" << ui->spinBoxOptionsOnlineUpdate->value()
                    << "s for url" << url << "host" << host;
-        atools::gui::Dialog::warning(this, tr("Do not use an update period smaller than %1 seconds "
-                                              "for official networks like VATSIM, IVAO or PilotEdge.\n\n"
-                                              "Resetting update period back to %1 seconds.").arg(MIN_ONLINE_UPDATE));
+        Dialog::warning(this, tr("Do not use an update period smaller than %1 seconds "
+                                 "for official networks like VATSIM, IVAO or PilotEdge.\n\n"
+                                 "Resetting update period back to %1 seconds.").arg(MIN_ONLINE_UPDATE_SECONDS));
 
         // Reset both widget and data
-        ui->spinBoxOptionsOnlineUpdate->setValue(MIN_ONLINE_UPDATE);
-        OptionData::instanceInternal().onlineCustomReload = MIN_ONLINE_UPDATE;
+        ui->spinBoxOptionsOnlineUpdate->setValue(MIN_ONLINE_UPDATE_SECONDS);
+        OptionData::instanceInternal().onlineCustomReload = MIN_ONLINE_UPDATE_SECONDS;
       }
     }
   }
@@ -1066,36 +1517,36 @@ void OptionsDialog::onlineTestUrl(const QString& url, bool statusFile)
   qDebug() << Q_FUNC_INFO << url;
   QStringList result;
 
-  if(atools::fs::weather::testUrl(result, url, QString(), QHash<QString, QString>(), 250))
+  if(atools::fs::weather::testUrl(result, url, QStringLiteral(), QHash<QString, QString>(), 250))
   {
     bool ok = false;
-    for(const QString& str : qAsConst(result))
+    for(const QString& str : std::as_const(result))
     {
       if(statusFile)
-        ok |= str.simplified().startsWith("url0") || str.simplified().startsWith("url1");
+        ok |= str.simplified().startsWith(QStringLiteral("url0")) || str.simplified().startsWith(QStringLiteral("url1"));
       else
-        ok |= str.simplified().startsWith("!GENERAL") || str.simplified().startsWith("!CLIENTS");
+        ok |= str.simplified().startsWith(QStringLiteral("!GENERAL")) || str.simplified().startsWith(QStringLiteral("!CLIENTS"));
     }
 
     if(ok)
-      atools::gui::Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
-                                       arg(result.mid(0, 6).join("<br/>")));
+      Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                          arg(result.mid(0, 6).join(QStringLiteral("<br/>"))));
     else
     {
       if(statusFile)
-        atools::gui::Dialog::warning(this, tr("<p>Downloaded successfully but the file does not look like a status.txt file.</p>"
-                                                "<p><b>One of the keys <i>url0</i> and/or <i>url1</i> is missing.</b></p>"
-                                                  "<p>First lines in file:</p><hr/><code>%1</code><hr/><br/>").
-                                     arg(result.mid(0, 6).join("<br/>")));
+        Dialog::warning(this, tr("<p>Downloaded successfully but the file does not look like a status.txt file.</p>"
+                                   "<p><b>One of the keys <i>url0</i> and/or <i>url1</i> is missing.</b></p>"
+                                     "<p>First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                        arg(result.mid(0, 6).join(QStringLiteral("<br/>"))));
       else
-        atools::gui::Dialog::warning(this, tr("<p>Downloaded successfully but the file does not look like a whazzup.txt file.</p>"
-                                                "<p><b>One of the sections <i>!GENERAL</i> and/or <i>!CLIENTS</i> is missing.</b></p>"
-                                                  "<p>First lines in file:</p><hr/><code>%1</code><hr/><br/>").
-                                     arg(result.mid(0, 6).join("<br/>")));
+        Dialog::warning(this, tr("<p>Downloaded successfully but the file does not look like a whazzup.txt file.</p>"
+                                   "<p><b>One of the sections <i>!GENERAL</i> and/or <i>!CLIENTS</i> is missing.</b></p>"
+                                     "<p>First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                        arg(result.mid(0, 6).join(QStringLiteral("<br/>"))));
     }
   }
   else
-    atools::gui::Dialog::warning(this, tr("Failed. Reason:\n%1").arg(result.join("\n")));
+    Dialog::warning(this, tr("Failed. Reason:\n%1").arg(result.join(QStringLiteral("\n"))));
 }
 
 void OptionsDialog::updateOnlineWidgetStatus()
@@ -1148,21 +1599,11 @@ void OptionsDialog::updateWidgetUnits()
   if(units == nullptr)
   {
     units = new UnitStringTool();
-    units->init({
-      ui->doubleSpinBoxOptionsMapZoomShowMap,
-      ui->doubleSpinBoxOptionsMapZoomShowMapMenu,
-      ui->spinBoxOptionsRouteGroundBuffer,
-      ui->spinBoxDisplayOnlineClearance,
-      ui->spinBoxDisplayOnlineArea,
-      ui->spinBoxDisplayOnlineApproach,
-      ui->spinBoxDisplayOnlineDeparture,
-      ui->spinBoxDisplayOnlineFir,
-      ui->spinBoxDisplayOnlineObserver,
-      ui->spinBoxDisplayOnlineGround,
-      ui->spinBoxDisplayOnlineTower,
-      ui->doubleSpinBoxOptionsSimZoomOnLanding,
-      ui->spinBoxOptionsSimZoomOnTakeoff
-    });
+    units->init({ui->doubleSpinBoxOptionsMapZoomShowMap, ui->doubleSpinBoxOptionsMapZoomShowMapMenu, ui->spinBoxOptionsRouteGroundBuffer,
+                 ui->spinBoxDisplayOnlineClearance, ui->spinBoxDisplayOnlineArea, ui->spinBoxDisplayOnlineApproach,
+                 ui->spinBoxDisplayOnlineDeparture, ui->spinBoxDisplayOnlineFir, ui->spinBoxDisplayOnlineObserver,
+                 ui->spinBoxDisplayOnlineGround, ui->spinBoxDisplayOnlineTower, ui->doubleSpinBoxOptionsSimZoomOnLanding,
+                 ui->spinBoxOptionsSimZoomOnTakeoff, ui->doubleSpinBoxOptionsProfileBuffer});
   }
   else
     units->update();
@@ -1181,12 +1622,18 @@ void OptionsDialog::updateTrailStates()
   updateButtonColors();
 }
 
+void OptionsDialog::updateLinkTooltipHandler()
+{
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
+}
+
 void OptionsDialog::updateWidgetStates()
 {
   updateWhileFlyingWidgets(false);
   updateButtonColors();
   updateGuiFontLabel();
   updateMapFontLabel();
+  updateProfileFontLabel();
   eastWestRuleClicked();
   mapEmptyAirportsClicked(false);
   updateCacheElevationStates();
@@ -1202,30 +1649,57 @@ void OptionsDialog::updateWidgetStates()
   updateTrailStates();
 }
 
+void OptionsDialog::saveDialogState()
+{
+  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG);
+  state.setDialogOptions(true /* position */, true /* size */);
+  state.save(this);
+}
+
+void OptionsDialog::restoreDialogState()
+{
+  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG);
+  state.setDialogOptions(true /* position */, true /* size */);
+  state.restore(this);
+}
+
+void OptionsDialog::resetWindowLayout()
+{
+  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG);
+  state.clear(this);
+  state.syncSettings();
+
+  atools::gui::centerWidgetOnScreen(this, defaultSize);
+}
+
 void OptionsDialog::saveState()
 {
   optionDataToWidgets(OptionData::instanceInternal());
 
   // Save widgets to settings
-  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG_WIDGET, false /* save visibility */, true /* block signals */);
-
+  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG_WIDGET, false /* visibility */, true /* blockSignals */);
   state.save(widgets);
-  state.save(this);
 
-  saveDisplayOptItemStates(displayOptItemIndexUser, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_USER_AIRCRAFT);
-  saveDisplayOptItemStates(displayOptItemIndexAi, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AI_AIRCRAFT);
-  saveDisplayOptItemStates(displayOptItemIndexAirport, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRPORT);
-  saveDisplayOptItemStates(displayOptItemIndexRose, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_COMPASS_ROSE);
-  saveDisplayOptItemStates(displayOptItemIndexMeasurement, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_MEASUREMENT);
-  saveDisplayOptItemStates(displayOptItemIndexRoute, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_ROUTE);
-  saveDisplayOptItemStates(displayOptItemIndexNavAid, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_NAVAID);
-  saveDisplayOptItemStates(displayOptItemIndexAirspace, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRSPACE);
+  saveDisplayOptItemStates(p->displayOptItemIndexUser, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_USER_AIRCRAFT);
+  saveDisplayOptItemStates(p->displayOptItemIndexAi, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AI_AIRCRAFT);
+  saveDisplayOptItemStates(p->displayOptItemIndexAirport, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRPORT);
+  saveDisplayOptItemStates(p->displayOptItemIndexRose, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_COMPASS_ROSE);
+  saveDisplayOptItemStates(p->displayOptItemIndexMeasurement, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_MEASUREMENT);
+  saveDisplayOptItemStates(p->displayOptItemIndexRoute, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_ROUTE);
+  saveDisplayOptItemStates(p->displayOptItemIndexNavAid, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_NAVAID);
+  saveDisplayOptItemStates(p->displayOptItemIndexAirspace, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRSPACE);
 
   Settings& settings = Settings::instance();
 
+  adjustFont(guiFont);
+  settings.setValue(lnm::OPTIONS_DIALOG_GUI_FONT, guiFont);
   settings.setValue(lnm::OPTIONS_DIALOG_LANGUAGE, guiLanguage);
-  settings.setValue(lnm::OPTIONS_DIALOG_FONT, guiFont);
+
+  adjustFont(mapFont);
   settings.setValue(lnm::OPTIONS_DIALOG_MAP_FONT, mapFont);
+
+  adjustFont(profileFont);
+  settings.setValue(lnm::OPTIONS_DIALOG_PROFILE_FONT, profileFont);
 
   // Save the path lists
   QStringList paths;
@@ -1249,7 +1723,6 @@ void OptionsDialog::saveState()
   settings.setValueVar(lnm::OPTIONS_DIALOG_FLIGHTPLAN_ACTIVE_COLOR, flightplanActiveColor);
   settings.setValueVar(lnm::OPTIONS_DIALOG_FLIGHTPLAN_PASSED_COLOR, flightplanPassedColor);
   settings.setValueVar(lnm::OPTIONS_DIALOG_TRAIL_COLOR, trailColor);
-  settings.setValueVar(lnm::OPTIONS_DIALOG_MEASUREMENT_COLOR, measurementColor);
   settings.setValueVar(lnm::OPTIONS_DIALOG_FLIGHTPLAN_HIGHLIGHT_COLOR, highlightFlightplanColor);
   settings.setValueVar(lnm::OPTIONS_DIALOG_SEARCH_HIGHLIGHT_COLOR, highlightSearchColor);
   settings.setValueVar(lnm::OPTIONS_DIALOG_PROFILE_HIGHLIGHT_COLOR, highlightProfileColor);
@@ -1257,72 +1730,79 @@ void OptionsDialog::saveState()
   Settings::syncSettings();
 }
 
-void OptionsDialog::restoreState()
+void OptionsDialog::restoreNetworkSettings(OptionData& od)
 {
-  Settings& settings = Settings::instance();
-
   // Reload online network settings from configuration file which can be overloaded by placing a copy
   // in the settings file
   QString networksPath = Settings::getOverloadedPath(lnm::NETWORKS_CONFIG);
   qInfo() << Q_FUNC_INFO << "Loading networks.cfg from" << networksPath;
 
   QSettings networkSettings(networksPath, QSettings::IniFormat);
+  od.onlineVatsimStatusUrl = networkSettings.value(QStringLiteral("vatsim/statusurl")).toString();
+  od.onlineVatsimTransceiverUrl = networkSettings.value(QStringLiteral("vatsim/transceiverurl")).toString();
+  od.onlineVatsimReload = networkSettings.value(QStringLiteral("vatsim/update")) == QStringLiteral("auto") ? -1 :
+                          networkSettings.value(QStringLiteral("vatsim/update")).toInt();
+  od.onlineVatsimTransceiverReload = networkSettings.value(QStringLiteral("vatsim/updatetransceiver")) == QStringLiteral("auto") ? -1 :
+                                     networkSettings.value(QStringLiteral("vatsim/updatetransceiver")).toInt();
+
+  od.onlineIvaoWhazzupUrl = networkSettings.value(QStringLiteral("ivao/whazzupurl")).toString();
+  od.onlineIvaoReload = networkSettings.value(QStringLiteral("ivao/update")) == QStringLiteral("auto") ? -1 :
+                        networkSettings.value(QStringLiteral("ivao/update")).toInt();
+
+  od.onlinePilotEdgeStatusUrl = networkSettings.value(QStringLiteral("pilotedge/statusurl")).toString();
+  od.onlinePilotEdgeReload = networkSettings.value(QStringLiteral("pilotedge/update")) == QStringLiteral("auto") ? -1 :
+                             networkSettings.value(QStringLiteral("pilotedge/update")).toInt();
+
+}
+
+void OptionsDialog::restoreState()
+{
   OptionData& od = OptionData::instanceInternal();
-
-  od.onlineVatsimStatusUrl = networkSettings.value("vatsim/statusurl").toString();
-  od.onlineVatsimTransceiverUrl = networkSettings.value("vatsim/transceiverurl").toString();
-  od.onlineVatsimReload = networkSettings.value("vatsim/update") == "auto" ? -1 :
-                          networkSettings.value("vatsim/update").toInt();
-  od.onlineVatsimTransceiverReload = networkSettings.value("vatsim/updatetransceiver") == "auto" ? -1 :
-                                     networkSettings.value("vatsim/updatetransceiver").toInt();
-
-  od.onlineIvaoWhazzupUrl = networkSettings.value("ivao/whazzupurl").toString();
-  od.onlineIvaoReload = networkSettings.value("ivao/update") == "auto" ? -1 :
-                        networkSettings.value("ivao/update").toInt();
-
-  od.onlinePilotEdgeStatusUrl = networkSettings.value("pilotedge/statusurl").toString();
-  od.onlinePilotEdgeReload = networkSettings.value("pilotedge/update") == "auto" ? -1 :
-                             networkSettings.value("pilotedge/update").toInt();
+  restoreNetworkSettings(od);
 
   // Disable selection based on what was found in the file
   ui->radioButtonOptionsOnlineIvao->setVisible(!od.onlineIvaoWhazzupUrl.isEmpty());
   ui->radioButtonOptionsOnlinePilotEdge->setVisible(!od.onlinePilotEdgeStatusUrl.isEmpty());
   ui->radioButtonOptionsOnlineVatsim->setVisible(!od.onlineVatsimStatusUrl.isEmpty());
 
-  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG_WIDGET, false /*save visibility*/, true /*block signals*/);
+  atools::gui::WidgetState state(lnm::OPTIONS_DIALOG_WIDGET, false /* visibility */, true /* blockSignals */);
+  state.restore(widgets);
+
+  if(!state.contains(ui->listWidgetOptionPages))
+    ui->listWidgetOptionPages->setCurrentRow(0);
+
   if(!state.contains(ui->splitterOptions))
   {
     // First start - splitter not saved yet
-
-    // Get list widget max width by looking at all items
+    // Get list widget max width by looking at all item texts
     int maxWidth = 0;
     for(int i = 0; i < ui->listWidgetOptionPages->count(); i++)
     {
-      QListWidgetItem *item = ui->listWidgetOptionPages->item(i);
+      const QListWidgetItem *item = ui->listWidgetOptionPages->item(i);
       maxWidth = std::max(QFontMetrics(item->font()).horizontalAdvance(item->text()), maxWidth);
     }
 
-    // Adjust splitter size to a reasonable value by setting maximum for the widget on the left
-    ui->listWidgetOptionPages->setMaximumWidth(maxWidth * 4 / 3);
+    // Adjust splitter size to a reasonable value by setting sizes
+    maxWidth = maxWidth * 4 / 3;
+    ui->splitterOptions->setSizes({maxWidth, width() - maxWidth});
+    ui->splitterOptions->updateGeometry();
 
     // Save splitter size - user can resize freely after next start
     state.save(ui->splitterOptions);
   }
 
-  state.restore(this);
-  state.restore(widgets);
-
-  restoreOptionItemStates(displayOptItemIndexUser, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_USER_AIRCRAFT);
-  restoreOptionItemStates(displayOptItemIndexAi, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AI_AIRCRAFT);
-  restoreOptionItemStates(displayOptItemIndexAirport, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRPORT);
-  restoreOptionItemStates(displayOptItemIndexRose, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_COMPASS_ROSE);
-  restoreOptionItemStates(displayOptItemIndexMeasurement, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_MEASUREMENT);
-  restoreOptionItemStates(displayOptItemIndexRoute, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_ROUTE);
-  restoreOptionItemStates(displayOptItemIndexNavAid, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_NAVAID);
-  restoreOptionItemStates(displayOptItemIndexAirspace, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRSPACE);
+  restoreOptionItemStates(p->displayOptItemIndexUser, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_USER_AIRCRAFT);
+  restoreOptionItemStates(p->displayOptItemIndexAi, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AI_AIRCRAFT);
+  restoreOptionItemStates(p->displayOptItemIndexAirport, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRPORT);
+  restoreOptionItemStates(p->displayOptItemIndexRose, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_COMPASS_ROSE);
+  restoreOptionItemStates(p->displayOptItemIndexMeasurement, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_MEASUREMENT);
+  restoreOptionItemStates(p->displayOptItemIndexRoute, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_ROUTE);
+  restoreOptionItemStates(p->displayOptItemIndexNavAid, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_NAVAID);
+  restoreOptionItemStates(p->displayOptItemIndexAirspace, lnm::OPTIONS_DIALOG_DISPLAY_OPTIONS_AIRSPACE);
 
   ui->splitterOptions->setHandleWidth(6);
 
+  Settings& settings = Settings::instance();
   addDatabaseTableItems(ui->tableWidgetOptionsDatabaseInclude, settings.valueStrList(lnm::OPTIONS_DIALOG_DB_INCLUDE));
   addDatabaseTableItems(ui->tableWidgetOptionsDatabaseExclude, settings.valueStrList(lnm::OPTIONS_DIALOG_DB_EXCLUDE));
   addDatabaseTableItems(ui->tableWidgetOptionsDatabaseExcludeAddon, settings.valueStrList(lnm::OPTIONS_DIALOG_DB_ADDON_EXCLUDE));
@@ -1340,8 +1820,6 @@ void OptionsDialog::restoreState()
                                             defaultData.flightplanPassedColor).value<QColor>();
   trailColor = settings.valueVar(lnm::OPTIONS_DIALOG_TRAIL_COLOR,
                                  defaultData.trailColor).value<QColor>();
-  measurementColor = settings.valueVar(lnm::OPTIONS_DIALOG_MEASUREMENT_COLOR,
-                                       defaultData.measurementColor).value<QColor>();
   highlightFlightplanColor = settings.valueVar(lnm::OPTIONS_DIALOG_FLIGHTPLAN_HIGHLIGHT_COLOR,
                                                defaultData.highlightFlightplanColor).value<QColor>();
   highlightSearchColor = settings.valueVar(lnm::OPTIONS_DIALOG_SEARCH_HIGHLIGHT_COLOR,
@@ -1349,17 +1827,25 @@ void OptionsDialog::restoreState()
   highlightProfileColor = settings.valueVar(lnm::OPTIONS_DIALOG_PROFILE_HIGHLIGHT_COLOR,
                                             defaultData.highlightProfileColor).value<QColor>();
 
-  guiLanguage = settings.valueStr(lnm::OPTIONS_DIALOG_LANGUAGE, QLocale().name());
-  guiFont = settings.valueStr(lnm::OPTIONS_DIALOG_FONT, QString());
-  mapFont = settings.valueStr(lnm::OPTIONS_DIALOG_MAP_FONT, QString());
+  mapFont = settings.valueStr(lnm::OPTIONS_DIALOG_MAP_FONT, QStringLiteral());
+  adjustFont(mapFont);
 
-  widgetsToOptionData();
+  profileFont = settings.valueStr(lnm::OPTIONS_DIALOG_PROFILE_FONT, QStringLiteral());
+  adjustFont(profileFont);
+
+  guiFont = settings.valueStr(lnm::OPTIONS_DIALOG_GUI_FONT, QStringLiteral());
+  adjustFont(guiFont);
+
+  guiLanguage = settings.valueStr(lnm::OPTIONS_DIALOG_LANGUAGE, QLocale().name());
+
+  widgetsToOptionData(OptionData::instanceInternal());
   updateWidgetUnits();
   mapEmptyAirportsClicked(false);
   updateWhileFlyingWidgets(false);
   updateButtonColors();
   updateGuiFontLabel();
   updateMapFontLabel();
+  updateProfileFontLabel();
   eastWestRuleClicked();
   updateTrailStates();
 
@@ -1402,13 +1888,13 @@ void OptionsDialog::udpdateLanguageComboBox(const QString& lang)
   if(ui->comboBoxOptionsGuiLanguage->count() == 0)
   {
     // Fill combo box with all available locale =========================
-    QVector<QLocale> locales = atools::gui::Translator::findTranslationFiles();
+    QList<QLocale> locales = atools::gui::Translator::findTranslationFiles();
     ui->comboBoxOptionsGuiLanguage->clear();
     for(int i = 0; i < locales.size(); i++)
     {
       // Usedata for item is locale object
       const QLocale& locale = locales.at(i);
-      ui->comboBoxOptionsGuiLanguage->addItem(tr("%1, %2").arg(locale.nativeLanguageName()).arg(locale.nativeCountryName()), locale);
+      ui->comboBoxOptionsGuiLanguage->addItem(tr("%1, %2").arg(locale.nativeLanguageName()).arg(locale.nativeTerritoryName()), locale);
     }
   }
 
@@ -1420,7 +1906,7 @@ void OptionsDialog::udpdateLanguageComboBox(const QString& lang)
     const QLocale& locale = ui->comboBoxOptionsGuiLanguage->itemData(i).value<QLocale>();
 
     // Check if language and country match - this is the most precise match
-    if(system.language() == locale.language() && system.country() == locale.country())
+    if(system.language() == locale.language() && system.territory() == locale.territory())
       currentIndexLangCountry = i;
 
     // Check if language matches
@@ -1456,16 +1942,15 @@ void OptionsDialog::udpdateLanguageComboBox(const QString& lang)
 
 void OptionsDialog::updateButtonColors()
 {
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanColor, flightplanColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanOutlineColor, flightplanOutlineColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanProcedureColor, flightplanProcedureColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanActiveColor, flightplanActiveColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanPassedColor, flightplanPassedColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsDisplayTrailColor, trailColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsMapMeasurementColor, measurementColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsMapHighlightFlightPlanColor, highlightFlightplanColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsMapHighlightSearchColor, highlightSearchColor);
-  atools::gui::util::changeWidgetColor(ui->pushButtonOptionsMapHighlightProfileColor, highlightProfileColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanColor, flightplanColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanOutlineColor, flightplanOutlineColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanProcedureColor, flightplanProcedureColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanActiveColor, flightplanActiveColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayFlightplanPassedColor, flightplanPassedColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsDisplayTrailColor, trailColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsMapHighlightFlightPlanColor, highlightFlightplanColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsMapHighlightSearchColor, highlightSearchColor);
+  atools::gui::changeWidgetColor(ui->pushButtonOptionsMapHighlightProfileColor, highlightProfileColor);
 }
 
 template<typename TYPE>
@@ -1474,15 +1959,14 @@ void OptionsDialog::restoreOptionItemStates(const QHash<TYPE, QTreeWidgetItem *>
   const Settings& settings = Settings::instance();
   for(const TYPE& dispOpt : index.keys())
   {
-    QString optName = optionPrefix + "_" + QString::number(dispOpt);
+    QString optName = optionPrefix % QStringLiteral("_") % QString::number(dispOpt);
     if(settings.contains(optName))
       index.value(dispOpt)->setCheckState(0, settings.valueBool(optName, false) ? Qt::Checked : Qt::Unchecked);
   }
 }
 
 template<typename TYPE>
-void OptionsDialog::saveDisplayOptItemStates(const QHash<TYPE, QTreeWidgetItem *>& index,
-                                             const QString& optionPrefix) const
+void OptionsDialog::saveDisplayOptItemStates(const QHash<TYPE, QTreeWidgetItem *>& index, const QString& optionPrefix) const
 {
   Settings& settings = Settings::instance();
 
@@ -1490,7 +1974,7 @@ void OptionsDialog::saveDisplayOptItemStates(const QHash<TYPE, QTreeWidgetItem *
   {
     QTreeWidgetItem *item = index.value(dispOpt);
 
-    QString optName = optionPrefix + "_" + QString::number(dispOpt);
+    QString optName = optionPrefix % QStringLiteral("_") % QString::number(dispOpt);
 
     settings.setValue(optName, item->checkState(0) == Qt::Checked);
   }
@@ -1601,11 +2085,6 @@ void OptionsDialog::trailColorClicked()
   colorButtonClicked(trailColor);
 }
 
-void OptionsDialog::mapMeasurementColorClicked()
-{
-  colorButtonClicked(measurementColor);
-}
-
 void OptionsDialog::updateHighlightWidgets()
 {
   ui->spinBoxOptionsMapHighlightTransparent->setEnabled(ui->checkBoxOptionsMapHighlightTransparent->isChecked());
@@ -1632,15 +2111,15 @@ void OptionsDialog::testWeatherNoaaUrlClicked()
   datetime.setTime(QTime(datetime.time().hour(), 0, 0));
   QString url = ui->lineEditOptionsWeatherNoaaStationsUrl->text().arg(datetime.time().hour(), 2, 10, QChar('0')).trimmed();
 
-  bool result = WeatherReporter::testUrl(resultStr, url, QString());
+  bool result = WeatherReporter::testUrl(resultStr, url, QStringLiteral());
 
   QGuiApplication::restoreOverrideCursor();
 
   if(result)
-    atools::gui::Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
-                                     arg(resultStr.join("<br/>")));
+    Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                        arg(resultStr.join(QStringLiteral("<br/>"))));
   else
-    atools::gui::Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join("\n")));
+    Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join(QStringLiteral("\n"))));
 }
 
 /* Test Vatsim weather URL and show a dialog with the result */
@@ -1650,14 +2129,14 @@ void OptionsDialog::testWeatherVatsimUrlClicked()
   QStringList resultStr;
 
   QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherVatsimUrl->text().trimmed(), QString());
+  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherVatsimUrl->text().trimmed(), QStringLiteral());
   QGuiApplication::restoreOverrideCursor();
 
   if(result)
-    atools::gui::Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
-                                     arg(resultStr.join("<br/>")));
+    Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                        arg(resultStr.join(QStringLiteral("<br/>"))));
   else
-    atools::gui::Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join("\n")));
+    Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join(QStringLiteral("\n"))));
 }
 
 /* Test IVAO weather download URL and show a dialog of the first line */
@@ -1667,20 +2146,19 @@ void OptionsDialog::testWeatherIvaoUrlClicked()
   QStringList resultStr;
 
   QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherIvaoUrl->text().trimmed(), QString(), {
-    {"accept", "application/json"},
-    {"apiKey",
-     atools::strFromCryptFile(":/littlenavmap/little_navmap_keys/ivao_weather_api_key.bin",
-                              0x2B1A96468EB62460)}
+  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherIvaoUrl->text().trimmed(), QStringLiteral(), {
+    {QStringLiteral("accept"), QStringLiteral("application/json")},
+    {QStringLiteral("apiKey"),
+     atools::strFromCryptFile(QStringLiteral(":/littlenavmap/little_navmap_keys/ivao_weather_api_key.bin"), 0x2B1A96468EB62460)}
   });
 
   QGuiApplication::restoreOverrideCursor();
 
   if(result)
-    atools::gui::Dialog::information(this,
-                                     tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").arg(resultStr.join("<br/>")));
+    Dialog::information(this, tr("<p>Success. First lines in file:</p><hr/><code>%1</code><hr/><br/>").
+                        arg(resultStr.join(QStringLiteral("<br/>"))));
   else
-    atools::gui::Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join("\n")));
+    Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join(QStringLiteral("\n"))));
 }
 
 /* Test NOAA GRIB download URL and show a dialog of the first line */
@@ -1689,12 +2167,12 @@ void OptionsDialog::testWeatherNoaaWindUrlClicked()
   qDebug() << Q_FUNC_INFO;
   QStringList resultStr;
   QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherNoaaWindUrl->text().trimmed(), QString());
+  bool result = WeatherReporter::testUrl(resultStr, ui->lineEditOptionsWeatherNoaaWindUrl->text().trimmed(), QStringLiteral());
   QGuiApplication::restoreOverrideCursor();
   if(result)
-    atools::gui::Dialog::information(this, tr("Success."));
+    Dialog::information(this, tr("Success."));
   else
-    atools::gui::Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join("\n")));
+    Dialog::warning(this, tr("Failed. Reason:\n%1").arg(resultStr.join(QStringLiteral("\n"))));
 }
 
 void OptionsDialog::resetWeatherNoaaUrlClicked()
@@ -1721,8 +2199,8 @@ void OptionsDialog::resetWeatherNoaaWindUrlClicked()
 void OptionsDialog::addDatabaseIncludeDirClicked()
 {
   qDebug() << Q_FUNC_INFO;
-  QString path = atools::gui::Dialog(this).openDirectoryDialog(tr("Open Directory to include"), lnm::OPTIONS_DIALOG_DB_DIR_DLG,
-                                                               NavApp::getCurrentSimulatorBasePath());
+  QString path = Dialog(this).openDirectoryDialog(tr("Open Directory to include"), lnm::OPTIONS_DIALOG_DB_DIR_DLG,
+                                                  NavApp::getCurrentSimulatorBasePath());
 
   addDatabaseTableItem(ui->tableWidgetOptionsDatabaseInclude, path);
   updateDatabaseButtonState();
@@ -1739,8 +2217,8 @@ void OptionsDialog::removeDatabaseIncludePathClicked()
 void OptionsDialog::addDatabaseExcludeDirClicked()
 {
   qDebug() << Q_FUNC_INFO;
-  QString path = atools::gui::Dialog(this).openDirectoryDialog(tr("Open Directory to exclude from Scenery Loading"),
-                                                               lnm::OPTIONS_DIALOG_DB_DIR_DLG, NavApp::getCurrentSimulatorBasePath());
+  QString path = Dialog(this).openDirectoryDialog(tr("Open Directory to exclude from Scenery Loading"),
+                                                  lnm::OPTIONS_DIALOG_DB_DIR_DLG, NavApp::getCurrentSimulatorBasePath());
 
   addDatabaseTableItem(ui->tableWidgetOptionsDatabaseExclude, path);
   updateDatabaseButtonState();
@@ -1751,9 +2229,9 @@ void OptionsDialog::addDatabaseExcludeFileClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  const QStringList paths = atools::gui::Dialog(this).openFileDialogMulti(tr("Open Files to exclude from Scenery Loading"),
-                                                                          QString(), // filter lnm::OPTIONS_DIALOG_DB_FILE_DLG,
-                                                                          NavApp::getCurrentSimulatorBasePath());
+  const QStringList paths = Dialog(this).openFileDialogMulti(tr("Open Files to exclude from Scenery Loading"),
+                                                             QStringLiteral(), // filter lnm::OPTIONS_DIALOG_DB_FILE_DLG,
+                                                             NavApp::getCurrentSimulatorBasePath());
 
   for(const QString& path : paths)
     addDatabaseTableItem(ui->tableWidgetOptionsDatabaseExclude, path);
@@ -1772,8 +2250,8 @@ void OptionsDialog::addDatabaseAddOnExcludePathClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  QString path = atools::gui::Dialog(this).openDirectoryDialog(tr("Open Directory to exclude from Add-On Recognition"),
-                                                               lnm::OPTIONS_DIALOG_DB_DIR_DLG, NavApp::getCurrentSimulatorBasePath());
+  QString path = Dialog(this).openDirectoryDialog(tr("Open Directory to exclude from Add-On Recognition"),
+                                                  lnm::OPTIONS_DIALOG_DB_DIR_DLG, NavApp::getCurrentSimulatorBasePath());
 
   addDatabaseTableItem(ui->tableWidgetOptionsDatabaseExcludeAddon, path);
   updateDatabaseButtonState();
@@ -1819,13 +2297,18 @@ void OptionsDialog::updateWhileFlyingWidgets(bool)
                                                     ui->checkBoxOptionsSimClearSelection->isChecked());
 }
 
-void OptionsDialog::widgetsToOptionData()
+void OptionsDialog::widgetsToOptionData(OptionData& data)
 {
-  OptionData& data = OptionData::instanceInternal();
+  adjustFont(mapFont);
+  data.mapFont = mapFont;
+
+  adjustFont(profileFont);
+  data.profileFont = profileFont;
+
+  adjustFont(guiFont);
+  data.guiFont = guiFont;
 
   data.guiLanguage = guiLanguage;
-  data.guiFont = guiFont;
-  data.mapFont = mapFont;
 
   data.flightplanColor = flightplanColor;
   data.flightplanOutlineColor = flightplanOutlineColor;
@@ -1837,31 +2320,30 @@ void OptionsDialog::widgetsToOptionData()
   data.highlightProfileColor = highlightProfileColor;
 
   data.trailColor = trailColor;
-  data.measurementColor = measurementColor;
 
   data.displayOptionsUserAircraft = optsac::ITEM_USER_AIRCRAFT_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsUserAircraft, displayOptItemIndexUser);
+  displayOptWidgetToOptionData(data.displayOptionsUserAircraft, p->displayOptItemIndexUser);
 
   data.displayOptionsAiAircraft = optsac::ITEM_AI_AIRCRAFT_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsAiAircraft, displayOptItemIndexAi);
+  displayOptWidgetToOptionData(data.displayOptionsAiAircraft, p->displayOptItemIndexAi);
 
   data.displayOptionsAirport = optsd::AIRPORT_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsAirport, displayOptItemIndexAirport);
+  displayOptWidgetToOptionData(data.displayOptionsAirport, p->displayOptItemIndexAirport);
 
   data.displayOptionsRose = optsd::ROSE_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsRose, displayOptItemIndexRose);
+  displayOptWidgetToOptionData(data.displayOptionsRose, p->displayOptItemIndexRose);
 
   data.displayOptionsMeasurement = optsd::MEASUREMENT_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsMeasurement, displayOptItemIndexMeasurement);
+  displayOptWidgetToOptionData(data.displayOptionsMeasurement, p->displayOptItemIndexMeasurement);
 
   data.displayOptionsRoute = optsd::ROUTE_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsRoute, displayOptItemIndexRoute);
+  displayOptWidgetToOptionData(data.displayOptionsRoute, p->displayOptItemIndexRoute);
 
   data.displayOptionsNavAid = optsd::NAVAIDS_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsNavAid, displayOptItemIndexNavAid);
+  displayOptWidgetToOptionData(data.displayOptionsNavAid, p->displayOptItemIndexNavAid);
 
   data.displayOptionsAirspace = optsd::AIRSPACE_NONE;
-  displayOptWidgetToOptionData(data.displayOptionsAirspace, displayOptItemIndexAirspace);
+  displayOptWidgetToOptionData(data.displayOptionsAirspace, p->displayOptItemIndexAirspace);
 
   toFlags(data.flags, ui->checkBoxOptionsStartupLoadKml, opts::STARTUP_LOAD_KML);
   toFlags(data.flags, ui->checkBoxOptionsStartupLoadMapSettings, opts::STARTUP_LOAD_MAP_SETTINGS);
@@ -1882,6 +2364,7 @@ void OptionsDialog::widgetsToOptionData()
   toFlags(data.flags2, ui->checkBoxOptionsGuiRaiseMainWindow, opts2::RAISE_MAIN_WINDOW);
   toFlags(data.flags2, ui->checkBoxOptionsUnitFuelOther, opts2::UNIT_FUEL_SHOW_OTHER);
   toFlags(data.flags2, ui->checkBoxOptionsUnitTrueCourse, opts2::UNIT_TRUE_COURSE);
+  toFlags(data.flags2, ui->checkBoxOptionsUnitEnhancedAccuracy, opts2::UNIT_ENHANCED_ACCURACY);
   toFlags(data.flags, ui->checkBoxOptionsGuiCenterRoute, opts::GUI_CENTER_ROUTE);
   toFlags(data.flags, ui->checkBoxOptionsGuiAddDeparture, opts::GUI_ADD_DEPARTURE);
   toFlags(data.flags, ui->checkBoxOptionsGuiAvoidOverwrite, opts::GUI_AVOID_OVERWRITE_FLIGHTPLAN);
@@ -1902,7 +2385,6 @@ void OptionsDialog::widgetsToOptionData()
 
   toFlags(data.flags2, ui->checkBoxOptionsMapZoomAvoidBlurred, opts2::MAP_AVOID_BLURRED_MAP);
   toFlags(data.flags2, ui->checkBoxOptionsMapUndock, opts2::MAP_ALLOW_UNDOCK);
-  toFlags(data.flags2, ui->checkBoxOptionsGuiHighDpi, opts2::HIGH_DPI_DISPLAY_SUPPORT);
   toFlags(data.flags2, ui->checkBoxOptionsGuiToolbarSize, opts2::OVERRIDE_TOOLBAR_SIZE);
   toFlags(data.flags, ui->checkBoxOptionsFreetype, opts::GUI_FREETYPE_FONT_ENGINE);
 
@@ -1913,6 +2395,7 @@ void OptionsDialog::widgetsToOptionData()
   toFlags(data.flags2, ui->checkBoxOptionsMapAirportText, opts2::MAP_AIRPORT_TEXT_BACKGROUND);
   toFlags(data.flags2, ui->checkBoxOptionsMapAirportAddon, opts2::MAP_AIRPORT_HIGHLIGHT_ADDON);
   toFlags(data.flags2, ui->checkBoxOptionsMapNavaidText, opts2::MAP_NAVAID_TEXT_BACKGROUND);
+  toFlags(data.flags2, ui->checkBoxOptionsMapNavaidFill, opts2::MAP_NAVAID_FILL_BACKGROUND);
   toFlags(data.flags2, ui->checkBoxOptionsMapUserpointText, opts2::MAP_USERPOINT_TEXT_BACKGROUND);
   toFlags(data.flags2, ui->checkBoxOptionsMapAirwayText, opts2::MAP_AIRWAY_TEXT_BACKGROUND);
   toFlags(data.flags2, ui->checkBoxOptionsMapFlightplanText, opts2::MAP_ROUTE_TEXT_BACKGROUND);
@@ -1938,6 +2421,7 @@ void OptionsDialog::widgetsToOptionData()
 
   toFlags(data.flags, ui->checkBoxOptionsOnlineRemoveShadow, opts::ONLINE_REMOVE_SHADOW);
   toFlags(data.flags, ui->checkBoxOptionsGuiTooltipsAll, opts::ENABLE_TOOLTIPS_ALL);
+  toFlags(data.flags, ui->checkBoxOptionsGuiTooltipsLink, opts::ENABLE_TOOLTIPS_LINK);
   toFlags(data.flags, ui->checkBoxOptionsGuiTooltipsMenu, opts::ENABLE_TOOLTIPS_MENU);
 
   toFlags(data.displayOnlineFlags, ui->checkBoxDisplayOnlineClearanceRange, opts::DISPLAY_ONLINE_CLEARANCE);
@@ -1994,9 +2478,9 @@ void OptionsDialog::widgetsToOptionData()
   for(int row = 0; row < ui->tableWidgetOptionsDatabaseExclude->rowCount(); row++)
     data.databaseExclude.append(ui->tableWidgetOptionsDatabaseExclude->item(row, 0)->text());
 
-  data.databaseAddonExclude.clear();
+  data.databaseExcludeAddon.clear();
   for(int row = 0; row < ui->tableWidgetOptionsDatabaseExcludeAddon->rowCount(); row++)
-    data.databaseAddonExclude.append(ui->tableWidgetOptionsDatabaseExcludeAddon->item(row, 0)->text());
+    data.databaseExcludeAddon.append(ui->tableWidgetOptionsDatabaseExcludeAddon->item(row, 0)->text());
 
   data.mapScrollDetail = static_cast<opts::MapScrollDetail>(ui->comboBoxMapScrollZoomDetails->currentIndex());
 
@@ -2025,8 +2509,10 @@ void OptionsDialog::widgetsToOptionData()
   data.simUpdateBoxCenterLegZoom = ui->spinBoxOptionsSimCenterLegZoom->value();
   data.aircraftTrailMaxPoints = ui->spinBoxSimMaxTrailPoints->value();
 
-  data.cacheSizeDisk = ui->spinBoxOptionsCacheDiskSize->value();
-  data.cacheSizeMemory = ui->spinBoxOptionsCacheMemorySize->value();
+  data.cacheSizeDisk = ui->spinBoxOptionsCacheDiskMap->value();
+  data.cacheSizeMemoryMap = ui->spinBoxOptionsCacheMemoryMap->value();
+  data.cacheSizeMemoryProfile = ui->spinBoxOptionsCacheMemoryProfile->value();
+  data.profileBuffer = static_cast<float>(ui->doubleSpinBoxOptionsProfileBuffer->value());
   data.guiInfoTextSize = ui->spinBoxOptionsGuiInfoText->value();
   data.guiPerfReportTextSize = ui->spinBoxOptionsGuiAircraftPerf->value();
   data.guiRouteTableTextSize = ui->spinBoxOptionsGuiRouteText->value();
@@ -2063,6 +2549,7 @@ void OptionsDialog::widgetsToOptionData()
   data.displaySymbolSizeWindBarbs = ui->spinBoxOptionsDisplaySymbolSizeWindBarbs->value();
   data.displaySymbolSizeAircraftAi = ui->spinBoxOptionsDisplaySymbolSizeAircraftAi->value();
   data.displayTextSizeFlightplan = ui->spinBoxOptionsDisplayTextSizeFlightplan->value();
+  data.displaySymbolSizeFlightplan = ui->spinBoxOptionsDisplaySymbolSizeFlightplan->value();
   data.displayTextSizeFlightplanProfile = ui->spinBoxOptionsDisplayTextSizeFlightplanProfile->value();
   data.displayTransparencyFlightplan = ui->spinBoxOptionsDisplayTransparencyFlightplan->value();
   data.displayTextSizeAircraftUser = ui->spinBoxOptionsDisplayTextSizeAircraftUser->value();
@@ -2071,7 +2558,7 @@ void OptionsDialog::widgetsToOptionData()
   data.displayTextSizeAirportRunway = ui->spinBoxOptionsDisplayTextSizeAirportRunway->value();
   data.displayTextSizeAirportTaxiway = ui->spinBoxOptionsDisplayTextSizeAirportTaxiway->value();
   data.displayThicknessTrail = ui->spinBoxOptionsDisplayThicknessTrail->value();
-  data.displayThicknessUserFeature = ui->spinBoxOptionsDisplayThicknessUserFeature->value();
+  data.displayThicknessMapMarker = ui->spinBoxOptionsDisplayThicknessUserFeature->value();
   data.displayThicknessMeasurement = ui->spinBoxOptionsDisplayThicknessMeasurement->value();
   data.displayThicknessCompassRose = ui->spinBoxOptionsDisplayThicknessCompassRose->value();
   data.displaySunShadingDimFactor = ui->spinBoxOptionsDisplaySunShadeDarkness->value();
@@ -2086,7 +2573,7 @@ void OptionsDialog::widgetsToOptionData()
 
   data.mapNavTouchArea = ui->spinBoxOptionsMapNavTouchArea->value();
 
-  data.displayTextSizeUserFeature = ui->spinBoxOptionsDisplayTextSizeUserFeature->value();
+  data.displayTextSizeMapMarker = ui->spinBoxOptionsDisplayTextSizeUserFeature->value();
   data.displayTextSizeMeasurement = ui->spinBoxOptionsDisplayTextSizeMeasurement->value();
   data.displayTextSizeCompassRose = ui->spinBoxOptionsDisplayTextSizeCompassRose->value();
 
@@ -2135,12 +2622,14 @@ void OptionsDialog::widgetsToOptionData()
   data.displayOnlineTower = ui->spinBoxDisplayOnlineTower->value();
 
   data.webPort = ui->spinBoxOptionsWebPort->value();
-  data.webIconScale = ui->spinBoxOptionWebIconSize->value();
   data.webDocumentRoot = QDir::fromNativeSeparators(ui->lineEditOptionsWebDocroot->text());
   data.webEncrypted = ui->checkBoxOptionsWebEncrypted->isChecked();
 
   data.weatherXplaneWind = ui->lineEditOptionsWeatherXplaneWind->text();
   data.weatherNoaaWindBaseUrl = ui->lineEditOptionsWeatherNoaaWindUrl->text().trimmed();
+
+  data.displayScaleAll = ui->spinBoxOptionsDisplayScaleAll->value();
+  data.displayScaleAllWeb = ui->spinBoxOptionsDisplayScaleAllWeb->value();
 
   widgetToMapThemeKeys(data);
 
@@ -2155,15 +2644,28 @@ void OptionsDialog::initLanguage()
   qDebug() << Q_FUNC_INFO << guiLanguage;
 }
 
+void OptionsDialog::initActions()
+{
+  // Copy main menu actions to allow using shortcuts in the non-modal dialog too
+  addActions(NavApp::getMainWindowActions());
+}
+
 void OptionsDialog::optionDataToWidgets(const OptionData& data)
 {
   guiLanguage = data.guiLanguage;
   udpdateLanguageComboBox(guiLanguage);
 
   guiFont = data.guiFont;
-  mapFont = data.mapFont;
+  adjustFont(guiFont);
   updateGuiFontLabel();
+
+  mapFont = data.mapFont;
+  adjustFont(mapFont);
   updateMapFontLabel();
+
+  profileFont = data.profileFont;
+  adjustFont(profileFont);
+  updateProfileFontLabel();
 
   flightplanColor = data.flightplanColor;
   flightplanOutlineColor = data.flightplanOutlineColor;
@@ -2171,20 +2673,19 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   flightplanActiveColor = data.flightplanActiveColor;
   flightplanPassedColor = data.flightplanPassedColor;
   trailColor = data.trailColor;
-  measurementColor = data.measurementColor;
   highlightFlightplanColor = data.highlightFlightplanColor;
   highlightSearchColor = data.highlightSearchColor;
   highlightProfileColor = data.highlightProfileColor;
 
   // Copy values from the tree widget
-  displayOptDataToWidget(data.displayOptionsUserAircraft, displayOptItemIndexUser);
-  displayOptDataToWidget(data.displayOptionsAiAircraft, displayOptItemIndexAi);
-  displayOptDataToWidget(data.displayOptionsAirport, displayOptItemIndexAirport);
-  displayOptDataToWidget(data.displayOptionsRose, displayOptItemIndexRose);
-  displayOptDataToWidget(data.displayOptionsMeasurement, displayOptItemIndexMeasurement);
-  displayOptDataToWidget(data.displayOptionsRoute, displayOptItemIndexRoute);
-  displayOptDataToWidget(data.displayOptionsNavAid, displayOptItemIndexNavAid);
-  displayOptDataToWidget(data.displayOptionsAirspace, displayOptItemIndexAirspace);
+  displayOptDataToWidget(data.displayOptionsUserAircraft, p->displayOptItemIndexUser);
+  displayOptDataToWidget(data.displayOptionsAiAircraft, p->displayOptItemIndexAi);
+  displayOptDataToWidget(data.displayOptionsAirport, p->displayOptItemIndexAirport);
+  displayOptDataToWidget(data.displayOptionsRose, p->displayOptItemIndexRose);
+  displayOptDataToWidget(data.displayOptionsMeasurement, p->displayOptItemIndexMeasurement);
+  displayOptDataToWidget(data.displayOptionsRoute, p->displayOptItemIndexRoute);
+  displayOptDataToWidget(data.displayOptionsNavAid, p->displayOptItemIndexNavAid);
+  displayOptDataToWidget(data.displayOptionsAirspace, p->displayOptItemIndexAirspace);
 
   // Copy from check and radio buttons
   fromFlags(data.flags, ui->checkBoxOptionsStartupLoadKml, opts::STARTUP_LOAD_KML);
@@ -2206,6 +2707,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   fromFlags(data.flags2, ui->checkBoxOptionsGuiRaiseMainWindow, opts2::RAISE_MAIN_WINDOW);
   fromFlags(data.flags2, ui->checkBoxOptionsUnitFuelOther, opts2::UNIT_FUEL_SHOW_OTHER);
   fromFlags(data.flags2, ui->checkBoxOptionsUnitTrueCourse, opts2::UNIT_TRUE_COURSE);
+  fromFlags(data.flags2, ui->checkBoxOptionsUnitEnhancedAccuracy, opts2::UNIT_ENHANCED_ACCURACY);
   fromFlags(data.flags, ui->checkBoxOptionsGuiCenterRoute, opts::GUI_CENTER_ROUTE);
   fromFlags(data.flags, ui->checkBoxOptionsGuiAddDeparture, opts::GUI_ADD_DEPARTURE);
   fromFlags(data.flags, ui->checkBoxOptionsGuiAvoidOverwrite, opts::GUI_AVOID_OVERWRITE_FLIGHTPLAN);
@@ -2226,7 +2728,6 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
 
   fromFlags(data.flags2, ui->checkBoxOptionsMapZoomAvoidBlurred, opts2::MAP_AVOID_BLURRED_MAP);
   fromFlags(data.flags2, ui->checkBoxOptionsMapUndock, opts2::MAP_ALLOW_UNDOCK);
-  fromFlags(data.flags2, ui->checkBoxOptionsGuiHighDpi, opts2::HIGH_DPI_DISPLAY_SUPPORT);
   fromFlags(data.flags2, ui->checkBoxOptionsGuiToolbarSize, opts2::OVERRIDE_TOOLBAR_SIZE);
   fromFlags(data.flags, ui->checkBoxOptionsFreetype, opts::GUI_FREETYPE_FONT_ENGINE);
 
@@ -2238,6 +2739,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   fromFlags(data.flags2, ui->checkBoxOptionsMapAirportText, opts2::MAP_AIRPORT_TEXT_BACKGROUND);
   fromFlags(data.flags2, ui->checkBoxOptionsMapAirportAddon, opts2::MAP_AIRPORT_HIGHLIGHT_ADDON);
   fromFlags(data.flags2, ui->checkBoxOptionsMapNavaidText, opts2::MAP_NAVAID_TEXT_BACKGROUND);
+  fromFlags(data.flags2, ui->checkBoxOptionsMapNavaidFill, opts2::MAP_NAVAID_FILL_BACKGROUND);
   fromFlags(data.flags2, ui->checkBoxOptionsMapUserpointText, opts2::MAP_USERPOINT_TEXT_BACKGROUND);
   fromFlags(data.flags2, ui->checkBoxOptionsMapAirwayText, opts2::MAP_AIRWAY_TEXT_BACKGROUND);
   fromFlags(data.flags2, ui->checkBoxOptionsMapUserAircraftText, opts2::MAP_USER_TEXT_BACKGROUND);
@@ -2266,6 +2768,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   fromFlags(data.flags, ui->checkBoxOptionsOnlineRemoveShadow, opts::ONLINE_REMOVE_SHADOW);
   fromFlags(data.flags, ui->checkBoxOptionsGuiTooltipsAll, opts::ENABLE_TOOLTIPS_ALL);
   fromFlags(data.flags, ui->checkBoxOptionsGuiTooltipsMenu, opts::ENABLE_TOOLTIPS_MENU);
+  fromFlags(data.flags, ui->checkBoxOptionsGuiTooltipsLink, opts::ENABLE_TOOLTIPS_LINK);
 
   fromFlags(data.displayOnlineFlags, ui->checkBoxDisplayOnlineClearanceRange, opts::DISPLAY_ONLINE_CLEARANCE);
   fromFlags(data.displayOnlineFlags, ui->checkBoxDisplayOnlineAreaRange, opts::DISPLAY_ONLINE_AREA);
@@ -2309,7 +2812,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
 
   addDatabaseTableItems(ui->tableWidgetOptionsDatabaseInclude, data.databaseInclude);
   addDatabaseTableItems(ui->tableWidgetOptionsDatabaseExclude, data.databaseExclude);
-  addDatabaseTableItems(ui->tableWidgetOptionsDatabaseExcludeAddon, data.databaseAddonExclude);
+  addDatabaseTableItems(ui->tableWidgetOptionsDatabaseExcludeAddon, data.databaseExcludeAddon);
 
   ui->comboBoxMapScrollZoomDetails->setCurrentIndex(data.mapScrollDetail);
 
@@ -2351,8 +2854,10 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   ui->spinBoxOptionsSimUpdateBox->setValue(data.simUpdateBox);
   ui->spinBoxOptionsSimCenterLegZoom->setValue(data.simUpdateBoxCenterLegZoom);
   ui->spinBoxSimMaxTrailPoints->setValue(data.aircraftTrailMaxPoints);
-  ui->spinBoxOptionsCacheDiskSize->setValue(data.cacheSizeDisk);
-  ui->spinBoxOptionsCacheMemorySize->setValue(data.cacheSizeMemory);
+  ui->spinBoxOptionsCacheDiskMap->setValue(data.cacheSizeDisk);
+  ui->spinBoxOptionsCacheMemoryMap->setValue(data.cacheSizeMemoryMap);
+  ui->spinBoxOptionsCacheMemoryProfile->setValue(data.cacheSizeMemoryProfile);
+  ui->doubleSpinBoxOptionsProfileBuffer->setValue(data.profileBuffer);
   ui->spinBoxOptionsGuiInfoText->setValue(data.guiInfoTextSize);
   ui->spinBoxOptionsGuiAircraftPerf->setValue(data.guiPerfReportTextSize);
   ui->spinBoxOptionsGuiRouteText->setValue(data.guiRouteTableTextSize);
@@ -2384,6 +2889,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   ui->spinBoxOptionsDisplaySymbolSizeWindBarbs->setValue(data.displaySymbolSizeWindBarbs);
   ui->spinBoxOptionsDisplaySymbolSizeAircraftAi->setValue(data.displaySymbolSizeAircraftAi);
   ui->spinBoxOptionsDisplayTextSizeFlightplan->setValue(data.displayTextSizeFlightplan);
+  ui->spinBoxOptionsDisplaySymbolSizeFlightplan->setValue(data.displaySymbolSizeFlightplan);
   ui->spinBoxOptionsDisplayTextSizeFlightplanProfile->setValue(data.displayTextSizeFlightplanProfile);
   ui->spinBoxOptionsDisplayTransparencyFlightplan->setValue(data.displayTransparencyFlightplan);
   ui->spinBoxOptionsDisplayTextSizeAircraftUser->setValue(data.displayTextSizeAircraftUser);
@@ -2392,7 +2898,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   ui->spinBoxOptionsDisplayTextSizeAirportRunway->setValue(data.displayTextSizeAirportRunway);
   ui->spinBoxOptionsDisplayTextSizeAirportTaxiway->setValue(data.displayTextSizeAirportTaxiway);
   ui->spinBoxOptionsDisplayThicknessTrail->setValue(data.displayThicknessTrail);
-  ui->spinBoxOptionsDisplayThicknessUserFeature->setValue(data.displayThicknessUserFeature);
+  ui->spinBoxOptionsDisplayThicknessUserFeature->setValue(data.displayThicknessMapMarker);
   ui->spinBoxOptionsDisplayThicknessMeasurement->setValue(data.displayThicknessMeasurement);
   ui->spinBoxOptionsDisplayThicknessCompassRose->setValue(data.displayThicknessCompassRose);
   ui->spinBoxOptionsDisplaySunShadeDarkness->setValue(data.displaySunShadingDimFactor);
@@ -2403,7 +2909,7 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   ui->spinBoxOptionsDisplayTransparencyAirspace->setValue(data.displayTransparencyAirspace);
   ui->spinBoxOptionsDisplayTextSizeAirportMsa->setValue(data.displayTextSizeAirportMsa);
   ui->spinBoxOptionsMapNavTouchArea->setValue(data.mapNavTouchArea);
-  ui->spinBoxOptionsDisplayTextSizeUserFeature->setValue(data.displayTextSizeUserFeature);
+  ui->spinBoxOptionsDisplayTextSizeUserFeature->setValue(data.displayTextSizeMapMarker);
   ui->spinBoxOptionsDisplayTextSizeMeasurement->setValue(data.displayTextSizeMeasurement);
   ui->spinBoxOptionsDisplayTextSizeCompassRose->setValue(data.displayTextSizeCompassRose);
   ui->spinBoxOptionsMapHighlightTransparent->setValue(data.displayMapHighlightTransparent);
@@ -2455,12 +2961,14 @@ void OptionsDialog::optionDataToWidgets(const OptionData& data)
   ui->spinBoxDisplayOnlineTower->setValue(data.displayOnlineTower);
 
   ui->spinBoxOptionsWebPort->setValue(data.webPort);
-  ui->spinBoxOptionWebIconSize->setValue(data.webIconScale);
   ui->checkBoxOptionsWebEncrypted->setChecked(data.webEncrypted);
   ui->lineEditOptionsWebDocroot->setText(atools::nativeCleanPath(data.webDocumentRoot));
 
   ui->lineEditOptionsWeatherXplaneWind->setText(data.weatherXplaneWind);
   ui->lineEditOptionsWeatherNoaaWindUrl->setText(data.weatherNoaaWindBaseUrl.trimmed());
+
+  ui->spinBoxOptionsDisplayScaleAll->setValue(data.displayScaleAll);
+  ui->spinBoxOptionsDisplayScaleAllWeb->setValue(data.displayScaleAllWeb);
 
   mapThemeKeysToWidget(data);
 }
@@ -2533,8 +3041,8 @@ void OptionsDialog::mapThemeDirSelectClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  QString path = atools::gui::Dialog(this).
-                 openDirectoryDialog(tr("Select directory for map themes"), QString(), ui->lineEditCacheMapThemeDir->text());
+  QString path = Dialog(this).
+                 openDirectoryDialog(tr("Select directory for map themes"), QStringLiteral(), ui->lineEditCacheMapThemeDir->text());
 
   if(!path.isEmpty())
     ui->lineEditCacheMapThemeDir->setText(atools::nativeCleanPath(path));
@@ -2562,8 +3070,8 @@ void OptionsDialog::offlineDataSelectClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  QString path = atools::gui::Dialog(this).
-                 openDirectoryDialog(tr("Open GLOBE data directory"), QString(), ui->lineEditCacheOfflineDataPath->text());
+  QString path = Dialog(this).
+                 openDirectoryDialog(tr("Open GLOBE data directory"), QStringLiteral(), ui->lineEditCacheOfflineDataPath->text());
 
   if(!path.isEmpty())
     ui->lineEditCacheOfflineDataPath->setText(atools::nativeCleanPath(path));
@@ -2756,7 +3264,7 @@ void OptionsDialog::selectActiveSkyPathClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
-  QString path = atools::gui::Dialog(this).openFileDialog(
+  QString path = Dialog(this).openFileDialog(
     tr("Select Active Sky Weather Snapshot File"),
     tr("Active Sky Weather Snapshot Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_AS_SNAPSHOT),
     lnm::OPTIONS_DIALOG_AS_FILE_DLG, ui->lineEditOptionsWeatherAsnPath->text());
@@ -2776,9 +3284,9 @@ void OptionsDialog::selectXplane11PathClicked()
   if(path.isEmpty() || QFileInfo(path).isRelative())
     path = NavApp::getSimulatorBasePath(atools::fs::FsPaths::XPLANE_11) % path;
 
-  path = atools::gui::Dialog(this).openFileDialog(tr("Select X-Plane 11 METAR File"),
-                                                  tr("X-Plane METAR Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_XPLANE_METAR),
-                                                  lnm::OPTIONS_DIALOG_XPLANE_DLG, path);
+  path = Dialog(this).openFileDialog(tr("Select X-Plane 11 METAR File"),
+                                     tr("X-Plane METAR Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_XPLANE_METAR),
+                                     lnm::OPTIONS_DIALOG_XPLANE_DLG, path);
 
   if(!path.isEmpty())
     ui->lineEditOptionsWeatherXplanePath->setText(atools::nativeCleanPath(path));
@@ -2793,12 +3301,12 @@ void OptionsDialog::selectXplane12PathClicked()
   QString path = ui->lineEditOptionsWeatherXplane12Path->text();
 
   if(path.isEmpty())
-    path = "Output" % atools::SEP % "real weather";
+    path = QStringLiteral("Output") % atools::SEP % QStringLiteral("real weather");
 
   if(QFileInfo(path).isRelative())
     path = NavApp::getSimulatorBasePath(atools::fs::FsPaths::XPLANE_12) % path;
 
-  path = atools::gui::Dialog(this).openDirectoryDialog(tr("Select X-Plane 12 Weather Directory"), lnm::OPTIONS_DIALOG_XPLANE12_DLG, path);
+  path = Dialog(this).openDirectoryDialog(tr("Select X-Plane 12 Weather Directory"), lnm::OPTIONS_DIALOG_XPLANE12_DLG, path);
 
   if(!path.isEmpty())
     ui->lineEditOptionsWeatherXplane12Path->setText(atools::nativeCleanPath(path));
@@ -2815,9 +3323,9 @@ void OptionsDialog::weatherXplane11WindPathSelectClicked()
     path = NavApp::getSimulatorBasePath(atools::fs::FsPaths::XPLANE_11) % path;
 
   // global_winds.grib
-  path = atools::gui::Dialog(this).openFileDialog(tr("Select X-Plane 11 Wind File"),
-                                                  tr("X-Plane 11 Wind Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_GRIB),
-                                                  lnm::OPTIONS_DIALOG_XPLANE_WIND_FILE_DLG, path);
+  path = Dialog(this).openFileDialog(tr("Select X-Plane 11 Wind File"),
+                                     tr("X-Plane 11 Wind Files %1;;All Files (*)").arg(lnm::FILE_PATTERN_GRIB),
+                                     lnm::OPTIONS_DIALOG_XPLANE_WIND_FILE_DLG, path);
 
   if(!path.isEmpty())
     ui->lineEditOptionsWeatherXplaneWind->setText(atools::nativeCleanPath(path));
@@ -2836,7 +3344,7 @@ void OptionsDialog::updateNavOptions()
   ui->labelOptionsMapNavTouchscreenArea->setEnabled(ui->radioButtonOptionsMapNavTouchscreen->isChecked());
 }
 
-void OptionsDialog::clearMemCachedClicked()
+void OptionsDialog::clearMemCacheMapClicked()
 {
   qDebug() << Q_FUNC_INFO;
 
@@ -2844,21 +3352,40 @@ void OptionsDialog::clearMemCachedClicked()
   NavApp::setStatusMessage(tr("Memory cache cleared."));
 }
 
+void OptionsDialog::clearMemCacheProfileClicked()
+{
+  qDebug() << Q_FUNC_INFO;
+
+  NavApp::getElevationProvider()->clearCache();
+  NavApp::setStatusMessage(tr("Memory cache cleared."));
+}
+
 /* Opens the disk cache in explorer, finder, whatever */
 void OptionsDialog::showDiskCacheClicked()
 {
-  atools::gui::DesktopServices::openUrl(this, QUrl::fromLocalFile(Marble::MarbleDirs::localPath() % atools::SEP % "maps" %
-                                                                  atools::SEP % "earth").toString());
+  atools::gui::DesktopServices::openUrl(this, QUrl::fromLocalFile(Marble::MarbleDirs::localPath() % atools::SEP % QStringLiteral("maps") %
+                                                                  atools::SEP % QStringLiteral("earth")).toString());
 }
 
-QListWidgetItem *OptionsDialog::pageListItem(QListWidget *parent, const QString& text, const QString& tooltip, const QString& iconPath)
+void OptionsDialog::addPageListItem(const QString& id, const QString& text, const QString& tooltip, const QString& iconPath)
 {
-  QListWidgetItem *item = new QListWidgetItem(text, parent);
+  Q_ASSERT(!listWidgetItemIndex.contains(id));
+
+  QListWidgetItem *item = new QListWidgetItem(text, ui->listWidgetOptionPages);
+  item->setData(PAGE_LIST_ITEM_DATA_ID, id);
+
   if(!tooltip.isEmpty())
     item->setToolTip(tooltip);
+
   if(!iconPath.isEmpty())
     item->setIcon(QIcon(iconPath));
-  return item;
+
+  ui->listWidgetOptionPages->addItem(item);
+  listWidgetItemIndex.insert(id, item);
+
+#ifdef DEBUG_INFORMATION
+  qDebug() << Q_FUNC_INFO << id << item->text();
+#endif
 }
 
 void OptionsDialog::changePage(QListWidgetItem *current, QListWidgetItem *previous)
@@ -2873,6 +3400,7 @@ void OptionsDialog::changePage(QListWidgetItem *current, QListWidgetItem *previo
 
 void OptionsDialog::updateWebServerStatus()
 {
+  // Only update if visible
   if(ui->stackedWidgetOptions->currentWidget() == ui->stackedWidgetOptionsWebServer)
   {
     WebController *webController = NavApp::getWebController();
@@ -2892,14 +3420,31 @@ void OptionsDialog::updateWebServerStatus()
         else if(urls.size() == 1)
           ui->labelOptionsWebStatus->setText(tr("Web Server is running at the address:<br/>%1").arg(urls.constFirst()));
         if(urls.size() > 1)
-          ui->labelOptionsWebStatus->setText(tr("Web Server is running at addresses:<br/>%1").arg(urls.join("<br/>")));
+          ui->labelOptionsWebStatus->setText(tr("Web Server is running at addresses:<br/>%1<br/>Click an address to open page.").
+                                             arg(urls.join(QStringLiteral("<br/>"))));
 
         ui->pushButtonOptionsWebStart->setText(tr("&Stop Web Server"));
+
+        if(ui->labelOptionsWebQrCode->isVisible())
+        {
+          // Generate QR code if widget is visible and server running
+          QString urlString = webController->getUrl(false /* useIpAddress */).toString();
+
+          // Use widget height or at least 5 timess the height of a combo box
+          QImage img = atools::qrcode::QrCodeGenerator(this).generateQr(urlString, NavApp::getMinButtonSize().height() * 5);
+          ui->labelOptionsWebQrCode->setPixmap(QPixmap::fromImage(img));
+          ui->labelOptionsWebQrCode->setToolTip(tr("Scan QR code to open web address %1.").arg(urlString));
+        }
       }
       else
       {
         ui->labelOptionsWebStatus->setText(tr("Web Server is not running."));
         ui->pushButtonOptionsWebStart->setText(tr("&Start Web Server"));
+
+        // Empty QR code widget
+        ui->labelOptionsWebQrCode->setPixmap(QPixmap());
+        ui->labelOptionsWebQrCode->setText(tr("Start server to see QR code."));
+        ui->labelOptionsWebQrCode->setToolTip(ui->labelOptionsWebQrCode->text());
       }
     }
   }
@@ -2918,7 +3463,7 @@ void OptionsDialog::updateWebDocrootStatus()
     else
     {
       // Check for index.html
-      QString msgIndex = atools::checkFileMsg(lineEditPath + atools::SEP + "index.html");
+      QString msgIndex = atools::checkFileMsg(lineEditPath % atools::SEP % QStringLiteral("index.html"));
       if(!msgIndex.isEmpty())
         ui->labelOptionWebDocrootStatus->setText(HtmlBuilder::errorMessage(msgIndex));
       else
@@ -2938,7 +3483,7 @@ void OptionsDialog::updateWebDocrootStatus()
       else
       {
         // Check for index.html
-        QString msgIndex = atools::checkFileMsg(defaultRoot + atools::SEP + "index.html");
+        QString msgIndex = atools::checkFileMsg(defaultRoot % atools::SEP % QStringLiteral("index.html"));
         if(!msgIndex.isEmpty())
           ui->labelOptionWebDocrootStatus->setText(HtmlBuilder::errorMessage(msgIndex));
         else
@@ -2954,7 +3499,7 @@ void OptionsDialog::updateWebDocrootStatus()
 void OptionsDialog::selectWebDocrootClicked()
 {
   qDebug() << Q_FUNC_INFO;
-  QString path = atools::gui::Dialog(this).openDirectoryDialog(
+  QString path = Dialog(this).openDirectoryDialog(
     tr("Open Document Root Directory"), lnm::OPTIONS_DIALOG_WEB_DOCROOT_DLG, ui->lineEditOptionsWebDocroot->text());
 
   if(!path.isEmpty())
@@ -2976,8 +3521,6 @@ void OptionsDialog::startStopWebServerClicked()
     else
       // Update options from page before starting and restart
       updateWebOptionsFromGui();
-
-    updateWebServerStatus();
   }
 }
 
@@ -3020,13 +3563,13 @@ void OptionsDialog::updateWebOptionsFromGui()
   }
 }
 
-void OptionsDialog::flightplanPatterShortClicked()
+void OptionsDialog::flightplanPatternShortClicked()
 {
   ui->lineEditOptionsRouteFilename->setText(atools::fs::pln::pattern::SHORT);
   updateFlightplanExample();
 }
 
-void OptionsDialog::flightplanPatterLongClicked()
+void OptionsDialog::flightplanPatternLongClicked()
 {
   ui->lineEditOptionsRouteFilename->setText(atools::fs::pln::pattern::LONG);
   updateFlightplanExample();
@@ -3035,7 +3578,7 @@ void OptionsDialog::flightplanPatterLongClicked()
 void OptionsDialog::updateLinks()
 {
   // Check if text was already replaced to avoid warning
-  if(ui->labelCacheGlobePathDownload->text().contains("%1"))
+  if(ui->labelCacheGlobePathDownload->text().contains(QStringLiteral("%1")))
   {
     QString url =
       atools::gui::HelpHandler::getHelpUrlWeb(lnm::helpOnlineInstallGlobeUrl, lnm::helpLanguageOnline()).toString();
@@ -3050,7 +3593,8 @@ void OptionsDialog::updateFlightplanExample()
   {
     QString errorMsg;
     QString example =
-      atools::fs::pln::Flightplan::getFilenamePatternExample(patternText + ".lnmpln", ".lnmpln", true /* html */, &errorMsg);
+      atools::fs::pln::Flightplan::getFilenamePatternExample(patternText % QStringLiteral(".lnmpln"), QStringLiteral(".lnmpln"),
+                                                             true /* html */, &errorMsg);
 
     QString text = tr("Example: \"%1\"").arg(example);
 
@@ -3064,72 +3608,92 @@ void OptionsDialog::updateFlightplanExample()
       atools::util::HtmlBuilder::warningMessage(tr("Pattern is empty. Using default \"%1\".").arg(atools::fs::pln::pattern::SHORT)));
 }
 
-void OptionsDialog::updateMapFontLabel()
-{
-  QFont font;
-  if(!mapFont.isEmpty())
-    // Use set font
-    font.fromString(mapFont);
-  else if(!guiFont.isEmpty())
-    // Fall back to GUI font
-    font.fromString(guiFont);
-  else
-    // Fall back to application font
-    font = QGuiApplication::font();
-
-  atools::gui::fontDescription(font, ui->labelOptionsDisplayFont);
-}
-
 void OptionsDialog::toolbarSizeClicked()
 {
   ui->spinBoxOptionsGuiToolbarSize->setEnabled(ui->checkBoxOptionsGuiToolbarSize->isChecked());
 }
 
+void OptionsDialog::updateMapFontLabel()
+{
+  QFont font = OptionData::bestFont(mapFont, guiFont, QApplication::font());
+
+#ifdef DEBUG_INFORMATION
+  qDebug() << Q_FUNC_INFO << font;
+#endif
+
+  atools::gui::fontDescription(font, ui->lineEditOptionsDisplayFont, tr("Selected font: "));
+}
+
+void OptionsDialog::updateProfileFontLabel()
+{
+  QFont font = OptionData::bestFont(profileFont, guiFont, QApplication::font());
+
+#ifdef DEBUG_INFORMATION
+  qDebug() << Q_FUNC_INFO << font;
+#endif
+
+  atools::gui::fontDescription(font, ui->lineEditOptionsProfileFont, tr("Selected font: "));
+}
+
 void OptionsDialog::updateGuiFontLabel()
 {
-  ui->labelOptionsGuiFont->setText(atools::gui::fontDescription(QApplication::font()));
+  QFont font;
+  if(guiFont.isEmpty())
+    font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+  else
+    font.fromString(guiFont);
+
+  atools::gui::fontDescription(font, ui->lineEditOptionsGuiFont, tr("Selected font: "));
+
+#ifdef DEBUG_INFORMATION
+  qDebug() << Q_FUNC_INFO << font;
+#endif
+
+  updateMapFontLabel();
+  updateProfileFontLabel();
 }
 
 void OptionsDialog::resetMapFontClicked()
 {
-  // Set to GUI font and add bold - no matter if this defaults to system or not
-  QFont font(QGuiApplication::font());
-  font.setBold(true);
-  mapFont = font.toString();
+  // Empty description means system font
+  mapFont.clear();
 
   updateMapFontLabel();
 }
 
-void OptionsDialog::buildFontDialog(const QFont& initialFont)
-{
-  if(fontDialog == nullptr)
-  {
-    fontDialog = new QFontDialog(initialFont, this);
-    fontDialog->setWindowTitle(tr("%1 - Select font").arg(QCoreApplication::applicationName()));
-  }
-
-  fontDialog->setCurrentFont(initialFont);
-}
-
 void OptionsDialog::selectMapFontClicked()
 {
-  QFont font;
-  if(!mapFont.isEmpty())
-    // Use set font
-    font.fromString(mapFont);
-  else if(!guiFont.isEmpty())
-    // Fall back to GUI font
-    font.fromString(guiFont);
-  else
-    // Fall back to system font
-    font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+  QFont font = OptionData::bestFont(mapFont, guiFont, QFontDatabase::systemFont(QFontDatabase::GeneralFont));
 
   buildFontDialog(font);
   NavApp::setStayOnTop(fontDialog);
   if(fontDialog->exec())
   {
     mapFont = fontDialog->selectedFont().toString();
+    adjustFont(mapFont);
     updateMapFontLabel();
+  }
+}
+
+void OptionsDialog::resetProfileFontClicked()
+{
+  // Empty description means system font
+  profileFont.clear();
+
+  updateProfileFontLabel();
+}
+
+void OptionsDialog::selectProfileFontClicked()
+{
+  QFont font = OptionData::bestFont(profileFont, guiFont, QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+
+  buildFontDialog(font);
+  NavApp::setStayOnTop(fontDialog);
+  if(fontDialog->exec())
+  {
+    profileFont = fontDialog->selectedFont().toString();
+    adjustFont(profileFont);
+    updateProfileFontLabel();
   }
 }
 
@@ -3137,9 +3701,6 @@ void OptionsDialog::resetGuiFontClicked()
 {
   // Empty description means system font
   guiFont.clear();
-
-  // Set GUI back to system font
-  QApplication::setFont(QFontDatabase::systemFont(QFontDatabase::GeneralFont));
 
   updateGuiFontLabel();
 }
@@ -3167,21 +3728,26 @@ void OptionsDialog::selectGuiFontClicked()
     }
 
     if(corrected)
-      atools::gui::Dialog::warning(this, tr("Font too large for user interface. Size was corrected. Maximum is 30 pixels/points."));
+      Dialog::warning(this, tr("Font too large for user interface. Size was corrected. Maximum is 30 pixels/points."));
 
     guiFont = selectedFont.toString();
-    qDebug() << Q_FUNC_INFO << selectedFont;
+    adjustFont(guiFont);
 
-    // the user clicked OK and font is set to the font the user selected
-    QApplication::setFont(selectedFont);
+    qDebug() << Q_FUNC_INFO << selectedFont;
 
     updateGuiFontLabel();
   }
 }
 
-void OptionsDialog::updateFontFromData()
+void OptionsDialog::adjustFont(QString& font)
 {
-  OptionData& data = OptionData::instanceInternal();
+  if(font == QFontDatabase::systemFont(QFontDatabase::GeneralFont).toString())
+    font.clear();
+}
+
+void OptionsDialog::updateGuiFontFromData()
+{
+  const OptionData& data = OptionData::instanceInternal();
   QFont font;
 
   if(data.guiFont.isEmpty())
@@ -3189,8 +3755,17 @@ void OptionsDialog::updateFontFromData()
     font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
   else
     font.fromString(data.guiFont);
+}
 
-  QApplication::setFont(font);
+void OptionsDialog::buildFontDialog(const QFont& initialFont)
+{
+  if(fontDialog == nullptr)
+  {
+    fontDialog = new QFontDialog(initialFont, this);
+    fontDialog->setWindowTitle(tr("%1 - Select font").arg(QCoreApplication::applicationName()));
+  }
+
+  fontDialog->setCurrentFont(initialFont);
 }
 
 void OptionsDialog::mapboxUserMapClicked()
@@ -3236,10 +3811,10 @@ void OptionsDialog::mapboxUserMapClicked()
   if(userNameItem != nullptr && userStyleItem != nullptr && tokenItem != nullptr)
   {
     TextEditDialog dialog(this, QCoreApplication::applicationName() % tr(" - Enter Mapbox Keys"), label, label2, label3,
-                          "OPTIONS.html#mapboxtheme");
+                          QStringLiteral("OPTIONS.html#mapboxtheme"));
 
     // Prefill with present keys ==============
-    dialog.setText(QString("mapbox://styles/%1/%2").arg(userNameItem->text()).arg(userStyleItem->text()));
+    dialog.setText(QStringLiteral("mapbox://styles/%1/%2").arg(userNameItem->text()).arg(userStyleItem->text()));
     dialog.setText2(tokenItem->text());
 
     if(dialog.exec() == QDialog::Accepted)
@@ -3247,9 +3822,9 @@ void OptionsDialog::mapboxUserMapClicked()
       QString url = dialog.getText().simplified();
       // now "mapbox://styles/USERNAME/STYLEID"
 
-      if(url.startsWith("mapbox://styles/", Qt::CaseInsensitive))
+      if(url.startsWith(QStringLiteral("mapbox://styles/"), Qt::CaseInsensitive))
       {
-        url.replace("mapbox://styles/", QString(), Qt::CaseInsensitive);
+        url.replace(QStringLiteral("mapbox://styles/"), QStringLiteral(), Qt::CaseInsensitive);
         // Now "USERNAME/STYLEID"
 
         QString userName = url.section('/', 0, 0);
@@ -3266,27 +3841,27 @@ void OptionsDialog::mapboxUserMapClicked()
               tokenItem->setText(dialog.getText2().trimmed());
             }
             else
-              atools::gui::Dialog::warning(this, tr("Mapbox Token is empty."));
+              Dialog::warning(this, tr("Mapbox Token is empty."));
           }
           else
-            atools::gui::Dialog::warning(this, tr("Mapbox User Style not found in URL."));
+            Dialog::warning(this, tr("Mapbox User Style not found in URL."));
         }
         else
-          atools::gui::Dialog::warning(this, tr("Mapbox Username not found in URL."));
+          Dialog::warning(this, tr("Mapbox Username not found in URL."));
       }
       else
-        atools::gui::Dialog::warning(this, tr("Style URL has to start with \"mapbox://styles/\"."));
+        Dialog::warning(this, tr("Style URL has to start with \"mapbox://styles/\"."));
     }
   }
   else
-    atools::gui::Dialog::warning(this, tr("One or more Mapbox keys are missing. "
-                                          "Installation might be incomplete since map themes are missing."));
+    Dialog::warning(this, tr("One or more Mapbox keys are missing. "
+                             "Installation might be incomplete since map themes are missing."));
 }
 
 void OptionsDialog::removeSelectedDatabaseTableItems(QTableWidget *widget)
 {
   // Create list in reverse order so that deleting can start at the bottom of the list
-  for(int row : atools::gui::util::getSelectedIndexesInDeletionOrder(widget->selectionModel()))
+  for(int row : atools::gui::getSelectedIndexesInDeletionOrder(widget->selectionModel()))
     // Item removes itself from the list when deleted
     widget->removeRow(row);
 

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,10 @@
 #include <QDialog>
 
 namespace atools {
+
+namespace gui {
+class LinkTooltipHandler;
+}
 
 namespace fs {
 namespace pln {
@@ -88,6 +92,8 @@ private:
 
   Ui::FetchRouteDialog *ui;
 
+  /* Provide tooltips for links */
+  atools::gui::LinkTooltipHandler *linkTooltipHandler = nullptr;
 };
 
 #endif // LNM_FETCHROUTEDIALOG_H

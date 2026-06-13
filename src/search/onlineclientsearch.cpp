@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -31,9 +31,11 @@
 #include "sql/sqlrecord.h"
 #include "ui_mainwindow.h"
 
-OnlineClientSearch::OnlineClientSearch(QMainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
+OnlineClientSearch::OnlineClientSearch(MainWindow *parent, QTableView *tableView, si::TabSearchId tabWidgetIndex)
   : SearchBaseTable(parent, tableView, new ColumnList("client", "client_id"), tabWidgetIndex)
 {
+  setObjectName("OnlineClientSearch");
+
   /* *INDENT-OFF* */
   ui->pushButtonOnlineClientHelpSearch->setToolTip(
     tr("<p>All set search conditions have to match.</p>"
@@ -160,23 +162,23 @@ QVariant OnlineClientSearch::modelDataHandler(int colIndex, int rowIndex, const 
       return formatModelData(col, displayRoleValue);
 
     case Qt::ToolTipRole:
-      if(col->getColumnName() == "atis")
+      if(col->getColumnName() == QStringLiteral("atis"))
         return atools::elideTextLinesShort(displayRoleValue.toString(), 40);
 
       break;
 
     case Qt::TextAlignmentRole:
-      if(col->getColumnName() == "ident" ||
-         col->getColumnName() == "groundspeed" ||
-         col->getColumnName() == "altitude" ||
-         col->getColumnName() == "flightplan_departure_time" ||
-         col->getColumnName() == "flightplan_actual_departure_time" ||
-         col->getColumnName() == "flightplan_estimated_arrival_time" ||
-         col->getColumnName() == "flightplan_cruising_speed" ||
-         col->getColumnName() == "flightplan_cruising_level" ||
-         col->getColumnName() == "transponder_code" ||
-         col->getColumnName() == "flightplan_enroute_minutes" ||
-         col->getColumnName() == "flightplan_endurance_minutes")
+      if(col->getColumnName() == QStringLiteral("ident") ||
+         col->getColumnName() == QStringLiteral("groundspeed") ||
+         col->getColumnName() == QStringLiteral("altitude") ||
+         col->getColumnName() == QStringLiteral("flightplan_departure_time") ||
+         col->getColumnName() == QStringLiteral("flightplan_actual_departure_time") ||
+         col->getColumnName() == QStringLiteral("flightplan_estimated_arrival_time") ||
+         col->getColumnName() == QStringLiteral("flightplan_cruising_speed") ||
+         col->getColumnName() == QStringLiteral("flightplan_cruising_level") ||
+         col->getColumnName() == QStringLiteral("transponder_code") ||
+         col->getColumnName() == QStringLiteral("flightplan_enroute_minutes") ||
+         col->getColumnName() == QStringLiteral("flightplan_endurance_minutes"))
         return Qt::AlignRight;
 
       break;
@@ -193,19 +195,19 @@ QString OnlineClientSearch::formatModelData(const Column *col, const QVariant& d
   if(!displayRoleValue.isNull())
   {
     // Called directly by the model for export functions
-    if(col->getColumnName() == "on_ground")
-      return displayRoleValue.toInt() > 0 ? tr("Yes") : QString();
-    else if(col->getColumnName() == "atis")
+    if(col->getColumnName() == QStringLiteral("on_ground"))
+      return displayRoleValue.toInt() > 0 ? tr("Yes") : QStringLiteral();
+    else if(col->getColumnName() == QStringLiteral("atis"))
       return displayRoleValue.toString().simplified();
-    else if(col->getColumnName() == "atis_time" || col->getColumnName() == "connection_time")
+    else if(col->getColumnName() == QStringLiteral("atis_time") || col->getColumnName() == QStringLiteral("connection_time"))
       return QLocale().toString(displayRoleValue.toDateTime(), QLocale::NarrowFormat);
-    else if(col->getColumnName() == "flightplan_endurance_minutes" ||
-            col->getColumnName() == "flightplan_enroute_minutes")
+    else if(col->getColumnName() == QStringLiteral("flightplan_endurance_minutes") ||
+            col->getColumnName() == QStringLiteral("flightplan_enroute_minutes"))
       return formatter::formatMinutesHours(displayRoleValue.toDouble() / 60.);
-    else if(col->getColumnName() == "flightplan_departure_time" ||
-            col->getColumnName() == "flightplan_actual_departure_time" ||
-            col->getColumnName() == "flightplan_estimated_arrival_time")
-      return atools::timeFromHourMinStr(displayRoleValue.toString()).toString("HH:mm");
+    else if(col->getColumnName() == QStringLiteral("flightplan_departure_time") ||
+            col->getColumnName() == QStringLiteral("flightplan_actual_departure_time") ||
+            col->getColumnName() == QStringLiteral("flightplan_estimated_arrival_time"))
+      return atools::timeFromHourMinStr(displayRoleValue.toString()).toString(QStringLiteral("HH:mm"));
 
     return SearchBaseTable::formatModelData(col, displayRoleValue);
   }
@@ -265,6 +267,13 @@ void OnlineClientSearch::updatePushButtons()
 {
   QItemSelectionModel *sm = view->selectionModel();
   ui->pushButtonOnlineClientSearchClearSelection->setEnabled(sm != nullptr && sm->hasSelection());
+}
+
+void OnlineClientSearch::resetView()
+{
+  // Remove from settings
+  atools::gui::WidgetState(lnm::SEARCHTAB_ONLINE_CLIENT_VIEW_WIDGET).clear(ui->tableViewOnlineClientSearch);
+  SearchBaseTable::resetView();
 }
 
 QAction *OnlineClientSearch::followModeAction()

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "exception.h"
 #include "settings/settings.h"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFont>
@@ -80,7 +81,7 @@ QString OptionData::getOnlineStatusUrl() const
     case opts::ONLINE_CUSTOM:
     case opts::ONLINE_NONE:
     case opts::ONLINE_IVAO:
-      return QString();
+      return QStringLiteral();
 
     case opts::ONLINE_VATSIM:
       return onlineVatsimStatusUrl;
@@ -91,7 +92,7 @@ QString OptionData::getOnlineStatusUrl() const
     case opts::ONLINE_CUSTOM_STATUS:
       return onlineStatusUrl;
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString OptionData::getOnlineTransceiverUrl() const
@@ -103,12 +104,12 @@ QString OptionData::getOnlineTransceiverUrl() const
     case opts::ONLINE_IVAO:
     case opts::ONLINE_PILOTEDGE:
     case opts::ONLINE_CUSTOM_STATUS:
-      return QString();
+      return QStringLiteral();
 
     case opts::ONLINE_VATSIM:
       return onlineVatsimTransceiverUrl;
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString OptionData::getOnlineWhazzupUrl() const
@@ -125,17 +126,25 @@ QString OptionData::getOnlineWhazzupUrl() const
     case opts::ONLINE_VATSIM:
     case opts::ONLINE_PILOTEDGE:
     case opts::ONLINE_CUSTOM_STATUS:
-      return QString();
+      return QStringLiteral();
   }
-  return QString();
+  return QStringLiteral();
 }
 
 const QFont OptionData::getMapFont() const
 {
+  return bestFont(mapFont, guiFont, QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+}
+
+const QFont OptionData::getProfileFont() const
+{
+  return bestFont(profileFont, guiFont, QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+}
+
+const QFont OptionData::getGuiFont() const
+{
   QFont font;
-  if(!mapFont.isEmpty())
-    font.fromString(mapFont);
-  else if(!guiFont.isEmpty())
+  if(!guiFont.isEmpty())
     font.fromString(guiFont);
   else
     font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
@@ -168,6 +177,28 @@ int OptionData::getOnlineReload(opts::OnlineNetwork network) const
 const QSize OptionData::getGuiToolbarSize() const
 {
   return QSize(guiToolbarSize, guiToolbarSize);
+}
+
+QFont OptionData::bestFont(const QString& fontStr, const QString& guiFontStr, const QFont& fallback)
+{
+  QFont font;
+  if(!fontStr.isEmpty())
+    // Use set font
+    font.fromString(fontStr);
+  else if(!guiFontStr.isEmpty())
+    // Fall back to GUI font
+    font.fromString(guiFontStr);
+  else
+    // Fall back to system font
+    font = fallback;
+
+  if(fallback.bold())
+    font.setBold(true);
+
+  if(fallback.italic())
+    font.setItalic(true);
+
+  return font;
 }
 
 const OptionData& OptionData::instance()

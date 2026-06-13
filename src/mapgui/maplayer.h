@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2023 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 
 namespace atools {
 namespace  util {
-class XmlStream;
+class XmlStreamReader;
 }
 }
 
@@ -147,6 +147,11 @@ public:
     return airportSymbolSize;
   }
 
+  int getAirportWeatherSymbolSize() const
+  {
+    return airportWeatherSymbolSize;
+  }
+
   bool isAirportIdent() const
   {
     return airportIdent;
@@ -175,6 +180,16 @@ public:
   bool isWaypoint() const
   {
     return waypoint;
+  }
+
+  bool isWaypointIdent() const
+  {
+    return waypointIdent;
+  }
+
+  bool isWaypointRouteIdent() const
+  {
+    return waypointRouteIdent;
   }
 
   bool isWaypointName() const
@@ -642,7 +657,7 @@ public:
   }
 
   /* Load layer data from stream which is already positioned inside a layer element */
-  void loadFromXml(atools::util::XmlStream& xmlStream);
+  void loadFromXml(atools::util::XmlStreamReader& xmlStream);
 
 private:
   friend QDebug operator<<(QDebug out, const MapLayer& record);
@@ -662,7 +677,7 @@ private:
 
   bool airportMsa = true, airportMsaDetails = true;
 
-  int airportSymbolSize = 3, airportMinorSymbolSize = 3, minRunwayLength = 0;
+  int airportSymbolSize = 3, airportWeatherSymbolSize = 3, airportMinorSymbolSize = 3, minRunwayLength = 0;
 
   int windBarbs = 1;
   int windBarbsSymbolSize = 6;
@@ -670,15 +685,15 @@ private:
   float airportMsaSymbolScale = 6.f;
   float airportMinorFontScale = 1.f, airportFontScale = 1.f, routeFontScale = 1.f, airspaceFontScale = 1.f;
 
-  bool waypoint = true, waypointName = true, vor = true, vorIdent = true, vorInfo = true, vorLarge = true, ndb = true, ndbIdent = true,
-       ndbInfo = true, marker = true, markerInfo = true, userpointInfo = true, ils = true, ilsIdent = true, ilsInfo = true,
+  bool waypoint = true, waypointIdent = true, waypointName = true,
+       vor = true, vorIdent = true, vorInfo = true, vorLarge = true,
+       ndb = true, ndbIdent = true, ndbInfo = true,
+       marker = true, markerInfo = true, userpointInfo = true, ils = true, ilsIdent = true, ilsInfo = true,
        ilsDetail = true, airway = true, airwayDetails = true, airwayWaypoint = true, airwayIdent = true, airwayInfo = true, track = true,
        trackWaypoint = true, trackIdent = true, trackInfo = true, mora = true, holding = true, holdingInfo = true, holdingInfo2 = true;
 
-  bool airportRouteInfo = true;
-  bool vorRouteIdent = true, vorRouteInfo = true;
-  bool ndbRouteIdent = true, ndbRouteInfo = true;
-  bool waypointRouteName = true;
+  bool airportRouteInfo = true, vorRouteIdent = true, vorRouteInfo = true, ndbRouteIdent = true, ndbRouteInfo = true,
+       waypointRouteIdent = true, waypointRouteName = true;
 
   int waypointSymbolSize = 3, vorSymbolSize = 3, ndbSymbolSize = 4,
       markerSymbolSize = 8, userpointSymbolSize = 12;

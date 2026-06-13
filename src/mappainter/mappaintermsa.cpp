@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,12 +17,13 @@
 
 #include "mappainter/mappaintermsa.h"
 
-#include "mapgui/mapscale.h"
+#include "common/symbolpainter.h"
 #include "mapgui/maplayer.h"
+#include "mapgui/mapscale.h"
+#include "mappainter/paintcontext.h"
 #include "query/mapquery.h"
 #include "query/querymanager.h"
 #include "util/paintercontextsaver.h"
-#include "common/symbolpainter.h"
 
 #include <QElapsedTimer>
 
@@ -45,14 +46,13 @@ void MapPainterMsa::render()
 {
   if(context->mapLayer->isAirportMsa()) // Enabled by layer / zoom factor
   {
-    const GeoDataLatLonBox& curBox = context->viewport->viewLatLonAltBox();
-
     float x, y;
     if(context->objectTypes.testFlag(map::AIRPORT_MSA)) // Enabled by checkbox in view
     {
       // Get drawing objects and cache them
       bool overflow = false;
-      const QList<MapAirportMsa> *msaList = queries->getMapQuery()->getAirportMsa(curBox, context->mapLayer, context->lazyUpdate, overflow);
+      const QList<MapAirportMsa> *msaList = queries->getMapQuery()->getAirportMsa(context->viewportBox, context->mapLayer,
+                                                                                  context->lazyUpdate, overflow);
       context->setQueryOverflow(overflow);
 
       if(msaList != nullptr)
@@ -65,7 +65,7 @@ void MapPainterMsa::render()
 
           if(!visible)
             // Check bounding rect for visibility
-            visible = msa.bounding.overlaps(context->viewportRect);
+            visible = context->visible(msa.bounding);
 
           if(visible)
           {
@@ -86,24 +86,24 @@ void MapPainterMsa::drawMsaSymbol(const map::MapAirportMsa& airportMsa, float x,
 
   Marble::GeoPainter *painter = context->painter;
 
-  int size = 0;
+  float size = 0.f;
   float scale = 0.f;
   if(!context->mapLayer->isAirportMsaDetails())
   {
-    if(airportMsa.navType == map::AIRPORT)
-      size = context->sz(context->symbolSizeAirport, context->mapLayer->getAirportSymbolSize());
-    else if(airportMsa.navType == map::VOR)
-      size = context->sz(context->symbolSizeNavaid, context->mapLayer->getVorSymbolSize());
-    else if(airportMsa.navType == map::NDB)
-      size = context->sz(context->symbolSizeNavaid, context->mapLayer->getNdbSymbolSize());
-    else if(airportMsa.navType == map::WAYPOINT || airportMsa.navType == map::ILS)
-      size = context->sz(context->symbolSizeNavaid, context->mapLayer->getWaypointSymbolSize());
-    size = std::max(size, 6);
+    if(airportMsa.nav.type == map::AIRPORT)
+      size = context->szF(context->symbolSizeAirport, context->mapLayer->getAirportSymbolSize());
+    else if(airportMsa.nav.type == map::VOR)
+      size = context->szF(context->symbolSizeNavaid, context->mapLayer->getVorSymbolSize());
+    else if(airportMsa.nav.type == map::NDB)
+      size = context->szF(context->symbolSizeNavaid, context->mapLayer->getNdbSymbolSize());
+    else if(airportMsa.nav.type == map::WAYPOINT || airportMsa.nav.type == map::ILS)
+      size = context->szF(context->symbolSizeNavaid, context->mapLayer->getWaypointSymbolSize());
+    size = std::max(size, 6.f);
   }
   else
     scale = context->mapLayer->getAirportMsaSymbolScale();
 
   // Draw the full symbol with all sectors
-  symbolPainter->drawAirportMsa(painter, airportMsa, x, y, size * 2, scale, context->mapLayerText->isAirportMsaDetails() /* header */,
+  symbolPainter->drawAirportMsa(painter, airportMsa, x, y, size * 2.f, scale, context->mapLayerText->isAirportMsaDetails() /* header */,
                                 true /* transparency */, fast);
 }

@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,13 +16,13 @@
 *****************************************************************************/
 
 #include "routeexport/routeexportdialog.h"
-#include "atools.h"
-#include "routeexport/routeexportdata.h"
-#include "ui_routeexportdialog.h"
+
 #include "common/constants.h"
+#include "common/unitstringtool.h"
 #include "gui/helphandler.h"
 #include "gui/widgetstate.h"
-#include "common/unitstringtool.h"
+#include "routeexport/routeexportdata.h"
+#include "ui_routeexportdialog.h"
 
 #include <QAbstractButton>
 #include <QPushButton>
@@ -30,7 +30,8 @@
 RouteExportDialog::RouteExportDialog(QWidget *parent, re::RouteExportType routeType)
   : QDialog(parent), ui(new Ui::RouteExportDialog), type(routeType)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
   ui->setupUi(this);
 
@@ -187,9 +188,9 @@ RouteExportDialog::~RouteExportDialog()
   atools::gui::WidgetState(lnm::FLIGHTPLAN_ONLINE_EXPORT + getRouteTypeAsString(type)).save(this);
 
   delete units;
-  delete ui;
   delete exportDataSaved;
   delete exportData;
+  delete ui;
 }
 
 void RouteExportDialog::buttonBoxClicked(QAbstractButton *button)
@@ -306,7 +307,7 @@ QString RouteExportDialog::getRouteTypeAsString(re::RouteExportType routeType)
       return "XIvap";
 
   }
-  return QString();
+  return QStringLiteral();
 }
 
 QString RouteExportDialog::getRouteTypeAsDisplayString(re::RouteExportType routeType)
@@ -326,7 +327,7 @@ QString RouteExportDialog::getRouteTypeAsDisplayString(re::RouteExportType route
       return tr("X-IvAp");
 
   }
-  return QString();
+  return QStringLiteral();
 }
 
 RouteExportData RouteExportDialog::getExportData() const

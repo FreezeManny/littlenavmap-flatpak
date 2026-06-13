@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -16,11 +16,10 @@
 *****************************************************************************/
 
 #include "perf/aircraftperfcontroller.h"
-#include "common/filecheck.h"
-#include "perf/aircraftperfdialog.h"
 
 #include "app/navapp.h"
 #include "common/constants.h"
+#include "common/filecheck.h"
 #include "common/formatter.h"
 #include "common/fueltool.h"
 #include "common/tabindexes.h"
@@ -36,11 +35,13 @@
 #include "gui/errorhandler.h"
 #include "gui/filehistoryhandler.h"
 #include "gui/helphandler.h"
+#include "gui/linktooltiphandler.h"
 #include "gui/mainwindow.h"
 #include "gui/tabwidgethandler.h"
 #include "gui/tools.h"
 #include "gui/widgetstate.h"
-#include "gui/widgetutil.h"
+#include "options/optiondata.h"
+#include "perf/aircraftperfdialog.h"
 #include "perf/perfmergedialog.h"
 #include "route/route.h"
 #include "route/routealtitude.h"
@@ -75,11 +76,16 @@ AircraftPerfController::AircraftPerfController(MainWindow *parent)
   ui->textBrowserAircraftPerformanceReport->setSearchPaths(paths);
   ui->textBrowserAircraftPerformanceCurrent->setSearchPaths(paths);
 
+  linkTooltipHandler = new atools::gui::LinkTooltipHandler(this);
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
+  linkTooltipHandler->addWidgets({ui->textBrowserAircraftPerformanceReport, ui->textBrowserAircraftPerformanceCurrent});
   fileHistory = new atools::gui::FileHistoryHandler(this, lnm::AIRCRAFT_PERF_FILENAMESRECENT,
                                                     ui->menuAircraftPerformanceRecent,
                                                     ui->actionAircraftPerformanceClearMenu);
 
-  connect(fileHistory, &atools::gui::FileHistoryHandler::fileSelected, this, &AircraftPerfController::loadFile);
+  connect(fileHistory, &atools::gui::FileHistoryHandler::fileSelected,
+          std::bind(&AircraftPerfController::loadFile, this, std::placeholders::_1 /* filepath */, false /* forceLoading */));
+
   connect(ui->textBrowserAircraftPerformanceReport, &QTextBrowser::anchorClicked, this, &AircraftPerfController::anchorClicked);
   connect(ui->textBrowserAircraftPerformanceCurrent, &QTextBrowser::anchorClicked, this, &AircraftPerfController::anchorClicked);
 
@@ -103,6 +109,7 @@ AircraftPerfController::~AircraftPerfController()
   ATOOLS_DELETE_LOG(perf);
   ATOOLS_DELETE_LOG(lastSimData);
   ATOOLS_DELETE_LOG(fuelFlowGroundspeedAverage);
+  ATOOLS_DELETE_LOG(linkTooltipHandler);
 }
 
 void AircraftPerfController::create()
@@ -221,20 +228,20 @@ void AircraftPerfController::loadStr(const QString& string)
   emit aircraftPerformanceChanged(perf);
 }
 
-void AircraftPerfController::loadFile(const QString& perfFile)
+void AircraftPerfController::loadFile(const QString& filepath, bool forceLoading)
 {
-  qDebug() << Q_FUNC_INFO << perfFile;
+  qDebug() << Q_FUNC_INFO << filepath;
 
   try
   {
-    if(checkForChanges())
+    if(forceLoading || checkForChanges())
     {
-      if(!perfFile.isEmpty())
+      if(!filepath.isEmpty())
       {
-        currentFilename = perfFile;
-        perf->load(perfFile);
+        currentFilename = filepath;
+        perf->load(filepath);
         changed = false;
-        fileHistory->addFile(perfFile);
+        fileHistory->addFile(filepath);
         windChangeTimer.stop();
         mainWindow->showAircraftPerformance();
         NavApp::setStatusMessage(tr("Aircraft performance loaded."));
@@ -245,13 +252,13 @@ void AircraftPerfController::loadFile(const QString& perfFile)
   {
     atools::gui::ErrorHandler(mainWindow).handleException(e);
     noPerfLoaded();
-    fileHistory->removeFile(perfFile);
+    fileHistory->removeFile(filepath);
   }
   catch(...)
   {
     atools::gui::ErrorHandler(mainWindow).handleUnknownException();
     noPerfLoaded();
-    fileHistory->removeFile(perfFile);
+    fileHistory->removeFile(filepath);
   }
 
   updateActionStates();
@@ -445,7 +452,6 @@ bool AircraftPerfController::saveAsStr(const QString& string) const
       if(file.open(QIODevice::WriteOnly | QIODevice::Text))
       {
         QTextStream stream(&file);
-        stream.setCodec("UTF-8");
         stream << string.toUtf8();
         file.close();
       }
@@ -479,7 +485,7 @@ QString AircraftPerfController::saveAsFileDialog(const QString& filepath, bool *
   int nameFilterIndex = 0;
   QString file = atools::gui::Dialog(mainWindow).saveFileDialog(
     tr("Save Aircraft Performance File"), nameFilter, "lnmperf", "AircraftPerformance/",
-    QString(), filepath, false /* confirm overwrite */, false /* autoNumberFilename */, &nameFilterIndex);
+    QStringLiteral(), filepath, false /* dontComfirmOverwrite */, false /* autoNumberFilename */, &nameFilterIndex);
 
   if(oldFormat != nullptr)
     *oldFormat = nameFilterIndex == 1;
@@ -721,7 +727,7 @@ void AircraftPerfController::updateTabTiltle()
         ui->tabWidgetRoute->setTabText(idx, ui->tabWidgetRoute->tabText(idx) % tr(" *"));
     }
     else
-      ui->tabWidgetRoute->setTabText(idx, ui->tabWidgetRoute->tabText(idx).replace(tr(" *"), QString()));
+      ui->tabWidgetRoute->setTabText(idx, ui->tabWidgetRoute->tabText(idx).replace(tr(" *"), QStringLiteral()));
   }
 }
 
@@ -743,7 +749,7 @@ void AircraftPerfController::updateActionStates()
   ui->spinBoxAircraftPerformanceWindDirection->setEnabled(manualWind);
   ui->spinBoxAircraftPerformanceWindSpeed->setEnabled(manualWind);
   ui->spinBoxAircraftPerformanceWindAlt->setEnabled(manualWind);
-  atools::gui::util::showHideLayoutElements({ui->horizontalLayoutManWind}, {}, manualWind, true /* disable */);
+  atools::gui::showHideLayoutElements({ui->horizontalLayoutManWind}, {}, manualWind, true /* disable */);
 }
 
 void AircraftPerfController::updateReport()
@@ -751,7 +757,7 @@ void AircraftPerfController::updateReport()
   errorTooltips.clear();
 
   Ui::MainWindow *ui = NavApp::getMainUi();
-  HtmlBuilder html(true /* background color */);
+  HtmlBuilder html(true /* backgroundColorUsed */, NavApp::isGuiStyleDark());
 
   bool visible = NavApp::getRouteTabHandler()->getCurrentTabId() == rc::AIRCRAFT && ui->dockWidgetRoute->isVisible();
   if(visible)
@@ -760,12 +766,12 @@ void AircraftPerfController::updateReport()
 
     // Icon, name and aircraft type =======================================================
     QStringList headerList({perf->getName(), perf->getAircraftType(), perf->getSimulator()});
-    headerList.removeAll(QString());
+    headerList.removeAll(QStringLiteral());
     QString header = headerList.join(tr(" - "));
 
     if(!header.isEmpty())
     {
-      html.img(QIcon(":/littlenavmap/resources/icons/aircraftperf.svg"), QString(), QString(), QSize(symbolSize, symbolSize));
+      html.img(QIcon(":/littlenavmap/resources/icons/aircraftperf.svg"), QStringLiteral(), QStringLiteral(), QSize(symbolSize, symbolSize));
       html.nbsp().nbsp();
 
       html.text(header, ahtml::BOLD | ahtml::BIG);
@@ -845,8 +851,8 @@ void AircraftPerfController::updateReport()
                   formatter::formatMinutesHours(altitudeLegs.getTravelTimeHours()) + ")");
 #endif
 
-    atools::gui::util::updateTextEdit(ui->textBrowserAircraftPerformanceReport, html.getHtml(),
-                                      false /*scrollToTop*/, true /* keep selection */);
+    atools::gui::updateTextEdit(ui->textBrowserAircraftPerformanceReport, html.getHtml(),
+                                false /*scrollToTop*/, true /* keep selection */);
   } // if(NavApp::getRouteTabHandler()->getCurrentTabId() == rc::AIRCRAFT && ui->dockWidgetRoute->isVisible())
 
   // Update error message label
@@ -860,25 +866,24 @@ void AircraftPerfController::updateReportCurrent()
   if(NavApp::getRouteTabHandler()->getCurrentTabId() == rc::COLLECTION && ui->dockWidgetRoute->isVisible())
   {
     // Write HTML report ================================================================
-    HtmlBuilder html(true /* background color */);
+    HtmlBuilder html(true /* backgroundColorUsed */, NavApp::isGuiStyleDark());
 
     const atools::fs::perf::AircraftPerf& curPerfLbs = perfHandler->getAircraftPerformanceLbs();
     atools::fs::perf::FlightSegment segment = perfHandler->getCurrentFlightSegment();
 
     // Icon, name and aircraft type =======================================================
-    html.img(QIcon(":/littlenavmap/resources/icons/aircraftperf.svg"), QString(), QString(),
+    html.img(QIcon(":/littlenavmap/resources/icons/aircraftperf.svg"), QStringLiteral(), QStringLiteral(),
              QSize(symbolSize, symbolSize));
     html.nbsp().nbsp();
 
     QStringList header({curPerfLbs.getName(), curPerfLbs.getAircraftType(), curPerfLbs.getSimulator()});
-    header.removeAll(QString());
+    header.removeAll(QStringLiteral());
 
     if(!header.isEmpty())
       html.text(header.join(tr(" - ")), ahtml::BOLD | ahtml::BIG);
     else
       html.text(tr("Unknown Aircraft"), ahtml::BOLD | ahtml::BIG);
 
-    ahtml::Flags flags = ahtml::ALIGN_RIGHT;
     FuelTool ft(curPerfLbs);
 
     // Display performance collection progress ==========================================================
@@ -897,19 +902,21 @@ void AircraftPerfController::updateReportCurrent()
       html.p().b(tr("Aircraft")).pEnd();
       html.table();
       html.row2(tr("Current flight segment: "), perfHandler->getCurrentFlightSegmentString() %
-                (perfHandler->isFinished() ? tr(", <b>Finished.</b>") : QString()), ahtml::NO_ENTITIES);
+                (perfHandler->isFinished() ? tr(", <b>Finished.</b>") : QStringLiteral()), ahtml::NO_ENTITIES);
       html.row2If(tr("Aircraft status: "), perfHandler->getAircraftStatusTexts().join(tr(", ")));
       html.tableEnd();
       html.pEnd();
     }
 
+    html.row2AlignFlags(atools::util::html::ALIGN_RIGHT);
+
     if(segment >= atools::fs::perf::DEPARTURE_TAXI)
     {
       html.p().b(tr("Fuel")).pEnd();
       html.table();
-      html.row2(tr("Fuel Type:"), curPerfLbs.isAvgas() ? tr("Avgas") : tr("Jetfuel"), flags);
-      html.row2(tr("Total Fuel Consumed:"), ft.weightVolLocal(perfHandler->getTotalFuelConsumedLbs()), flags);
-      html.row2(tr("Taxi Fuel:"), ft.weightVolLocal(curPerfLbs.getTaxiFuel()), flags);
+      html.row2(tr("Fuel Type:"), curPerfLbs.isAvgas() ? tr("Avgas") : tr("Jetfuel"));
+      html.row2(tr("Total Fuel Consumed:"), ft.weightVolLocal(perfHandler->getTotalFuelConsumedLbs()));
+      html.row2(tr("Taxi Fuel:"), ft.weightVolLocal(curPerfLbs.getTaxiFuel()));
       html.tableEnd();
     }
 
@@ -918,11 +925,10 @@ void AircraftPerfController::updateReportCurrent()
       html.p().b(tr("Average Performance")).br().b(tr("Climb")).pEnd();
 
       html.table();
-      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getClimbSpeed()), flags);
+      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getClimbSpeed()));
       html.row2(tr("Vertical Speed:"),
-                Unit::speedVertFpm(curPerfLbs.getClimbVertSpeed()) % tr(" <b>%1</b>").arg(TextPointer::getPointerUp()),
-                ahtml::NO_ENTITIES | flags);
-      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getClimbFuelFlow()), flags);
+                Unit::speedVertFpm(curPerfLbs.getClimbVertSpeed()) % tr(" <b>%1</b>").arg(TextPointer::getPointerUp()), ahtml::NO_ENTITIES);
+      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getClimbFuelFlow()));
       html.tableEnd();
     }
 
@@ -930,25 +936,27 @@ void AircraftPerfController::updateReportCurrent()
     {
       html.p().b(tr("Cruise")).pEnd();
       html.table();
-      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getCruiseSpeed()), flags);
-      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getCruiseFuelFlow()), flags);
+      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getCruiseSpeed()));
+      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getCruiseFuelFlow()));
       html.tableEnd();
     }
+
     if(segment >= atools::fs::perf::DESCENT)
     {
       html.p().b(tr("Descent")).pEnd();
       html.table();
-      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getDescentSpeed()), flags);
+      html.row2(tr("True Airspeed:"), Unit::speedKts(curPerfLbs.getDescentSpeed()));
       // Descent speed is always positive
       html.row2(tr("Vertical Speed:"),
                 Unit::speedVertFpm(-curPerfLbs.getDescentVertSpeed()) % tr(" <b>%1</b>").arg(TextPointer::getPointerDown()),
-                ahtml::NO_ENTITIES | flags);
-      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getDescentFuelFlow()), flags);
+                ahtml::NO_ENTITIES);
+      html.row2(tr("Fuel Flow:"), ft.flowWeightVolLocal(curPerfLbs.getDescentFuelFlow()));
       html.tableEnd();
     }
+    html.row2AlignClear();
 
-    atools::gui::util::updateTextEdit(ui->textBrowserAircraftPerformanceCurrent, html.getHtml(),
-                                      false /*scrollToTop*/, true /* keep selection */);
+    atools::gui::updateTextEdit(ui->textBrowserAircraftPerformanceCurrent, html.getHtml(),
+                                false /*scrollToTop*/, true /* keep selection */);
   }
 }
 
@@ -1083,7 +1091,7 @@ void AircraftPerfController::fuelReport(atools::util::HtmlBuilder& html, bool pr
       {
         html.p();
         html.warning(tr("Possible problems found:")).br();
-        for(const QString& err : qAsConst(extraErrors))
+        for(const QString& err : std::as_const(extraErrors))
           html.warning(err).br();
         html.pEnd();
       }
@@ -1209,7 +1217,7 @@ void AircraftPerfController::fuelReport(atools::util::HtmlBuilder& html, bool pr
     if(blockFuel > 0.f && valid)
     {
       QString percent = perf->getUsableFuel() > 1.f ? tr("<br/><b>%1 % of usable Fuel</b>").
-                        arg(100.f / perf->getUsableFuel() * blockFuel, 0, 'f', 0) : QString();
+                        arg(100.f / perf->getUsableFuel() * blockFuel, 0, 'f', 0) : QStringLiteral();
 
       QString block = HtmlBuilder::textStr(ft.weightVolLocalOther(blockFuel, true /* bold */),
                                            ahtml::BIG | ahtml::BOLD | ahtml::NO_ENTITIES);
@@ -1284,7 +1292,7 @@ void AircraftPerfController::fuelReport(atools::util::HtmlBuilder& html, bool pr
     if(print && !perf->getDescription().isEmpty())
     {
       html.p().b(tr("Remarks")).pEnd();
-      html.table(1).row2(QString(), perf->getDescription()).tableEnd();
+      html.table(1).row2(QStringLiteral(), perf->getDescription()).tableEnd();
     }
   }
 }
@@ -1412,17 +1420,16 @@ void AircraftPerfController::restoreState()
   // Load last used performance file or the one passed on the command line
   if(!atools::gui::Application::isSafeMode())
   {
-    QString perfFile;
-    fc::fromStartupProperties(atools::gui::Application::getStartupOptionsConst(), nullptr, nullptr, &perfFile);
-
-    if(perfFile.isEmpty() && OptionData::instance().getFlags() & opts::STARTUP_LOAD_PERF)
+    const FileCheck *files = NavApp::getCommandLineFiles();
+    QString perfFile = files->getAircraftPerfFile();
+    if(perfFile.isEmpty() && OptionData::instance().getFlags().testFlag(opts::STARTUP_LOAD_PERF))
       perfFile = settings.valueStr(lnm::AIRCRAFT_PERF_FILENAME);
 
     if(!perfFile.isEmpty())
     {
       QString message = atools::checkFileMsg(perfFile);
       if(message.isEmpty())
-        loadFile(perfFile);
+        loadFile(perfFile, files->isForceLoading());
       else
         // No file or not readable
         atools::gui::Dialog::warning(mainWindow, message);
@@ -1430,7 +1437,7 @@ void AircraftPerfController::restoreState()
   }
 
   Ui::MainWindow *ui = NavApp::getMainUi();
-  atools::gui::WidgetState state(lnm::AIRCRAFT_PERF_WIDGETS, true /* visibility */, true /* block signals */);
+  atools::gui::WidgetState state(lnm::AIRCRAFT_PERF_WIDGETS, false /* visibility */, true /* blockSignals */);
   state.restore({ui->spinBoxAircraftPerformanceWindSpeed,
                  ui->spinBoxAircraftPerformanceWindDirection,
                  ui->spinBoxAircraftPerformanceWindAlt});
@@ -1458,18 +1465,27 @@ void AircraftPerfController::restoreState()
     }
   }
 
-  optionsChanged();
+  optionsChanged(optc::OPTION_CHANGE_ALL);
 }
 
-void AircraftPerfController::optionsChanged()
+void AircraftPerfController::styleChanged()
 {
-  Ui::MainWindow *ui = NavApp::getMainUi();
+  optionsChanged(optc::OPTION_CHANGE_ALL);
+}
 
-  int sizePercent = OptionData::instance().getGuiPerfReportTextSize();
-  atools::gui::setWidgetFontSize(ui->textBrowserAircraftPerformanceReport, sizePercent);
-  atools::gui::setWidgetFontSize(ui->textBrowserAircraftPerformanceCurrent, sizePercent);
+void AircraftPerfController::optionsChanged(const optc::OptionChangeFlags& changeFlags)
+{
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
 
-  symbolSize = ui->textBrowserAircraftPerformanceReport->fontMetrics().height() * 4 / 3;
+  if(changeFlags.testFlag(optc::OPTION_CHANGE_TEXT_SIZES) || changeFlags.testFlag(optc::OPTION_CHANGE_UI_FONT))
+  {
+    int sizePercent = OptionData::instance().getGuiPerfReportTextSize();
+    Ui::MainWindow *ui = NavApp::getMainUi();
+    atools::gui::setWidgetFontSize(ui->textBrowserAircraftPerformanceReport, sizePercent);
+    atools::gui::setWidgetFontSize(ui->textBrowserAircraftPerformanceCurrent, sizePercent);
+
+    symbolSize = ui->textBrowserAircraftPerformanceReport->fontMetrics().height() * 4 / 3;
+  }
 
   updateActionStates();
   updateReport();
@@ -1567,7 +1583,7 @@ void AircraftPerfController::windChangedDelayed()
 void AircraftPerfController::noPerfLoaded()
 {
   // Invalidate performance file after an error - state "none loaded"
-  perf->resetToDefault(QString());
+  perf->resetToDefault(QStringLiteral());
   changed = false;
   currentFilename.clear();
 }

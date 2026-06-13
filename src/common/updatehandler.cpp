@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,11 +17,11 @@
 
 #include "common/updatehandler.h"
 
+#include "app/navapp.h"
 #include "common/constants.h"
 #include "gui/dialog.h"
-#include "gui/mainwindow.h"
 #include "gui/updatedialog.h"
-#include "app/navapp.h"
+#include "options/optiondata.h"
 #include "settings/settings.h"
 #include "util/htmlbuilder.h"
 #include "util/updatecheck.h"
@@ -33,8 +33,8 @@ using atools::util::UpdateCheck;
 using atools::settings::Settings;
 namespace html = atools::util::html;
 
-UpdateHandler::UpdateHandler(MainWindow *parent)
-  : QObject(parent), mainWindow(parent)
+UpdateHandler::UpdateHandler(QWidget *parent)
+  : QObject(parent), parentWidget(parent)
 {
   updateCheck = new UpdateCheck();
 
@@ -138,11 +138,16 @@ void UpdateHandler::checkForUpdates(UpdateReason reason)
     updateCheck->checkForUpdates(checked, updateReason == UPDATE_REASON_MANUAL /* notifyForEmptyUpdates */, channels);
 
     // Set timestamp for last check
-    Settings::instance().setValueVar(lnm::OPTIONS_UPDATE_LAST_CHECKED, QDateTime::currentDateTime().toSecsSinceEpoch());
+    Settings::instance().setValueVar(lnm::OPTIONS_UPDATE_LAST_CHECKED, QDateTime::currentSecsSinceEpoch());
   }
 
   if(reason == UPDATE_REASON_TIMER || reason == UPDATE_REASON_STARTUP)
     updateTimer.start();
+}
+
+void UpdateHandler::optionsChanged()
+{
+  channelOpts = static_cast<opts::UpdateChannels>(OptionData::instance().getUpdateChannels());
 }
 
 /* Called by update checker */
@@ -156,7 +161,7 @@ void UpdateHandler::updateFound(atools::util::UpdateList updates)
   if(!updates.isEmpty())
   {
     // Found updates - fill the HTML text for the dialog =============================
-    atools::util::HtmlBuilder html(false);
+    atools::util::HtmlBuilder html(false /* backgroundColorUsed */, NavApp::isGuiStyleDark());
 
     // Show only the newest one
     const atools::util::Update& update = updates.constFirst();
@@ -167,7 +172,7 @@ void UpdateHandler::updateFound(atools::util::UpdateList updates)
     atools::gui::Application::closeSplashScreen();
 
     // Show dialog
-    UpdateDialog updateDialog(mainWindow, updateReason == UPDATE_REASON_MANUAL);
+    UpdateDialog updateDialog(parentWidget, updateReason == UPDATE_REASON_MANUAL);
     updateDialog.setMessage(html.getHtml());
 
     // Show dialog
@@ -186,7 +191,7 @@ void UpdateHandler::updateFound(atools::util::UpdateList updates)
   }
   else
     // Nothing found but notification requested for manual trigger
-    atools::gui::Dialog::information(mainWindow, QObject::tr("No Updates available."));
+    atools::gui::Dialog::information(parentWidget, QObject::tr("No Updates available."));
 }
 
 /* Called by update checker */
@@ -198,7 +203,7 @@ void UpdateHandler::updateFailed(QString errorString)
                     arg(updateCheck->getUrl().toDisplayString()).arg(errorString);
 
   if(updateReason == UPDATE_REASON_MANUAL)
-    atools::gui::Dialog::warning(mainWindow, message);
+    atools::gui::Dialog::warning(parentWidget, message);
   else
-    atools::gui::Dialog(mainWindow).showWarnMsgBox(lnm::ACTIONS_SHOW_UPDATE_FAILED, message, tr("Do not &show this dialog again."));
+    atools::gui::Dialog(parentWidget).showWarnMsgBox(lnm::ACTIONS_SHOW_UPDATE_FAILED, message, tr("Do not &show this dialog again."));
 }

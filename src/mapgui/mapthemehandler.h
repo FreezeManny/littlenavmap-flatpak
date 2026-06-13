@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #ifndef LNM_MAPTHEMEHANDLER_H
 #define LNM_MAPTHEMEHANDLER_H
 
+#include "options/optionchangeflags.h"
 #include <QStringList>
 #include <QMap>
 #include <QCoreApplication>
@@ -43,7 +44,7 @@ public:
   /* Use bright colors for MORA and other texts on map */
   bool isDarkTheme() const
   {
-    return theme == "cartodark" || theme == "mapboxdark";
+    return theme == QLatin1String("cartodark") || theme == QLatin1String("mapboxdark");
   }
 
   /* Enable show city and other POIs button if true */
@@ -255,7 +256,7 @@ public:
   void changeMapProjection();
 
   /* Reload themes and rebuild menu */
-  void optionsChanged();
+  void optionsChanged(const optc::OptionChangeFlags& changeFlags);
 
   /* Check path if it is a directory and counts map themes in it */
   static QString getStatusTextForDir(const QString& path, bool& error);
@@ -288,7 +289,7 @@ private:
   void saveKeyfile() const;
 
   /* Sorted list of all loaded themes */
-  QVector<MapTheme> themes;
+  QList<MapTheme> themes;
   QHash<QString, int> themeIdToIndexMap;
 
   /* Default OSM theme used as fallback */
@@ -310,6 +311,6 @@ private:
 
 QDebug operator<<(QDebug out, const MapTheme& theme);
 
-Q_DECLARE_TYPEINFO(MapTheme, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(MapTheme, Q_RELOCATABLE_TYPE);
 
 #endif // LNM_MAPTHEMEHANDLER_H

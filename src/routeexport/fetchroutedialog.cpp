@@ -1,5 +1,5 @@
 /*****************************************************************************
-* Copyright 2015-2024 Alexander Barthel alex@littlenavmap.org
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
 
 #include "routeexport/fetchroutedialog.h"
 
+#include "gui/linktooltiphandler.h"
+#include "options/optiondata.h"
 #include "ui_fetchroutedialog.h"
 
 #include "atools.h"
@@ -31,7 +33,7 @@
 #include "settings/settings.h"
 #include "util/htmlbuilder.h"
 #include "util/httpdownloader.h"
-#include "util/xmlstream.h"
+#include "util/xmlstreamreader.h"
 #include "zip/gzip.h"
 
 #include <QPushButton>
@@ -47,7 +49,8 @@ FetchRouteDialog::FetchRouteDialog(QWidget *parent) :
   QDialog(parent),
   ui(new Ui::FetchRouteDialog)
 {
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
   setWindowModality(Qt::ApplicationModal);
   ui->setupUi(this);
 
@@ -76,6 +79,10 @@ FetchRouteDialog::FetchRouteDialog(QWidget *parent) :
   ui->buttonBox->button(QDialogButtonBox::YesToAll)->setToolTip(tr("Open flight plan in route description dialog for\n"
                                                                    "refinement or corrections."));
 
+  linkTooltipHandler = new atools::gui::LinkTooltipHandler(this);
+  linkTooltipHandler->setShowTooltips(OptionData::instance().getFlags().testFlag(opts::ENABLE_TOOLTIPS_LINK));
+  linkTooltipHandler->addWidget(ui->labelHeader);
+
   restoreState();
 }
 
@@ -83,8 +90,9 @@ FetchRouteDialog::~FetchRouteDialog()
 {
   saveState();
   delete downloader;
-  delete ui;
   delete flightplan;
+  delete linkTooltipHandler;
+  delete ui;
 }
 
 void FetchRouteDialog::buttonBoxClicked(QAbstractButton *button)
@@ -145,14 +153,14 @@ void FetchRouteDialog::updateButtonStates()
 
 void FetchRouteDialog::restoreState()
 {
-  atools::gui::WidgetState widgetState(lnm::FETCH_SIMBRIEF_DIALOG, false);
+  atools::gui::WidgetState widgetState(lnm::FETCH_SIMBRIEF_DIALOG);
   widgetState.restore({this, ui->comboBoxLoginType, ui->lineEditLogin});
   updateButtonStates();
 }
 
 void FetchRouteDialog::saveState() const
 {
-  atools::gui::WidgetState widgetState(lnm::FETCH_SIMBRIEF_DIALOG, false);
+  atools::gui::WidgetState widgetState(lnm::FETCH_SIMBRIEF_DIALOG);
   widgetState.save({this, ui->comboBoxLoginType, ui->lineEditLogin});
 }
 
@@ -199,8 +207,7 @@ void FetchRouteDialog::downloadFinished(const QByteArray& data, QString)
   flightplan->clearAll();
 
   // Read downloaded XML ==================================================================
-  atools::util::XmlStream xmlStream(atools::zip::gzipDecompressIf(data, Q_FUNC_INFO));
-  QXmlStreamReader& reader = xmlStream.getReader();
+  atools::util::XmlStreamReader xmlStream(atools::zip::gzipDecompressIf(data, Q_FUNC_INFO));
 
   QString departure, departureRunway, destination, destinationRunway, alternate, route;
   xmlStream.readUntilElement("OFP");
@@ -240,46 +247,46 @@ void FetchRouteDialog::downloadFinished(const QByteArray& data, QString)
   while(xmlStream.readNextStartElement())
   {
     // Read route elements if needed ======================================================
-    if(reader.name() == "origin")
+    if(xmlStream.name() == QStringLiteral("origin"))
     {
       while(xmlStream.readNextStartElement())
       {
-        if(reader.name() == "icao_code")
-          departure = reader.readElementText();
-        else if(reader.name() == "plan_rwy")
-          departureRunway = reader.readElementText();
+        if(xmlStream.name() == QStringLiteral("icao_code"))
+          departure = xmlStream.readElementTextStr();
+        else if(xmlStream.name() == QStringLiteral("plan_rwy"))
+          departureRunway = xmlStream.readElementTextStr();
         else
           xmlStream.skipCurrentElement(false /* warn */);
       }
     }
-    else if(reader.name() == "destination")
+    else if(xmlStream.name() == QStringLiteral("destination"))
     {
       while(xmlStream.readNextStartElement())
       {
-        if(reader.name() == "icao_code")
-          destination = reader.readElementText();
-        else if(reader.name() == "plan_rwy")
-          destinationRunway = reader.readElementText();
+        if(xmlStream.name() == QStringLiteral("icao_code"))
+          destination = xmlStream.readElementTextStr();
+        else if(xmlStream.name() == QStringLiteral("plan_rwy"))
+          destinationRunway = xmlStream.readElementTextStr();
         else
           xmlStream.skipCurrentElement(false /* warn */);
       }
     }
-    else if(reader.name() == "alternate")
+    else if(xmlStream.name() == QStringLiteral("alternate"))
     {
       while(xmlStream.readNextStartElement())
       {
-        if(reader.name() == "icao_code")
-          alternate = reader.readElementText();
+        if(xmlStream.name() == QStringLiteral("icao_code"))
+          alternate = xmlStream.readElementTextStr();
         else
           xmlStream.skipCurrentElement(false /* warn */);
       }
     }
-    else if(reader.name() == "atc")
+    else if(xmlStream.name() == QStringLiteral("atc"))
     {
       while(xmlStream.readNextStartElement())
       {
-        if(reader.name() == "route")
-          route = reader.readElementText();
+        if(xmlStream.name() == QStringLiteral("route"))
+          route = xmlStream.readElementTextStr();
         else
           xmlStream.skipCurrentElement(false /* warn */);
       }
@@ -294,9 +301,9 @@ void FetchRouteDialog::downloadFinished(const QByteArray& data, QString)
   if(alternate == departure || alternate == destination)
     alternate.clear();
 
-  routeString = departure % (departureRunway.isEmpty() ? QString() : '/' % departureRunway) % ' ' %
+  routeString = departure % (departureRunway.isEmpty() ? QStringLiteral() : '/' % departureRunway) % ' ' %
                 route % ' ' %
-                destination % (destinationRunway.isEmpty() ? QString() : '/' % destinationRunway) % ' ' % alternate;
+                destination % (destinationRunway.isEmpty() ? QStringLiteral() : '/' % destinationRunway) % ' ' % alternate;
 
   // Read string to flight plan
   RouteStringReader routeStringReader(NavApp::getRouteController()->getFlightplanEntryBuilder());
